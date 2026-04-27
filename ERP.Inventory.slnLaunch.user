@@ -1,0 +1,23 @@
+[
+  {
+    "Name": "New Profile",
+    "Projects": [
+      {
+        "Path": "src\\ERP.Inventory.Domain\\ERP.Inventory.Domain.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "src\\ERP.Inventory.Application\\ERP.Inventory.Application.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "src\\ERP.Inventory.Infrastructure\\ERP.Inventory.Infrastructure.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "src\\ERP.Inventory.Web\\ERP.Inventory.Web.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]

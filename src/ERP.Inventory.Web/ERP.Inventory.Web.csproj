@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <Reference Include="ERP.Inventory.Infrastructure">
+      <HintPath>..\ERP.Inventory.Infrastructure\bin\$(Configuration)\net6.0\ERP.Inventory.Infrastructure.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="ERP.Inventory.Application">
+      <HintPath>..\ERP.Inventory.Application\bin\$(Configuration)\net6.0\ERP.Inventory.Application.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="ERP.Inventory.Domain">
+      <HintPath>..\ERP.Inventory.Domain\bin\$(Configuration)\net6.0\ERP.Inventory.Domain.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="6.0.27" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="6.0.27">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

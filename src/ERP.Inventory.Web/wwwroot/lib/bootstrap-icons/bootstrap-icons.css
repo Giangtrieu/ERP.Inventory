@@ -1,0 +1,47 @@
+.bi::before {
+  display: inline-block;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1;
+  text-rendering: auto;
+}
+
+.bi-alarm::before { content: "\23F0"; }
+.bi-arrow-clockwise::before { content: "\21BB"; }
+.bi-arrow-counterclockwise::before { content: "\21BA"; }
+.bi-arrow-left-right::before { content: "\2194"; }
+.bi-arrow-return-left::before { content: "\21B5"; }
+.bi-bell::before { content: "\1F514"; }
+.bi-box-arrow-right::before { content: "\21AA"; }
+.bi-boxes::before { content: "\25A6"; }
+.bi-box-seam::before { content: "\25A3"; }
+.bi-check2-circle::before,
+.bi-check-circle::before { content: "\2713"; }
+.bi-chevron-right::before { content: "\203A"; }
+.bi-clipboard-check::before { content: "\2713"; }
+.bi-clipboard-data::before { content: "\25A4"; }
+.bi-clock::before { content: "\23F1"; }
+.bi-database::before { content: "\25C9"; }
+.bi-diagram-3::before { content: "\25C7"; }
+.bi-download::before { content: "\21E9"; }
+.bi-exclamation-triangle::before { content: "\26A0"; }
+.bi-eye::before { content: "\25CE"; }
+.bi-file-earmark-spreadsheet::before { content: "\25A7"; }
+.bi-filetype-pdf::before { content: "PDF"; font-size: .72em; }
+.bi-hand-thumbs-up::before { content: "\2191"; }
+.bi-pencil::before { content: "\270E"; }
+.bi-person-plus::before { content: "+"; }
+.bi-plus-circle::before { content: "+"; }
+.bi-qr-code-scan::before,
+.bi-upc-scan::before { content: "\25A5"; }
+.bi-search::before { content: "\2315"; }
+.bi-shield-lock::before { content: "\25C8"; }
+.bi-slash-circle::before { content: "\2298"; }
+.bi-speedometer2::before { content: "\25D4"; }
+.bi-three-dots::before { content: "\22EF"; }
+.bi-tools::before,
+.bi-wrench-adjustable::before { content: "\2692"; }
+.bi-trash::before { content: "\232B"; }
+.bi-truck::before { content: "\21E5"; }
+.bi-x-lg::before,
+.bi-x-octagon::before { content: "\00D7"; }
