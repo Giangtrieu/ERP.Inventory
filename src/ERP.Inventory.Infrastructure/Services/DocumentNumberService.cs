@@ -9,7 +9,7 @@ public sealed class DocumentNumberService : IDocumentNumberService
 {
     public string Next(string prefix, DateTime date)
     {
-        var ticks = DateTime.Now.Ticks % 1000000;
+        var ticks = DateTime.UtcNow.Ticks % 1000000;
         return $"{prefix}-{date:yyyy}-{ticks:000000}";
     }
 }

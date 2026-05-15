@@ -3,8 +3,8 @@ Router.register('dashboard', async function(){
     `<div id="dashboardPrintable">
     <div class="card mb-3"><div class="card-body">
       <div class="row g-3 align-items-end">
-        <div class="col-md-4">${UI.select('Summary Warehouse','summaryWarehouseId', AppState.lookups.warehouses)}</div>
-        <div class="col-md-2"><button class="btn btn-primary w-100" id="btnLoadDashboard">${UI.t('Load')}</button></div>
+        <div class="col-md-3">${UI.select('Summary Warehouse','summaryWarehouseId', AppState.lookups.warehouses)}</div>
+        <div class="col-md-1"><label class="form-label w-100"><span class="fw-semibold small"></span><button class="btn btn-primary w-100" id="btnLoadDashboard">${UI.t('Load')}</button></label></div>
       </div>
     </div></div>
     <div id="dashboardCards">${UI.loading()}</div>
@@ -13,7 +13,7 @@ Router.register('dashboard', async function(){
         <div class="card"><div class="card-body">
           <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
             <h5 class="fw-bold mb-0">${UI.t('Stock by Warehouse')}</h5>
-            <div style="min-width:180px">${UI.select('Status','stockWarehouseStatus', AppState.lookups.statuses, 'InStock')}</div>
+            <div style="min-width:180px">${UI.select('Status','stockWarehouseStatus', AppState.lookups.statuses, 'Normal')}</div>
           </div>
           <div id="stockWarehouseChart" class="chart-area">${UI.loading()}</div>
         </div></div>
@@ -58,7 +58,7 @@ Router.register('dashboard', async function(){
             <h5 class="fw-bold mb-0">${UI.t('Stock by Category')}</h5>
             <div class="d-flex gap-2" style="min-width:360px">
               ${UI.select('Warehouse','categoryWarehouseId', AppState.lookups.warehouses)}
-              ${UI.select('Status','categoryStatus', AppState.lookups.statuses, 'InStock')}
+              ${UI.select('Status', 'categoryStatus', AppState.lookups.statuses, 'InStock')}
             </div>
           </div>
           <div id="stockCategoryChart" class="chart-area">${UI.loading()}</div>
@@ -82,7 +82,27 @@ Router.register('dashboard', async function(){
           <div id="borrowOverdueChart" class="chart-area">${UI.loading()}</div>
         </div></div>
       </div>
-    </div></div>`);
+    </div>
+
+    <!-- ── Quantity Inventory Summary ──────────────────────────── -->
+    <div class="card mt-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold mb-0"><i class="bi bi-boxes me-2 text-primary"></i>${UI.t('Quantity Inventory Summary')}</h5>
+        <div style="min-width:220px">${UI.select('Warehouse','qtyWarehouseId', AppState.lookups.warehouses)}</div>
+      </div>
+      <div id="qtySummaryCards" class="mb-3">${UI.loading()}</div>
+      <div class="row g-3">
+        <div class="col-xl-6">
+          <div class="fw-semibold small text-muted mb-2">${UI.t('Quantity by Owner')}</div>
+          <div id="qtyByOwnerChart" class="chart-area">${UI.loading()}</div>
+        </div>
+        <div class="col-xl-6">
+          <div class="fw-semibold small text-muted mb-2">${UI.t('Quantity by Item')}</div>
+          <div id="qtyByItemChart" class="chart-area">${UI.loading()}</div>
+        </div>
+      </div>
+    </div></div>
+  </div></div>`);
 
   $('#btnReloadDashboard').on('click', () => Router.go('dashboard'));
   $('#btnExportDashboardPdf').on('click', () => window.print());
@@ -100,6 +120,7 @@ Router.register('dashboard', async function(){
   $('#app [name="categoryWarehouseId"], #app [name="categoryStatus"]').on('change', loadStockByCategoryChart);
   $('#app [name="utilizationWarehouseId"]').on('change', loadLocationUtilizationChart);
   $('#app [name="overdueWarehouseId"]').on('change', loadBorrowOverdueChart);
+  $('#app [name="qtyWarehouseId"]').on('change', loadQuantitySummary);
 
   await Promise.all([
     loadDashboardSummary(),
@@ -109,7 +130,8 @@ Router.register('dashboard', async function(){
     loadMovementActionChart(),
     loadStockByCategoryChart(),
     loadLocationUtilizationChart(),
-    loadBorrowOverdueChart()
+    loadBorrowOverdueChart(),
+    loadQuantitySummary()
   ]);
 });
 
@@ -121,7 +143,7 @@ async function loadDashboardSummary(){
     ['Repairing', summary.repairing, 'bi-tools', 'Items at repair vendors', 'inventory', 'Repairing'],
     ['Lent out', summary.lentOut, 'bi-hand-thumbs-up', 'Borrowed by external parties', 'inventory', 'LentOut'],
     ['Overdue return', summary.overdueReturn, 'bi-alarm', 'Borrow lines past due date', 'borrow-return', 'LentOut'],
-    ['Damaged or lost', summary.damagedOrLost, 'bi-exclamation-triangle', 'Exception status', 'inventory', 'Damaged']
+    ['Damaged or lost', summary.damagedOrLost, 'bi-exclamation-triangle', 'Exception status', 'inventory', 'Scrapped']
   ];
   $('#dashboardCards').html(`<div class="row g-3">${cards.map(c => `
     <div class="col-md-6 col-xl-4">
@@ -167,6 +189,45 @@ async function loadLocationUtilizationChart(){
 async function loadBorrowOverdueChart(){
   const rows = await UI.api('/Dashboard/OverdueBorrowAging', { query: { warehouseId: $('#app [name="overdueWarehouseId"]').val() || '' } });
   $('#borrowOverdueChart').html(barChart(rows.map(x => ({ ...x, label: UI.t(x.label) }))));
+}
+
+async function loadQuantitySummary() {
+  const warehouseId = $('#app [name="qtyWarehouseId"]').val() || '';
+  const result = await UI.api('/Dashboard/QuantitySummary', { query: { warehouseId } });
+  const d = result.success && result.data ? result.data : null;
+
+  if (!d) {
+    $('#qtySummaryCards').html(UI.empty('No quantity inventory data'));
+    $('#qtyByOwnerChart').html(UI.empty('No data'));
+    $('#qtyByItemChart').html(UI.empty('No data'));
+    return;
+  }
+
+  const miniCards = [
+    { label: UI.t('Total Quantity'), value: d.totalQuantity, icon: 'bi-stack' },
+    { label: UI.t('Active SNs'),     value: d.activeSnCount,  icon: 'bi-upc-scan' },
+    { label: UI.t('Owners'),         value: d.ownerCount,     icon: 'bi-person-badge' },
+    { label: UI.t('Total SN Lots'),  value: d.totalSnCount,   icon: 'bi-list-ol' }
+  ];
+  $('#qtySummaryCards').html(
+    `<div class="row g-3">${miniCards.map((c, i) => `
+      <div class="col-6 col-xl-3">
+        <div class="card border-0 bg-light">
+          <div class="card-body d-flex align-items-center gap-3 py-3">
+            <div class="rounded-3 d-flex align-items-center justify-content-center" style="width:44px;height:44px;background:${['#eef2ff','#ecfdf5','#fffbeb','#f0f9ff'][i]};font-size:1.4rem;color:${['#1e5bff','#10b981','#f59e0b','#06b6d4'][i]}">
+              <i class="bi ${c.icon}"></i>
+            </div>
+            <div>
+              <div class="text-muted small">${c.label}</div>
+              <div class="fw-bold fs-5">${UI.esc(c.value)}</div>
+            </div>
+          </div>
+        </div>
+      </div>`).join('')}</div>`
+  );
+
+  $('#qtyByOwnerChart').html(barChart(d.byOwner || []));
+  $('#qtyByItemChart').html(barChart(d.byItem || []));
 }
 
 function dashboardDaysOptions(){

@@ -47,10 +47,22 @@ public class ItemInstance : AuditableEntity
     public int ItemId { get; set; }
     public Item? Item { get; set; }
     public string? SerialNumber { get; set; }
+    public string? MT { get; set; }
     public string? Barcode { get; set; }
     public ItemStatus Status { get; set; } = ItemStatus.InStock;
+    /// <summary>
+    /// Phân biệt loại tracking: LocationTracked (serial/bin) hoặc QuantityOnly.
+    /// Default = LocationTracked để backward compatible với dữ liệu cũ.
+    /// </summary>
+    public ItemTrackingType TrackingType { get; set; } = ItemTrackingType.LocationTracked;
+    /// <summary>
+    /// Chủ sở hữu hàng hóa (tên công ty, phòng ban, hoặc cá nhân).
+    /// Nullable — không bắt buộc. Null = chưa gán owner.
+    /// </summary>
+    public string? OwnerName { get; set; }
     public bool IsActive { get; set; } = true;
 }
+
 
 public class ItemSerialRelation : AuditableEntity
 {

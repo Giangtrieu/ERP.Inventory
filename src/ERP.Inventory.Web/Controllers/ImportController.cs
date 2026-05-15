@@ -24,11 +24,18 @@ public sealed class ImportController : Controller
         var language = _currentUserService.GetCurrentUser().LanguageCode;
         return Json(new[]
         {
-            new { id = "ItemMaster", text = LocalizationCatalog.Text(language, "ImportType.ItemMaster") },
-            new { id = "WarehouseStructure", text = LocalizationCatalog.Text(language, "ImportType.WarehouseStructure") },
-            new { id = "Inbound", text = LocalizationCatalog.Text(language, "ImportType.Inbound") },
-            new { id = "InventoryCheck", text = LocalizationCatalog.Text(language, "ImportType.InventoryCheck") },
-            new { id = "RepairSend", text = LocalizationCatalog.Text(language, "ImportType.RepairSend") }
+            new { id = "ItemMaster",        text = LocalizationCatalog.Text(language, "ImportType.ItemMaster") },
+            new { id = "WarehouseStructure",text = LocalizationCatalog.Text(language, "ImportType.WarehouseStructure") },
+            new { id = "Inbound",           text = LocalizationCatalog.Text(language, "ImportType.Inbound") },
+            new { id = "InventoryCheck",    text = LocalizationCatalog.Text(language, "ImportType.InventoryCheck") },
+            new { id = "RepairSend",        text = LocalizationCatalog.Text(language, "ImportType.RepairSend") },
+            new { id = "BorrowLend",        text = LocalizationCatalog.Text(language, "ImportType.BorrowLend") },
+            new { id = "QuantityInbound",   text = LocalizationCatalog.Text(language, "ImportType.QuantityInbound") },
+            new { id = "QuantityOutbound",  text = LocalizationCatalog.Text(language, "ImportType.QuantityOutbound") },
+            new { id = "QuantityAdjust",    text = LocalizationCatalog.Text(language, "ImportType.QuantityAdjust") },
+            new { id = "MoveLocation",      text = LocalizationCatalog.Text(language, "ImportType.MoveLocation") },
+            new { id = "BorrowReturn",      text = LocalizationCatalog.Text(language, "ImportType.BorrowReturn") },
+            new { id = "RepairReceive",     text = LocalizationCatalog.Text(language, "ImportType.RepairReceive") },
         });
     }
 

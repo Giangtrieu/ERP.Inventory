@@ -58,7 +58,7 @@ public sealed class AppController : Controller
         var language = NormalizeLanguage(request.Language);
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
         var user = await _db.SystemUsers.FirstOrDefaultAsync(x => x.Id == userId, cancellationToken);
-        if (user == null)
+            if (user == null)
         {
             return NotFound();
         }

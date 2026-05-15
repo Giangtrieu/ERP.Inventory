@@ -4,6 +4,7 @@ public enum BorrowReturnCondition
 {
     Normal = 1,
     Damaged = 2,
-    Lost = 3
+    Lost = 3,
+    Scrapped = 4,
 }
 

@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <PackageReference Include="EFCore.BulkExtensions" Version="6.8.1" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ERP.Inventory.Domain\ERP.Inventory.Domain.csproj" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 

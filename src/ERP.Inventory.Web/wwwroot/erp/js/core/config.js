@@ -1,13 +1,15 @@
 window.AppConfig = {
-  defaultRoute: 'tracking',
+  defaultRoute: 'dashboard',
   menu: [
     ['dashboard','bi-speedometer2','Dashboard'],
     ['tracking','bi-upc-scan','Tracking'],
     ['inventory','bi-boxes','Inventory List'],
+    ['quantity-inventory','bi-stack','Quantity Inventory'],
     ['inbound','bi-plus-circle','Inbound Create'],
-    ['move','bi-arrow-left-right','Move Location'],
+    ['move', 'bi-arrow-left-right', 'Move Location'],
+    ['inventory-check', 'bi-qr-code-scan', 'Inventory Check'],
+    ['reconciliation','bi-clipboard2-check','Reconciliation'],
     ['adjustment','bi-clipboard-check','Adjustment'],
-    ['inventory-check','bi-qr-code-scan','Inventory Check'],
     ['repair-send','bi-tools','Repair Send'],
     ['repair-receive','bi-wrench-adjustable','Repair Receive'],
     ['borrow-lend','bi-hand-thumbs-up','Borrow Lend'],
@@ -16,9 +18,10 @@ window.AppConfig = {
     ['master-data','bi-database','Master Data'],
     ['import','bi-file-earmark-spreadsheet','Import Excel'],
     ['reports','bi-clipboard-data','Reports / Audit'],
-    ['system','bi-shield-lock','System']
+    ['system','bi-shield-lock','System'],
   ],
   statusMeta: {
+    Normal: ['bi-check-circle','status-instock'],
     InStock: ['bi-check-circle','status-instock'],
     Reserved: ['bi-clock','status-reserved'],
     Repairing: ['bi-tools','status-repairing'],
@@ -27,6 +30,33 @@ window.AppConfig = {
     Damaged: ['bi-exclamation-triangle','status-damaged'],
     Lost: ['bi-x-octagon','status-lost'],
     Disposed: ['bi-trash','status-disposed'],
-    InTransit: ['bi-truck','status-intransit']
-  }
+    InTransit: ['bi-truck', 'status-intransit'],
+    Replacement: ['bi-trash','status-disposed'],
+    Scrapped: ['bi-exclamation-triangle','status-damaged'],
+    Matched: ['bi-check-circle','status-instock'],
+    Missing:['bi-exclamation-circle','status-lost'],
+    Extra:['bi-plus-circle', 'status-intransit'],
+    WrongLocation:['bi-geo-alt','status-damaged'],
+    ERPOnly:['bi-database-check','status-intransit'],
+    RefOnly:['bi-file-earmark-x','status-reserved'],
+    },
+  statusDocument: {
+      Return: ['bi-check-circle', 'status-instock'],
+      Success: ['bi-tools', 'status-instock'],
+      Open: ['bi-clock', 'status-reserved'],
+      Borrow: ['bi-clock', 'status-reserved'],
+      Repairing: ['bi-tools', 'status-reserved'],
+      WrongLocation: ['bi-arrow-left-right', 'status-warning'],
+      Matched: ['bi-check-circle', 'status-instock'],
+      Missing: ['bi-exclamation-triangle', 'status-damaged'],
+      Damaged: ['bi-tools', 'status-damaged'],
+      Scrapped: ['bi-tools', 'status-damaged'],
+      Failed: ['bi-tools', 'status-damaged'],
+      Unknown: ['bi-exclamation-triangle', 'status-damaged'],
+      Replaced: ['bi-arrow-repeat', 'status-info'],
+        
+    },
+   canPrintPDF: [
+       "tracking", "inbound", "move", "inventory-check", "adjustment", "repair-send", "repair-receive", "borrow-lend", "borrow-return",
+   ]
 };

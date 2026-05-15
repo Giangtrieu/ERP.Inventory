@@ -57,11 +57,13 @@ public sealed class DocumentsController : Controller
         return detail == null ? NotFound() : Json(detail);
     }
 
+    // ─── List queries ────────────────────────────────────────
+
     private async Task<object[]> InboundRows(string? keyword, DateTime? fromDate, DateTime? toDate, string language, CancellationToken cancellationToken)
     {
         var query = Scope(_db.InboundDocuments.AsNoTracking().Include(x => x.Warehouse).Include(x => x.SourceExternalParty).Include(x => x.Lines).AsQueryable(), x => x.WarehouseId);
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
-        return await query.OrderByDescending(x => x.DocumentDate).Take(100)
+        return await query.OrderByDescending(x => x.DocumentDate).ThenByDescending(x => x.PostedAt).Take(100)
             .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.SourceExternalParty != null ? x.SourceExternalParty.Name : "", warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.EnumText(language, x.Status), lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
@@ -70,7 +72,7 @@ public sealed class DocumentsController : Controller
     {
         var query = Scope(_db.MoveDocuments.AsNoTracking().Include(x => x.Warehouse).Include(x => x.Lines).AsQueryable(), x => x.WarehouseId);
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
-        return await query.OrderByDescending(x => x.DocumentDate).Take(100)
+        return await query.OrderByDescending(x => x.DocumentDate).ThenByDescending(x => x.PostedAt).Take(100)
             .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = "", warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.EnumText(language, x.Status), lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
@@ -79,7 +81,7 @@ public sealed class DocumentsController : Controller
     {
         var query = Scope(_db.AdjustmentDocuments.AsNoTracking().Include(x => x.Warehouse).Include(x => x.Lines).AsQueryable(), x => x.WarehouseId);
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
-        return await query.OrderByDescending(x => x.DocumentDate).Take(100)
+        return await query.OrderByDescending(x => x.DocumentDate).ThenByDescending(x => x.PostedAt).Take(100)
             .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.Reason, warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.EnumText(language, x.Status), lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
@@ -88,8 +90,8 @@ public sealed class DocumentsController : Controller
     {
         var query = Scope(_db.InventoryCheckDocuments.AsNoTracking().Include(x => x.Warehouse).Include(x => x.Lines).AsQueryable(), x => x.WarehouseId);
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
-        return await query.OrderByDescending(x => x.DocumentDate).Take(100)
-            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.ResponsibleStaff, warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.EnumText(language, x.Status), lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
+        return await query.OrderByDescending(x => x.DocumentDate).ThenByDescending(x => x.PostedAt).Take(100)
+            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.ResponsibleStaff, warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.Text(language, x.SessionStatus), sessionStatus = x.SessionStatus, lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
 
@@ -106,7 +108,7 @@ public sealed class DocumentsController : Controller
 
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
         return await query.OrderByDescending(x => x.DocumentDate).Take(100)
-            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.RepairVendor != null ? x.RepairVendor.Name : "", warehouse = "", status = x.ReceiveResult == null ? LocalizationCatalog.Text(language, "Open") : LocalizationCatalog.EnumText(language, x.ReceiveResult.Value), lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
+            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.RepairVendor != null ? x.RepairVendor.Name : "", warehouse = "", status = x.Lines.Any(l => !l.IsReturned) ? "Repairing" : "Finalized", lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
 
@@ -123,57 +125,315 @@ public sealed class DocumentsController : Controller
 
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
         return await query.OrderByDescending(x => x.DocumentDate).Take(100)
-            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.Borrower != null ? x.Borrower.Name : "", warehouse = "", status = x.Lines.Any(l => !l.IsReturned) ? LocalizationCatalog.Text(language, "Open") : LocalizationCatalog.Text(language, "Returned"), lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
+            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.Borrower != null ? x.Borrower.Name : "", warehouse = "", status = x.Lines.Any(l => !l.IsReturned) ? "Borrow" : "Returned", lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
 
+    // ─── Detail queries ──────────────────────────────────────
+
     private async Task<object?> InboundDetail(int id, string language, CancellationToken cancellationToken)
     {
-        var doc = await Scope(_db.InboundDocuments.AsNoTracking().Include(x => x.Warehouse).Include(x => x.SourceExternalParty).Include(x => x.Lines).ThenInclude(x => x.Item).Include(x => x.Lines).ThenInclude(x => x.BinLocation).AsQueryable(), x => x.WarehouseId).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
-        return doc == null ? null : new { header = Header(doc, language, doc.Warehouse?.WarehouseCode, doc.SourceExternalParty?.Name), lines = doc.Lines.Select(x => new { item = x.Item?.ItemCode, serial = x.SerialNumber, barcode = x.Barcode, bin = x.BinLocation?.FullPath, condition = x.Condition, note = x.Note }) };
+        var doc = await Scope(_db.InboundDocuments.AsNoTracking()
+            .Include(x => x.Warehouse).Include(x => x.SourceExternalParty)
+            .Include(x => x.Lines).ThenInclude(x => x.Item)
+            .Include(x => x.Lines).ThenInclude(x => x.BinLocation)
+            .AsQueryable(), x => x.WarehouseId)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+        if (doc == null) return null;
+
+        var logs = await _db.InboundDocumentLogs.AsNoTracking()
+            .Where(x => x.InboundDocumentId == id)
+            .OrderBy(x => x.Timestamp)
+            .Select(x => new {
+                x.ItemInstanceId,
+                x.Timestamp,
+                ActionType = x.Action,
+                x.OldStatus,
+                x.NewStatus,
+                x.Receiver,
+                x.ReceiverPhone,
+                x.ReceiverDepartment,
+                x.DepartmentOwner,
+                x.OldLocationText,
+                x.NewLocationText,
+                x.PerformedBy,
+                x.Note,
+                ItemCode = x.ItemInstance != null && x.ItemInstance.Item != null ? x.ItemInstance.Item.ItemCode : null,
+                SerialNumber = x.ItemInstance != null ? x.ItemInstance.SerialNumber : null
+            })
+            .ToListAsync(cancellationToken);
+
+        var history = logs.OrderByDescending(x => x.Timestamp).Select(x => new {
+            timestamp = x.Timestamp,
+            actionType = x.ActionType,
+            actionTypeText = LocalizationCatalog.Text(language, x.ActionType == "InboundReceive" ? "Inbound" : x.ActionType),
+            itemCode = x.ItemCode,
+            serialNumber = x.SerialNumber,
+            oldStatus = x.OldStatus,
+            oldStatusText = LocalizationCatalog.Text(language, x.OldStatus),
+            newStatus = x.NewStatus,
+            newStatusText = LocalizationCatalog.Text(language, x.NewStatus),
+            receiver = x.Receiver,
+            receiverPhone = x.ReceiverPhone,
+            receiverDepartment = x.ReceiverDepartment,
+            departmentOwner = x.DepartmentOwner,
+            oldLocation = x.OldLocationText,
+            newLocation = x.NewLocationText,
+            performedBy = x.PerformedBy
+        }).ToList();
+
+        return new
+        {
+            header = Header(doc, language, doc.Warehouse?.WarehouseCode, doc.SourceExternalParty?.Name),
+            lines = doc.Lines.Select(x => new { item = x.Item?.ItemCode, serial = x.SerialNumber, barcode = x.Barcode, bin = x.BinLocation?.BinCode, condition = x.Condition, note = x.Note }),
+            history
+        };
     }
 
     private async Task<object?> MoveDetail(int id, string language, CancellationToken cancellationToken)
     {
-        var doc = await Scope(_db.MoveDocuments.AsNoTracking().Include(x => x.Warehouse).Include(x => x.Lines).ThenInclude(x => x.ItemInstance)!.ThenInclude(x => x!.Item).Include(x => x.Lines).ThenInclude(x => x.FromBinLocation).Include(x => x.Lines).ThenInclude(x => x.TargetBinLocation).AsQueryable(), x => x.WarehouseId).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
-        return doc == null ? null : new { header = Header(doc, language, doc.Warehouse?.WarehouseCode, null), lines = doc.Lines.Select(x => new { item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, from = x.FromBinLocation?.FullPath, to = x.TargetBinLocation?.FullPath, note = x.Note }) };
+        var doc = await Scope(_db.MoveDocuments.AsNoTracking()
+            .Include(x => x.Warehouse)
+            .Include(x => x.Lines).ThenInclude(x => x.ItemInstance)!.ThenInclude(x => x!.Item)
+            .Include(x => x.Lines).ThenInclude(x => x.FromBinLocation)
+            .Include(x => x.Lines).ThenInclude(x => x.TargetBinLocation)
+            .AsQueryable(), x => x.WarehouseId)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+        return doc == null ? null : new
+        {
+            header = Header(doc, language, doc.Warehouse?.WarehouseCode, null),
+            lines = doc.Lines.Select(x => new { item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, from = x.FromBinLocation?.BinCode, to = x.TargetBinLocation?.BinCode, note = x.Note, status = x.ItemInstance?.Status })
+        };
     }
 
     private async Task<object?> AdjustmentDetail(int id, string language, CancellationToken cancellationToken)
     {
-        var doc = await Scope(_db.AdjustmentDocuments.AsNoTracking().Include(x => x.Warehouse).Include(x => x.Lines).ThenInclude(x => x.ItemInstance)!.ThenInclude(x => x!.Item).AsQueryable(), x => x.WarehouseId).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
-        return doc == null ? null : new { header = Header(doc, language, doc.Warehouse?.WarehouseCode, doc.Reason), lines = doc.Lines.Select(x => new { item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, oldStatus = LocalizationCatalog.EnumText(language, x.OldStatus), newStatus = LocalizationCatalog.EnumText(language, x.NewStatus), reason = x.Reason }) };
+        // Pre-load bins to avoid N+1 subquery inside LINQ projection
+        var doc = await Scope(_db.AdjustmentDocuments.AsNoTracking()
+            .Include(x => x.Warehouse)
+            .Include(x => x.Lines).ThenInclude(x => x.ItemInstance)!.ThenInclude(x => x!.Item)
+            .AsQueryable(), x => x.WarehouseId)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+        if (doc == null) return null;
+
+        var binIds = doc.Lines.Where(x => x.TargetBinLocationId.HasValue).Select(x => x.TargetBinLocationId!.Value).Distinct().ToArray();
+        var binMap = binIds.Length > 0
+            ? await _db.BinLocations.AsNoTracking().Where(b => binIds.Contains(b.Id) && b.IsActive).ToDictionaryAsync(b => b.Id, b => b.BinCode, cancellationToken)
+            : new Dictionary<int, string>();
+        var unknownText = LocalizationCatalog.Text(language, "Unknown");
+
+        var logs = await _db.AdjustmentDocumentLogs.AsNoTracking()
+            .Where(x => x.AdjustmentDocumentId == id)
+            .OrderBy(x => x.Timestamp)
+            .Select(x => new {
+                x.ItemInstanceId,
+                x.Timestamp,
+                ActionType = x.Action,
+                x.OldStatus,
+                x.NewStatus,
+                x.OldLocationText,
+                x.NewLocationText,
+                x.Reason,
+                x.PerformedBy,
+                x.Note,
+                ItemCode = x.ItemInstance != null && x.ItemInstance.Item != null ? x.ItemInstance.Item.ItemCode : null,
+                SerialNumber = x.ItemInstance != null ? x.ItemInstance.SerialNumber : null
+            })
+            .ToListAsync(cancellationToken);
+
+        var history = logs.OrderByDescending(x => x.Timestamp).Select(x => new {
+            timestamp = x.Timestamp,
+            actionType = x.ActionType,
+            actionTypeText = LocalizationCatalog.Text(language, x.ActionType),
+            itemCode = x.ItemCode,
+            serialNumber = x.SerialNumber,
+            oldStatus = x.OldStatus,
+            oldStatusText = LocalizationCatalog.Text(language, x.OldStatus),
+            newStatus = x.NewStatus,
+            newStatusText = LocalizationCatalog.Text(language, x.NewStatus),
+            oldLocation = x.OldLocationText,
+            newLocation = x.NewLocationText,
+            reason = x.Reason,
+            performedBy = x.PerformedBy
+        }).ToList();
+
+        return new
+        {
+            header = Header(doc, language, doc.Warehouse?.WarehouseCode, doc.Reason),
+            lines = doc.Lines.Select(x => new
+            {
+                item = x.ItemInstance?.Item?.ItemCode,
+                serial = x.ItemInstance?.SerialNumber,
+                oldStatus = x.OldStatus,
+                newStatus = x.NewStatus,
+                reason = x.Reason,
+                bin = x.TargetBinLocationId.HasValue && binMap.TryGetValue(x.TargetBinLocationId.Value, out var path) ? path : unknownText,
+                note = x.Reason
+            }),
+            history
+        };
     }
 
     private async Task<object?> InventoryCheckDetail(int id, string language, CancellationToken cancellationToken)
     {
-        var doc = await Scope(_db.InventoryCheckDocuments.AsNoTracking().Include(x => x.Warehouse).Include(x => x.Lines).ThenInclude(x => x.ItemInstance)!.ThenInclude(x => x!.Item).AsQueryable(), x => x.WarehouseId).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
-        return doc == null ? null : new { header = Header(doc, language, doc.Warehouse?.WarehouseCode, doc.ResponsibleStaff), lines = doc.Lines.Select(x => new { item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, result = LocalizationCatalog.EnumText(language, x.Result), note = x.Note }) };
+        // Pre-load bins to avoid N+1 subquery inside LINQ projection
+        var doc = await Scope(_db.InventoryCheckDocuments.AsNoTracking()
+            .Include(x => x.Warehouse)
+            .Include(x => x.Lines).ThenInclude(x => x.ItemInstance)!.ThenInclude(x => x!.Item)
+            .AsQueryable(), x => x.WarehouseId)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+        if (doc == null) return null;
+
+        var binIds = doc.Lines.Where(x => x.ActualBinLocationId.HasValue).Select(x => x.ActualBinLocationId!.Value).Distinct().ToArray();
+        var binMap = binIds.Length > 0
+            ? await _db.BinLocations.AsNoTracking().Where(b => binIds.Contains(b.Id) && b.IsActive).ToDictionaryAsync(b => b.Id, b => b.BinCode, cancellationToken)
+            : new Dictionary<int, string>();
+        var unknownText = LocalizationCatalog.Text(language, "Unknown");
+
+        return new
+        {
+            header = Header(doc, language, doc.Warehouse?.WarehouseCode, doc.ResponsibleStaff,
+                new { doc.SessionStatus, doc.CountMethod }),
+            lines = doc.Lines.Select(x => new
+            {
+                item = x.ItemInstance?.Item?.ItemCode,
+                serial = x.ItemInstance?.SerialNumber,
+                result = x.Result,
+                note = x.Note,
+                bin = x.ActualBinLocationId.HasValue && binMap.TryGetValue(x.ActualBinLocationId.Value, out var path) ? path : unknownText
+            })
+        };
     }
 
     private async Task<object?> RepairDetail(int id, string language, CancellationToken cancellationToken)
     {
         var allowedBinIds = await AllowedBinIds(cancellationToken);
-        var doc = await _db.RepairDocuments.AsNoTracking().Include(x => x.RepairVendor).Include(x => x.Lines).ThenInclude(x => x.ItemInstance)!.ThenInclude(x => x!.Item).Include(x => x.Lines).ThenInclude(x => x.FromBinLocation).Include(x => x.Lines).ThenInclude(x => x.TargetBinLocation).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var doc = await _db.RepairDocuments.AsNoTracking()
+            .Include(x => x.RepairVendor)
+            .Include(x => x.Lines).ThenInclude(x => x.ItemInstance)!.ThenInclude(x => x!.Item)
+            .Include(x => x.Lines).ThenInclude(x => x.FromBinLocation)
+            .Include(x => x.Lines).ThenInclude(x => x.TargetBinLocation)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
         if (doc == null || (allowedBinIds != null && !doc.Lines.Any(x =>
             (x.FromBinLocationId.HasValue && allowedBinIds.Contains(x.FromBinLocationId.Value)) ||
             (x.TargetBinLocationId.HasValue && allowedBinIds.Contains(x.TargetBinLocationId.Value))))) return null;
-        return new { header = Header(doc, language, null, doc.RepairVendor?.Name), lines = doc.Lines.Select(x => new { item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, fromBin = x.FromBinLocation?.FullPath, targetBin = x.TargetBinLocation?.FullPath ?? x.TargetExternalLocation, newSerial = x.NewSerialNumber, note = x.RepairResultNote }) };
+
+        var logs = await _db.RepairDocumentLogs.AsNoTracking()
+            .Where(x => x.RepairDocumentId == id)
+            .OrderBy(x => x.Timestamp)
+            .Select(x => new {
+                x.ItemInstanceId,
+                x.Timestamp,
+                ActionType = x.Action,
+                x.OldStatus,
+                x.NewStatus,
+                x.RepairVendorName,
+                x.ExternalLocation,
+                x.OldLocationText,
+                x.NewLocationText,
+                x.RepairResultNote,
+                x.PerformedBy,
+                x.Note,
+                ItemCode = x.ItemInstance != null && x.ItemInstance.Item != null ? x.ItemInstance.Item.ItemCode : null,
+                SerialNumber = x.ItemInstance != null ? x.ItemInstance.SerialNumber : null
+            })
+            .ToListAsync(cancellationToken);
+
+        var history = logs.OrderByDescending(x => x.Timestamp).Select(x => new {
+            timestamp = x.Timestamp,
+            actionType = x.ActionType,
+            actionTypeText = LocalizationCatalog.Text(language, x.ActionType),
+            itemCode = x.ItemCode,
+            serialNumber = x.SerialNumber,
+            oldStatus = x.OldStatus,
+            oldStatusText = LocalizationCatalog.Text(language, x.OldStatus),
+            newStatus = x.NewStatus,
+            newStatusText = LocalizationCatalog.Text(language, x.NewStatus),
+            repairVendor = x.RepairVendorName,
+            externalLocation = x.ExternalLocation,
+            oldLocation = x.OldLocationText,
+            newLocation = x.NewLocationText,
+            repairResultNote = x.RepairResultNote,
+            performedBy = x.PerformedBy
+        }).ToList();
+
+        return new
+        {
+            header = Header(doc, language, null, doc.RepairVendor?.Name),
+            lines = doc.Lines.Select(x => new { item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, fromBin = x.FromBinLocation?.BinCode, targetBin = x.TargetBinLocation?.BinCode ?? x.TargetExternalLocation, status = x.ItemInstance!.Status, newSerial = x.NewSerialNumber, note = x.RepairResultNote }),
+            history
+        };
     }
 
     private async Task<object?> BorrowDetail(int id, string language, CancellationToken cancellationToken)
     {
         var allowedBinIds = await AllowedBinIds(cancellationToken);
-        var doc = await _db.BorrowDocuments.AsNoTracking().Include(x => x.Borrower).Include(x => x.Lines).ThenInclude(x => x.ItemInstance)!.ThenInclude(x => x!.Item).Include(x => x.Lines).ThenInclude(x => x.FromBinLocation).Include(x => x.Lines).ThenInclude(x => x.TargetBinLocation).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var doc = await _db.BorrowDocuments.AsNoTracking()
+            .Include(x => x.Borrower)
+            .Include(x => x.Lines).ThenInclude(x => x.ItemInstance)!.ThenInclude(x => x!.Item)
+            .Include(x => x.Lines).ThenInclude(x => x.FromBinLocation)
+            .Include(x => x.Lines).ThenInclude(x => x.TargetBinLocation)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
         if (doc == null || (allowedBinIds != null && !doc.Lines.Any(x =>
             (x.FromBinLocationId.HasValue && allowedBinIds.Contains(x.FromBinLocationId.Value)) ||
             (x.TargetBinLocationId.HasValue && allowedBinIds.Contains(x.TargetBinLocationId.Value))))) return null;
+
+        var logs = await _db.BorrowDocumentLogs.AsNoTracking()
+            .Where(x => x.BorrowDocumentId == id)
+            .OrderBy(x => x.Timestamp)
+            .Select(x => new {
+                x.ItemInstanceId,
+                x.Timestamp,
+                ActionType = x.Action,
+                x.OldStatus,
+                x.NewStatus,
+                x.Borrower,
+                x.BorrowDepartment,
+                x.BorrowerPhone,
+                x.DepartmentOwner,
+                x.OldLocationText,
+                x.NewLocationText,
+                x.PerformedBy,
+                x.Note,
+                ItemCode = x.ItemInstance != null && x.ItemInstance.Item != null ? x.ItemInstance.Item.ItemCode : null,
+                SerialNumber = x.ItemInstance != null ? x.ItemInstance.SerialNumber : null
+            })
+            .ToListAsync(cancellationToken);
+
+        var history = logs.OrderByDescending(x => x.Timestamp).Select(x => new {
+            timestamp = x.Timestamp,
+            actionType = x.ActionType,
+            actionTypeText = LocalizationCatalog.Text(language, x.ActionType),
+            itemCode = x.ItemCode,
+            serialNumber = x.SerialNumber,
+            oldStatus = x.OldStatus,
+            oldStatusText = LocalizationCatalog.Text(language, x.OldStatus),
+            newStatus = x.NewStatus,
+            newStatusText = LocalizationCatalog.Text(language, x.NewStatus),
+            borrower = x.Borrower,
+            borrowDepartment = x.BorrowDepartment,
+            borrowerPhone = x.BorrowerPhone,
+            departmentOwner = x.DepartmentOwner,
+            oldLocation = x.OldLocationText,
+            newLocation = x.NewLocationText,
+            performedBy = x.PerformedBy
+        }).ToList();
+
         return new
         {
             header = Header(doc, language, null, doc.Borrower?.Name, new { doc.Purpose, doc.BorrowDepartment, doc.BorrowerPhone, doc.DepartmentOwner, doc.DueDate }),
-            lines = doc.Lines.Select(x => new { item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, fromBin = x.FromBinLocation?.FullPath, targetBin = x.TargetBinLocation?.FullPath ?? x.TargetExternalLocation, returned = x.IsReturned, condition = x.ReturnCondition.HasValue ? LocalizationCatalog.EnumText(language, x.ReturnCondition.Value) : "", returnedAt = x.ReturnedAt, note = x.Note })
+            lines = doc.Lines.Select(x => new { item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, fromBin = x.FromBinLocation?.BinCode, targetBin = x.TargetBinLocation?.BinCode ?? x.TargetExternalLocation, returned = x.IsReturned, condition = x.IsReturned ? "Returned" : "LentOut", returnedAt = x.ReturnedAt, note = x.Note }),
+            history
         };
     }
+
+    // ─── Shared helpers ──────────────────────────────────────
 
     private object Header(ERP.Inventory.Domain.Common.DocumentBase doc, string language, string? warehouse, string? party, object? extra = null)
     {
@@ -212,7 +472,10 @@ public sealed class DocumentsController : Controller
     {
         var user = _currentUserService.GetCurrentUser();
         if (user.IsAdmin) return null;
-        return await _db.BinLocations.AsNoTracking().Where(x => user.WarehouseIds.Contains(x.WarehouseId)).Select(x => x.Id).ToArrayAsync(cancellationToken);
+        return await _db.BinLocations.AsNoTracking()
+            .Where(x => user.WarehouseIds.Contains(x.WarehouseId))
+            .Select(x => x.Id)
+            .ToArrayAsync(cancellationToken);
     }
 
     private string Language() => User.FindFirst("language")?.Value ?? "vi";

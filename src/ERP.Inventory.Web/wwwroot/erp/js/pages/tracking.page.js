@@ -52,27 +52,29 @@ function renderTrackingList(rows){
     <div class="form-section-title">${UI.t('Search results')}</div>
     <div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Item')}</th><th>${UI.t('Serial / Barcode')}</th><th>${UI.t('Status')}</th><th>${UI.t('Location')}</th><th></th></tr></thead>
       <tbody>${rows.map((r,i)=>`<tr><td class="px-3 fw-semibold">${UI.esc(r.itemCode)}<div class="small text-muted">${UI.esc(r.itemName)}</div></td><td>${UI.esc(r.serialNumber || r.barcode || '-')}</td><td>${UI.badge(r.status)}</td><td>${UI.esc(r.locationPath)}</td><td><button class="btn btn-light btn-sm btn-open-tracking-row" data-index="${i}"><i class="bi bi-eye"></i></button></td></tr>`).join('')}</tbody>
-    </table></div></div></div><div id="trackingDetail"></div>`);
+    </table></div></div></div>
+    <div id="trackingDetail"></div>`);
   $(document).off('click.trackingRow').on('click.trackingRow', '.btn-open-tracking-row', function(){ renderTrackingDetail(rows[$(this).data('index')]); });
 }
 
 async function renderTrackingDetail(item){
   const target = $('#trackingDetail').length ? $('#trackingDetail') : $('#trackingResult');
-  target.html(`<div class="row g-3 mt-2">
-    <div class="col-lg-4"><div class="card info-card"><div class="card-body"><h3>${UI.esc(item.itemCode)}</h3><p class="text-muted mb-2">${UI.esc(item.itemName)}</p><p class="mb-1">${UI.t('Serial')}: <b>${UI.esc(item.serialNumber || '-')}</b></p><p class="mb-0">${UI.t('Barcode')}: ${UI.esc(item.barcode || '-')}</p></div></div></div>
-    <div class="col-lg-4"><div class="card info-card"><div class="card-body">${UI.badge(item.status)}<p class="mt-3 mb-1">${UI.t('Holder')}: <b>${UI.esc(item.holderName)}</b></p><p class="mb-0">${UI.t('Reference')}: <b>${UI.esc(item.referenceDocumentNo || '-')}</b></p></div></div></div>
-    <div class="col-lg-4"><div class="card info-card"><div class="card-body"><h3>${UI.t('Current Location')}</h3><p>${UI.esc(item.locationPath)}</p><p class="small text-muted">${UI.t('Updated')}: ${UI.formatDate(item.updatedAt)} ${UI.t('by')} ${UI.esc(item.updatedBy)}</p>${renderQuickActions(item)}</div></div></div>
-  </div>
+    target.html(`<div class="card p-3 mt-2"><div class="row g-3">
+    <div class="form-title">${UI.t('Item Information')} ${item.serialNumber}</div>
+    <div class="col-lg-4 d-flex"><div class="card info-card w-100"><div class="card-body"><h3>${UI.esc(item.itemCode)}</h3><p class="text-muted mb-2">${UI.esc(item.itemName)}</p><p class="mb-1">${UI.t('Serial')}: <b>${UI.esc(item.serialNumber || '-')}</b></p><p class="mb-0">${UI.t('Barcode')}: ${UI.esc(item.barcode || '-')}</p></div></div></div>
+    <div class="col-lg-4 d-flex"><div class="card info-card w-100"><div class="card-body">${UI.badge(item.status)}<p class="mt-3 mb-1">${UI.t('Holder')}: <b>${UI.esc(item.holderName)}</b></p><p class="mb-0">${UI.t('Reference')}: <b>${UI.esc(item.referenceDocumentNo || '-')}</b></p></div></div></div>
+    <div class="col-lg-4 d-flex"><div class="card info-card w-100"><div class="card-body"><h3>${UI.t('Current Location')}</h3><p>${UI.esc(item.locationPath)}</p><p class="small text-muted">${UI.t('Updated')}: ${UI.formatDate(item.updatedAt)} ${UI.t('by')} ${UI.esc(item.updatedBy)}</p>${renderQuickActions(item)}</div></div></div>
+  </div></div>  
   <ul class="nav nav-tabs mt-3">
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#timelineTab">${UI.t('Timeline')}</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#documentsTab">${UI.t('Related Documents')}</button></li>
-    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stockTab">${UI.t('Stock Balance')}</button></li>
   </ul>
   <div class="tab-content card tab-card">
     <div class="tab-pane fade show active" id="timelineTab"><div id="timeline">${UI.loading()}</div></div>
     <div class="tab-pane fade p-4" id="documentsTab">${relatedDocumentsTable(item)}</div>
     <div class="tab-pane fade p-4" id="stockTab"><div class="audit-footer">${UI.t('Current state is calculated from CurrentItemLocation and StockBalance in SQL Server.')}</div></div>
   </div>`);
+    //<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stockTab">${UI.t('Stock Balance')}</button></li> // bo ton kho
   await renderTimeline(item.itemInstanceId);
 }
 
@@ -98,6 +100,19 @@ async function renderTimeline(itemInstanceId){
 }
 
 function relatedDocumentsTable(item){
-  return `<div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Reference')}</th><th>${UI.t('Current Status')}</th><th>${UI.t('Holder')}</th><th>${UI.t('Updated At')}</th></tr></thead>
-    <tbody><tr><td class="px-3">${UI.esc(item.referenceDocumentNo || '-')}</td><td>${UI.badge(item.status)}</td><td>${UI.esc(item.holderName)}</td><td>${UI.formatDate(item.updatedAt)}</td></tr></tbody></table></div>`;
+  return `<div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Reference')}</th><th>${UI.t('Current Status')}</th><th>${UI.t('Holder')}</th><th>${UI.t('Updated At')}</th><th></th></tr></thead>
+    <tbody><tr><td class="px-3">${UI.esc(item.referenceDocumentNo || '-')}</td><td>${UI.badge(item.status)}</td><td>${UI.esc(item.holderName)}</td><td>${UI.formatDate(item.updatedAt)}</td><td><button class="btn btn-light btn-sm btn-doc-detail" data-id="${item.referenceDocumentId}" data-type="${UI.esc(mapDocumentType(item.referenceDocumentType))}" title="${UI.t('View Detail')}"><i class="bi bi-eye"></i></button></td></tr></tbody></table></div>`;
+}
+
+function mapDocumentType(docType) {
+    const map = {
+        BorrowDocument: "borrow-lend",
+        InboundDocument: "inbound",
+        MoveDocument: "move",
+        InventoryCheckDocument: "inventory-check",
+        RepairDocument: "repair-send",
+        AdjustmentDocument: "adjustment"
+    };
+
+    return map[docType] || "";
 }

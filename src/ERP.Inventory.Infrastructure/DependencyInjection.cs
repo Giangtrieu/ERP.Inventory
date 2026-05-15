@@ -17,14 +17,29 @@ public static class DependencyInjection
 
         services.AddDbContext<InventoryDbContext>(options => options.UseSqlServer(connectionString));
 
+        // Core abstractions
+        services.AddSingleton<IDateTimeProvider, UtcDateTimeProvider>();
+        services.AddScoped<IUnitOfWork, EfUnitOfWork>();
+
+        // Business policies
         services.AddScoped<IInventoryStatePolicy, InventoryStatePolicy>();
         services.AddScoped<IDocumentNumberService, DocumentNumberService>();
+
+        // Tracking & Dashboard
         services.AddScoped<ITrackingService, TrackingService>();
-        services.AddScoped<IInboundService, InventoryOperationService>();
-        services.AddScoped<IInventoryOperationService, InventoryOperationService>();
-        services.AddScoped<IRepairService, InventoryOperationService>();
-        services.AddScoped<IBorrowService, InventoryOperationService>();
         services.AddScoped<IDashboardService, DashboardService>();
+
+        // Inventory operations — each service is now separate
+        services.AddScoped<IInboundService, InboundService>();
+        services.AddScoped<IInventoryOperationService, MoveLocationService>();
+        services.AddScoped<IRepairService, RepairServiceImpl>();
+        services.AddScoped<IBorrowService, BorrowServiceImpl>();
+        services.AddScoped<IQuantityInventoryService, QuantityInventoryService>();
+        services.AddScoped<InventoryCheckService>();
+        services.AddScoped<AdjustmentService>();
+        services.AddScoped<ReconciliationService>();
+
+        // Import / Export
         services.AddScoped<IImportService, ImportExportService>();
         services.AddScoped<IExportService, ImportExportService>();
 

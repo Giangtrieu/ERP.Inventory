@@ -6,31 +6,109 @@ let systemRoles = [];
 Router.register('warehouse-structure', async function(){
   $('#app').html(UI.pageHeader('Warehouse Structure','Home / Warehouse Structure','<button class="btn btn-primary" id="btnNewStructure"><i class="bi bi-plus-circle me-2"></i>' + UI.t('New Warehouse / Bin') + '</button>') +
     `<div class="card mb-3"><div class="card-body"><div class="form-section-title">${UI.t('Location Hierarchy')}</div><div class="structure-path"><span class="structure-node">${UI.t('Company')}</span><i class="bi bi-chevron-right text-muted"></i><span class="structure-node">${UI.t('Branch')}</span><i class="bi bi-chevron-right text-muted"></i><span class="structure-node">${UI.t('Warehouse')}</span><i class="bi bi-chevron-right text-muted"></i><span class="structure-node">${UI.t('Zone')}</span><i class="bi bi-chevron-right text-muted"></i><span class="structure-node">${UI.t('Rack')}</span><i class="bi bi-chevron-right text-muted"></i><span class="structure-node">${UI.t('Shelf')}</span><i class="bi bi-chevron-right text-muted"></i><span class="structure-node">${UI.t('BinLocation')}</span></div></div></div>
-    <div class="card"><div class="card-body"><div class="row g-3 mb-3"><div class="col-md-3">${UI.select('Warehouse','warehouseId', AppState.lookups.warehouses)}</div><div class="col-md-3">${UI.select('Status','isActive', statusOptions())}</div><div class="col-md-4">${UI.input('Bin code','text','','keyword')}</div><div class="col-md-2 d-flex align-items-end"><button class="btn btn-primary w-100" id="btnLoadStructure">${UI.t('Load')}</button></div></div><div id="structureSummary"></div><div id="structureTable">${UI.loading()}</div></div></div>`);
+    <div class="card"><div class="card-body"><div class="row g-3 mb-3"><div class="col-md-3">${UI.select('Warehouse', 'warehouseId', AppState.lookups.warehouses)}</div><div class="col-md-3">${UI.select('Status', 'isActive', statusOptions())}</div><div class="col-md-4">${UI.input('Bin code', 'text', '', 'keyword')}</div><div class="col-md-2 d-flex align-items-end"><label class="form-label w-100"><span class="fw-semibold small"></span><button class="btn btn-primary w-100" id="btnLoadStructure">${UI.t('Load')}</button></label></div></div><div id="structureSummary"></div><div id="structureTable">${UI.loading()}</div></div></div>`);
   $('#btnLoadStructure').on('click', loadWarehouseStructure);
   $('#btnNewStructure').on('click', () => openStructureForm());
-  $('#app select, #app input[name="keyword"]').on('change input', UI.debounce(loadWarehouseStructure, 250));
+  $('#app select, #app .cbo-value, #app input[name="keyword"]').on('change input', UI.debounce(() => loadWarehouseStructure(1), 250));
   await loadWarehouseStructure();
 });
 
-async function loadWarehouseStructure(){
-  structureRows = await UI.api('/Management/WarehouseStructure', { query: { warehouseId: $('#app [name="warehouseId"]').val() || null, isActive: boolFilter($('#app [name="isActive"]').val()), keyword: $('#app [name="keyword"]').val() || null } });
-  if(!structureRows.length){ $('#structureSummary').empty(); $('#structureTable').html(UI.empty('No data')); return; }
-  const summary = structureRows.reduce((acc, row) => {
-    acc[row.warehouse] = (acc[row.warehouse] || 0) + 1;
-    return acc;
-  }, {});
-  $('#structureSummary').html(`<div class="d-flex flex-wrap gap-2 mb-3">${Object.entries(summary).map(([warehouse, count]) => `<span class="badge text-bg-light border">${UI.esc(warehouse)}: ${UI.esc(count)} ${UI.t('bins')}</span>`).join('')}</div>`);
-  $('#structureTable').html(`<div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Warehouse')}</th><th>${UI.t('Zone')}</th><th>${UI.t('Rack')}</th><th>${UI.t('Shelf')}</th><th>${UI.t('Bin')}</th><th>${UI.t('Full Path')}</th><th>${UI.t('Status')}</th><th>${UI.t('Actions')}</th></tr></thead><tbody>${structureRows.map(r => `<tr><td class="px-3">${UI.esc(r.warehouse)}</td><td>${UI.esc(r.zone)}</td><td>${UI.esc(r.rack)}</td><td>${UI.esc(r.shelf)}</td><td class="fw-semibold">${UI.esc(r.bin)}</td><td>${UI.esc(r.fullPath)}</td><td><span class="badge ${r.isActive ? 'text-bg-success' : 'text-bg-secondary'}">${r.isActive ? UI.t('Active') : UI.t('Inactive')}</span></td><td>${rowActions('structure', r.id, r.isActive)}</td></tr>`).join('')}</tbody></table><div class="server-footer"><span>${UI.endpoint('WarehouseStructure')}</span><span>${structureRows.length} ${UI.t('rows')}</span></div></div>`);
+async function loadWarehouseStructure(page = 1, pageSize = AppState.pageSize || 25){
+    const query = {
+        page,
+        pageSize,
+        warehouseId:$('#app [name="warehouseId"]').val() || null,
+        isActive: boolFilter($('#app [name="isActive"]').val()),
+        keyword:$('#app [name="keyword"]').val() || null
+    };
+
+    $('#structureTable').html(UI.loading());
+    const result = await UI.api('/Management/WarehouseStructure',{ query });
+    const rows = result.data || [];
+    const total = result.total || 0;
+
+    structureRows = rows;
+    if (!structureRows.length) {
+        $('#structureSummary').empty();
+        $('#structureTable').html(UI.empty('No data'));
+        return;
+    }
+    const summary = structureRows.reduce((acc, row) => {acc[row.warehouse] =(acc[row.warehouse] || 0) + 1;return acc;}, {});
+
+    $('#structureSummary').html(`
+        <div class="d-flex flex-wrap gap-2 mb-3">
+            ${Object.entries(summary).map(([warehouse, count]) => `
+                <span class="badge text-bg-light border">
+                    ${UI.esc(warehouse)}:
+                    ${UI.esc(count)}
+                    ${UI.t('bins')}
+                </span>
+            `).join('')}
+        </div>`);
+
+    const totalPages = pageSize === 0 ? 1 : Math.ceil(total / pageSize);
+    const isAll = pageSize === 0;
+    const from = isAll? (total ? 1 : 0): (page - 1) * pageSize + 1;
+    const to = isAll? total: Math.min(page * pageSize, total);
+    const totalPageRows = (to - from) + 1;
+    const pagination = Pagination.render({
+        page,
+        pageSize,
+        total,
+        totalPages,
+        isAll,
+        selectId: 'structurePageSizeSelect',
+        onChange: 'loadWarehouseStructure'
+    });
+
+    $('#structureTable').html(`
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th class="px-3">${UI.t('Warehouse')} </th>
+                        <th>${UI.t('Zone')} </th>
+                        <th>${UI.t('Rack')}</th>
+                        <th>${UI.t('Shelf')}</th>
+                        <th>${UI.t('Bin')}</th>
+                        <th>${UI.t('Full Path')}</th>
+                        <th>${UI.t('Status')}</th>
+                        <th>${UI.t('Actions')} </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${structureRows.map(r => `
+                        <tr>
+                            <td class="px-3">${UI.esc(r.warehouse)}</td>
+                            <td>${UI.esc(r.zone)}</td>
+                            <td>${UI.esc(r.rack)}</td>
+                            <td>${UI.esc(r.shelf)}</td>
+                            <td class="fw-semibold">${UI.esc(r.bin)}</td>
+                            <td>${UI.esc(r.fullPath)}</td>
+                            <td><span class="badge ${r.isActive ? 'text-bg-success' : 'text-bg-secondary'}">${r.isActive ? UI.t('Active') : UI.t('Inactive')}</span></td>
+                            <td>${rowActions('structure',r.id, r.isActive)}
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+            <div class="server-footer">
+                <span>${UI.endpoint('WarehouseStructure')}: ${total} ${UI.t('rows')}</span><span>${UI.t('Page')} ${page} &middot; ${totalPageRows} ${UI.t('rows')}</span>
+            </div>
+        </div>
+        ${pagination}`);
+
+    Pagination.bindPageSize('structurePageSizeSelect',loadWarehouseStructure);
 }
+
 
 Router.register('master-data', async function(){
   $('#app').html(UI.pageHeader('Master Data','Home / Master Data','<button class="btn btn-primary" id="btnNewMaster"><i class="bi bi-plus-circle me-2"></i>' + UI.t('New Master Record') + '</button>') +
     `<div id="masterSummary" class="row g-3 mb-3">${UI.loading()}</div>
-    <div class="card"><div class="card-body"><div class="row g-3 mb-3"><div class="col-md-3">${UI.select('Entity','entity',[{id:'items',text:UI.t('Items')},{id:'categories',text:UI.t('Categories')},{id:'parties',text:UI.t('External Parties')}], 'items')}</div><div class="col-md-3">${UI.select('Status','isActive', statusOptions())}</div><div class="col-md-4">${UI.input('Keyword','text','','keyword')}</div><div class="col-md-2 d-flex align-items-end"><button class="btn btn-primary w-100" id="btnLoadMaster">${UI.t('Load')}</button></div></div><div id="masterTable">${UI.loading()}</div></div></div>`);
+    <div class="card"><div class="card-body"><div class="row g-3 mb-3"><div class="col-md-3">${UI.select('Entity', 'entity', [{ id: 'items', text: UI.t('Items') }, { id: 'categories', text: UI.t('Categories') }, { id: 'parties', text: UI.t('External Parties') }], 'items')}</div><div class="col-md-3">${UI.select('Status', 'isActive', statusOptions())}</div><div class="col-md-4">${UI.input('Keyword', 'text', '', 'keyword')}</div><div class="col-md-2 d-flex align-items-end"><label class="form-label w-100"><span class="fw-semibold small"></span><button class="btn btn-primary w-100" id="btnLoadMaster">${UI.t('Load')}</button></label></div></div><div id="masterTable">${UI.loading()}</div></div></div>`);
   $('#btnLoadMaster').on('click', loadMasterData);
   $('#btnNewMaster').on('click', () => openMasterForm());
-  $('#app select, #app input[name="keyword"]').on('change input', UI.debounce(loadMasterData, 250));
+  $('#app select, #app .cbo-value, #app input[name="keyword"]').on('change input', UI.debounce(() => loadMasterData(1), 250));
   await refreshMasterSummary();
   await loadMasterData();
 });
@@ -45,12 +123,79 @@ async function refreshMasterSummary(){
   ].map(c => `<div class="col-xl-3 col-md-6"><div class="card"><div class="card-body"><div class="text-muted small">${UI.esc(UI.t(c[0]))}</div><div class="display-6 fw-bold">${UI.esc(c[1])}</div><div class="small text-muted">${UI.esc(c[2])}</div></div></div></div>`).join(''));
 }
 
-async function loadMasterData(){
-  const entity = $('#app [name="entity"]').val() || 'items';
-  $('#app [name="entity"]').val(entity);
-  masterRows = await UI.api('/Management/MasterDataList', { query: { entity, isActive: boolFilter($('#app [name="isActive"]').val()), keyword: $('#app [name="keyword"]').val() || null } });
-  if(!masterRows.length){ $('#masterTable').html(UI.empty('No data')); return; }
-  $('#masterTable').html(`<div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Code')}</th><th>${UI.t('Name')}</th><th>${UI.t('Type')}</th><th>${UI.t('Serial Tracking')}</th><th>${UI.t('Language Coverage')}</th><th>${UI.t('Status')}</th><th>${UI.t('Actions')}</th></tr></thead><tbody>${masterRows.map(r => `<tr><td class="px-3 fw-semibold">${UI.esc(r.code)}</td><td>${UI.esc(r.name)}</td><td>${UI.esc(displayMasterType(r))}</td><td>${UI.esc(r.serialTracking === 'Yes' ? UI.t('Yes') : r.serialTracking === 'No' ? UI.t('No') : r.serialTracking)}</td><td>${UI.esc(r.languageCoverage || '-')}</td><td><span class="badge ${r.isActive ? 'text-bg-success' : 'text-bg-secondary'}">${UI.esc(UI.t(r.status))}</span></td><td>${rowActions('master', r.id, r.isActive)}</td></tr>`).join('')}</tbody></table><div class="server-footer"><span>${UI.endpoint('MasterDataList')}</span><span>${masterRows.length} ${UI.t('rows')}</span></div></div>`);
+async function loadMasterData(page = 1, pageSize = AppState.pageSize || 25) {
+
+    const entity = $('#app [name="entity"]').val() || 'items';
+    const isActiveValue = $('#app [name="isActive"]').val();
+
+    const query = {
+        entity,
+        page,
+        pageSize,
+        isActive:
+        isActiveValue === ''? null: isActiveValue === 'true',
+        keyword: $('#app [name="keyword"]').val()?.trim() || null
+    };
+
+    $('#masterTable').html(UI.loading());
+
+    const result = await UI.api('/Management/MasterDataList',{ query });
+
+    const rows = result.data || [];
+    const total = result.total || 0;
+
+    masterRows = rows;
+    if (!masterRows.length) { $('#masterTable').html(UI.empty('No data'));return;}
+
+    const totalPages = pageSize === 0 ? 1: Math.ceil(total / pageSize);
+    const isAll = pageSize === 0;
+    const from = isAll? (total ? 1 : 0): (page - 1) * pageSize + 1;
+    const to = isAll? total: Math.min(page * pageSize, total);
+    const totalPageRows = (to - from) + 1;
+    const pagination = Pagination.render({
+        page,
+        pageSize,
+        total,
+        totalPages,
+        isAll,
+        selectId: 'masterPageSizeSelect',
+        onChange: 'loadMasterData'
+    });
+
+    $('#masterTable').html(`
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th class="px-3">${UI.t('Code')} </th>
+                        <th>${UI.t('Name')}</th>
+                        <th>${UI.t('Type')} </th>
+                        <th>${UI.t('Serial Tracking')}</th>
+                        <th>${UI.t('Language Coverage')}</th>
+                        <th>${UI.t('Status')}</th>
+                        <th>${UI.t('Actions')}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${masterRows.map(r => `
+                        <tr>
+                            <td class="px-3 fw-semibold">${UI.esc(r.code)} </td>
+                            <td>${UI.esc(r.name)}</td>
+                            <td>${UI.esc(displayMasterType(r))}</td>
+                            <td>${UI.esc(r.serialTracking === 'Yes' ? UI.t('Yes'): r.serialTracking === 'No'  ? UI.t('No') : r.serialTracking)} </td>
+                            <td>${UI.esc(r.languageCoverage || '-')}</td>
+                            <td><span class="badge ${r.isActive ? 'text-bg-success': 'text-bg-secondary'}"> ${UI.esc(UI.t(r.status))}</span></td>
+                            <td>${rowActions('master', r.id,r.isActive)}</td>
+                            </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+            <div class="server-footer">
+                <span>${UI.endpoint('MasterDataList')}: ${total} ${UI.t('rows')}</span><span>${UI.t('Page')} ${page} &middot; ${totalPageRows} ${UI.t('rows')}</span>
+            </div>
+        </div>
+        ${pagination}`);
+    Pagination.bindPageSize('masterPageSizeSelect',loadMasterData);
 }
 
 function displayMasterType(row){
@@ -64,12 +209,12 @@ async function openMasterForm(id){
   const data = id ? await UI.api(`/Management/${endpoint}/${id}`) : {};
   $('#drawer .fw-bold').first().text(UI.t(id ? 'Edit' : 'New Master Record'));
   if(entity === 'categories'){
-    $('#drawerBody').html(`${UI.input('Category Code','text',data.categoryCode || '','categoryCode')}${UI.input('Name','text',data.name || '','name')}${activeCheck(data.isActive !== false)}${saveButton('btnSaveCategory', id)}`);
+      $('#drawerBody').html(`<div class="row g-2">${UI.inputform('Category Code', 'text', data.categoryCode || '', 'categoryCode')}${UI.inputform('Name','text',data.name || '','name') }</div>${activeCheck(data.isActive !== false)}${saveButton('btnSaveCategory', id)}`);
   } else if(entity === 'parties'){
-    $('#drawerBody').html(`${UI.input('Party Code','text',data.partyCode || '','partyCode')}${UI.input('Name','text',data.name || '','name')}${UI.select('Type','partyType', AppState.lookups.externalPartyTypes, data.partyType || '')}${UI.input('Contact Name','text',data.contactName || '','contactName')}${UI.input('Phone','text',data.phone || '','phone')}${UI.input('Email','email',data.email || '','email')}${activeCheck(data.isActive !== false)}${saveButton('btnSaveParty', id)}`);
+      $('#drawerBody').html(`<div class="row g-2">${UI.inputform('Party Code', 'text', data.partyCode || '', 'partyCode')}${UI.inputform('Name', 'text', data.name || '', 'name')}</div>${UI.select('Type', 'partyType', AppState.lookups.externalPartyTypes, data.partyType || '')}<div class="row g-2">${UI.inputform('Contact Name', 'text', data.contactName || '', 'contactName')}${UI.inputform('Phone', 'text', data.phone || '', 'phone')}</div>${UI.inputform('Email','email',data.email || '','email')}${activeCheck(data.isActive !== false)}${saveButton('btnSaveParty', id)}`);
   } else {
-    $('#drawerBody').html(`${UI.input('Item Code','text',data.itemCode || '','itemCode')}${UI.input('Default Name','text',data.defaultName || '','defaultName')}${UI.select('Category','categoryId', AppState.lookups.categories, data.categoryId || '')}${UI.input('Unit Code','text',data.unitCode || 'PCS','unitCode')}${UI.input('Unit Name','text',data.unitName || '','unitName')}<label class="form-check my-2"><input class="form-check-input" type="checkbox" name="isSerialManaged" ${data.isSerialManaged ? 'checked' : ''}> ${UI.t('Serial managed')}</label>${UI.input('Name VI','text',data.nameVi || '','nameVi')}${UI.input('Name EN','text',data.nameEn || '','nameEn')}${UI.input('Name ZH','text',data.nameZh || '','nameZh')}${activeCheck(data.isActive !== false)}${saveButton('btnSaveItem', id)}`);
-  }
+      $('#drawerBody').html(`<div class="row g-2">${UI.inputform('Item Code', 'text', data.itemCode || '', 'itemCode')}${UI.inputform('Default Name', 'text', data.defaultName || '', 'defaultName')}</div>${UI.select('Category', 'categoryId', AppState.lookups.categories, data.categoryId || '')}<div class="row g-2">${UI.inputform('Unit Code', 'text', data.unitCode || 'PCS', 'unitCode')}${UI.inputform('Unit Name','text',data.unitName || '','unitName')}<div><label class="form-check my-2"><input class="form-check-input" type="checkbox" name="isSerialManaged" ${data.isSerialManaged ? 'checked' : ''}> ${UI.t('Serial managed')}</label>${UI.input('Name VI','text',data.nameVi || '','nameVi')}${UI.input('Name EN','text',data.nameEn || '','nameEn')}${UI.input('Name ZH','text',data.nameZh || '','nameZh')}${activeCheck(data.isActive !== false)}${saveButton('btnSaveItem', id)}`);
+  } 
   $('#drawer').addClass('open');
 }
 
@@ -77,29 +222,33 @@ async function openStructureForm(id){
   const data = id ? await UI.api(`/Management/WarehouseStructure/${id}`) : {};
   $('#drawer .fw-bold').first().text(UI.t(id ? 'Edit' : 'New Warehouse / Bin'));
   const hasWarehouses = (AppState.lookups.warehouses || []).length > 0;
-  const mode = data.warehouseId || (!id && hasWarehouses) ? 'existing' : 'new';
-  $('#drawerBody').html(`
-    ${UI.select('Structure Mode','structureMode', structureModeOptions(), mode)}
-    <div class="structure-mode-existing">
-      ${UI.select('Existing Warehouse','warehouseId', AppState.lookups.warehouses, data.warehouseId || $('#app [name="warehouseId"]').val() || '')}
-      <div class="small text-muted mb-2">${UI.t('Warehouse company, branch and code are inherited from the selected warehouse.')}</div>
+    const mode = data.warehouseId || (!id && hasWarehouses) ? 'existing' : 'new';
+    //<div class="small text-muted mb-6">${UI.t('Warehouse company, branch and code are inherited from the selected warehouse.')}</div>
+    $('#drawerBody').html(`
+   <div class="row g-2">
+     <div class="col-md-5">${UI.selectform('Structure Mode','structureMode', structureModeOptions(), mode)}</div>
+    <div class="structure-mode-existing col-md-7">
+      ${UI.selectform('Existing Warehouse','warehouseId', AppState.lookups.warehouses, data.warehouseId || $('#app [name="warehouseId"]').val() || '')}
+    </div>
     </div>
     <div class="structure-mode-new">
-      ${UI.input('Company Code','text',data.companyCode || 'COMP','companyCode')}
-      ${UI.input('Company Name','text',data.companyName || 'Company','companyName')}
-      ${UI.input('Branch Code','text',data.branchCode || 'HN','branchCode')}
-      ${UI.input('Branch Name','text',data.branchName || 'Branch','branchName')}
-      ${UI.input('Warehouse Code','text',data.warehouseCode || '','warehouseCode')}
-      ${UI.input('Warehouse Name','text',data.warehouseName || '','warehouseName')}
+      <div class="row g-2">
+          <div class="col-md-5">${UI.input('Company Code', 'text', data.companyCode || UI.t('Default CompanyCode'), 'companyCode')}</div>
+          <div class="col-md-7">${UI.input('Company Name', 'text', data.companyName || UI.t('Default CompanyName'), 'companyName')}</div>
+          <div class="col-md-5">${UI.input('Branch Code', 'text', data.branchCode || UI.t('Default BranchCode'), 'branchCode')}</div>
+          <div class="col-md-7">${UI.input('Branch Name', 'text', data.branchName || UI.t('Default BranchName'), 'branchName')}</div>
+          <div class="col-md-5"> ${UI.input('Warehouse Code', 'text', data.warehouseCode || '', 'warehouseCode')}</div>
+          <div class="col-md-7">${UI.input('Warehouse Name', 'text', data.warehouseName || '', 'warehouseName')}</div>
+      </div>
     </div>
     <div class="row g-2">
-      <div class="col-md-6">${UI.input('Zone Code','text',data.zoneCode || '','zoneCode')}</div>
-      <div class="col-md-6">${UI.input('Zone Name','text',data.zoneName || '','zoneName')}</div>
-      <div class="col-md-6">${UI.input('Rack Code','text',data.rackCode || '','rackCode')}</div>
-      <div class="col-md-6">${UI.input('Rack Name','text',data.rackName || '','rackName')}</div>
-      <div class="col-md-6">${UI.input('Shelf Code','text',data.shelfCode || '','shelfCode')}</div>
-      <div class="col-md-6">${UI.input('Shelf Name','text',data.shelfName || '','shelfName')}</div>
-      <div class="col-md-12">${UI.input('Bin Code','text',data.binCode || '','binCode')}</div>
+      <div class="col-md-5">${UI.input('Zone Code','text',data.zoneCode || '','zoneCode')}</div>
+      <div class="col-md-7">${UI.input('Zone Name','text',data.zoneName || '','zoneName')}</div>
+      <div class="col-md-5">${UI.input('Rack Code','text',data.rackCode || '','rackCode')}</div>
+      <div class="col-md-7">${UI.input('Rack Name','text',data.rackName || '','rackName')}</div>
+      <div class="col-md-5">${UI.input('Shelf Code','text',data.shelfCode || '','shelfCode')}</div>
+      <div class="col-md-7">${UI.input('Shelf Name','text',data.shelfName || '','shelfName')}</div>
+      <div class="col-md-5">${UI.input('Bin Code','text',data.binCode || '','binCode')}</div>
     </div>
     ${activeCheck(data.isActive !== false)}
     ${saveButton('btnSaveStructure', id)}`);
@@ -124,21 +273,53 @@ function toggleStructureMode(){
 $(document).on('change', '#drawerBody [name="structureMode"]', toggleStructureMode);
 
 function wireStructureBinCodeAuto(existingCode){
-  const bin = $('#drawerBody [name="binCode"]');
+    const bin = selectObjectByName('binCode');
+    const rackName = selectObjectByName('rackName'); 
+    const shelfName = selectObjectByName('shelfName'); 
+    const zoneName = selectObjectByName('zoneName'); 
+    const warehouseName = selectObjectByName('warehouseName'); 
+
   let lastGenerated = existingCode || '';
   let manual = !!existingCode;
 
   const selectedWarehouseCode = () => {
-    const mode = $('#drawerBody [name="structureMode"]').val() || 'existing';
-    if(mode === 'new') return $('#drawerBody [name="warehouseCode"]').val() || '';
+      const mode = selectObjectByName('structureMode').val() || 'existing';
+      if (mode === 'new') return selectObjectByName('warehouseCode').val() || '';
     const option = $('#drawerBody [name="warehouseId"] option:selected');
     return (option.attr('data-code') || option.text().split(' - ')[0] || '').trim();
-  };
+    };
+
+    const cleanCode = value =>
+        String(value || '').trim().replace(/\s+/g, '').toUpperCase();
+
+    const forceUpper = function () {
+        const val = cleanCode($(this).val());
+        $(this).val(val);
+    };
+
+    const updateNames = () => {
+        const rackCode = cleanCode(selectObjectByName('rackCode').val());
+        const shelfCode = cleanCode(selectObjectByName('shelfCode').val());
+        const zoneCode = cleanCode(selectObjectByName('zoneCode').val());
+        const mode = $('#drawerBody [name="structureMode"]').val() || 'existing';
+        if (mode === 'new') {
+            selectObjectByName('warehouseCode').off('input.uppercase').on('input.uppercase', forceUpper);
+            const warehouseCode = selectObjectByName('warehouseCode').val();
+            warehouseName.val(warehouseCode);
+        }
+
+
+        selectObjectByName('rackCode').add(selectObjectByName('shelfCode')).add(selectObjectByName('zoneCode')).off('input.uppercase').on('input.uppercase', forceUpper);
+
+        zoneName.val(zoneCode || '');
+        rackName.val(rackCode ? `Rack ${rackCode}` : '');
+        shelfName.val(shelfCode ? `Shelf ${shelfCode}` : '');
+    };
 
   const generate = () => {
     const warehouseCode = selectedWarehouseCode();
-    const rackCode = $('#drawerBody [name="rackCode"]').val() || '';
-    const shelfCode = $('#drawerBody [name="shelfCode"]').val() || '';
+    const rackCode = selectObjectByName('rackCode').val() || '';
+    const shelfCode = selectObjectByName('shelfCode').val() || '';
     return [warehouseCode, rackCode, shelfCode]
       .map(x => String(x || '').trim().replace(/\s+/g, '').toUpperCase())
       .filter(Boolean)
@@ -146,6 +327,7 @@ function wireStructureBinCodeAuto(existingCode){
   };
 
   const update = () => {
+    updateNames();
     const next = generate();
     const current = bin.val() || '';
     if(!next) return;
@@ -154,15 +336,19 @@ function wireStructureBinCodeAuto(existingCode){
       lastGenerated = next;
       manual = false;
     }
-  };
+    };
 
   bin.off('input.binAuto').on('input.binAuto', function(){
     manual = String($(this).val() || '') !== lastGenerated;
   });
-  $('#drawerBody [name="structureMode"], #drawerBody [name="warehouseId"], #drawerBody [name="warehouseCode"], #drawerBody [name="rackCode"], #drawerBody [name="shelfCode"]')
+    $('#drawerBody [name="structureMode"], #drawerBody [name="warehouseId"], #drawerBody [name="warehouseCode"], #drawerBody [name="zoneCode"], #drawerBody [name="rackCode"], #drawerBody [name="shelfCode"]')
     .off('change.binAuto input.binAuto')
     .on('change.binAuto input.binAuto', update);
   update();
+}
+
+function selectObjectByName(name) {
+    return $(`#drawerBody [name="${name}"]`);
 }
 
 $(document).on('click', '#btnSaveCategory', async function(){
@@ -242,10 +428,10 @@ Router.register('system', async function(){
   try {
     const s = await UI.api('/Management/SystemSummary');
     $('#systemSummary').html([
-      ['Users', s.users, 'SystemUsers'],
-      ['Roles', s.roles, 'SystemRoles'],
-      ['Warehouse Permissions', s.warehousePermissions, 'UserWarehousePermissions'],
-      ['Unread Notifications', s.unreadNotifications, 'Notifications']
+        ['Users', s.users, UI.t('SystemUsers')],
+        ['Roles', s.roles, UI.t('SystemRoles')],
+        ['Warehouse Permissions', s.warehousePermissions, UI.t('UserWarehousePermissions')],
+        ['Unread Notifications', s.unreadNotifications, UI.t('Notifications')]
     ].map(c => `<div class="col-xl-3 col-md-6"><div class="card"><div class="card-body"><div class="text-muted small">${UI.esc(UI.t(c[2]))}</div><div class="display-6 fw-bold">${UI.esc(c[1])}</div><div class="small text-muted">${UI.esc(UI.t(c[0]))}</div></div></div></div>`).join(''));
     systemRoles = await UI.api('/Management/Roles');
     await loadUsers();
@@ -255,13 +441,13 @@ Router.register('system', async function(){
   }
   $('#btnNewUser').on('click', () => openUserForm());
   $('#btnReloadUsers').on('click', loadUsers);
-  await loadAuditLog('#systemAudit');
+  await loadAuditLog();
 });
 
 async function loadUsers(){
   systemUsers = await UI.api('/Management/Users');
   if(!systemUsers.length){ $('#systemUsers').html(UI.empty('No data')); return; }
-  $('#systemUsers').html(`<div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('User Name')}</th><th>${UI.t('Display Name')}</th><th>Email</th><th>${UI.t('Roles')}</th><th>${UI.t('Assigned Warehouses')}</th><th>${UI.t('Status')}</th><th>${UI.t('Actions')}</th></tr></thead><tbody>${systemUsers.map(u => `<tr><td class="px-3 fw-semibold">${UI.esc(u.userName)}</td><td>${UI.esc(u.displayName)}</td><td>${UI.esc(u.email || '-')}</td><td>${UI.esc((u.roles || []).join(', '))}</td><td>${UI.esc((u.warehouses || []).join(', ') || '-')}</td><td><span class="badge ${u.isActive ? 'text-bg-success' : 'text-bg-secondary'}">${u.isActive ? UI.t('Active') : UI.t('Inactive')}</span></td><td>${rowActions('user', u.id, u.isActive)}</td></tr>`).join('')}</tbody></table></div>`);
+  $('#systemUsers').html(`<div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('User Name')}</th><th>${UI.t('Display Name')}</th><th>Email</th><th>${UI.t('Roles')}</th><th>${UI.t('Assigned Warehouses')}</th><th>${UI.t('Status')}</th><th>${UI.t('Actions')}</th></tr></thead><tbody>${systemUsers.map(u => `<tr><td class="px-3 fw-semibold">${UI.esc(u.userName)}</td><td>${UI.esc(u.displayName)}</td><td>${UI.esc(u.email || '-')}</td><td>${UI.esc(UI.t((u.roles || []).join(', ')))}</td><td>${UI.esc((u.warehouses || []).join(', ') || '-')}</td><td><span class="badge ${u.isActive ? 'text-bg-success' : 'text-bg-secondary'}">${u.isActive ? UI.t('Active') : UI.t('Inactive')}</span></td><td>${rowActions('user', u.id, u.isActive)}</td></tr>`).join('')}</tbody></table></div>`);
 }
 
 async function openUserForm(id){
@@ -305,11 +491,67 @@ $(document).on('click', '.btn-delete-user', function(){
   });
 });
 
-async function loadAuditLog(target){
-  const result = await UI.api('/Management/AuditLogs', { query: { page: 1, pageSize: 25 } });
-  const rows = result.items || [];
-  if(!rows.length){ $(target).html(UI.empty('No data')); return; }
-  $(target).html(`<div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Time')}</th><th>${UI.t('User')}</th><th>${UI.t('Action')}</th><th>${UI.t('Entity')}</th><th>${UI.t('Reference')}</th><th>${UI.t('Result')}</th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3">${UI.formatDate(r.createdAt)}</td><td>${UI.esc(r.userName)}</td><td>${UI.esc(UI.auditAction(r.action))}</td><td>${UI.esc(UI.auditEntity(r.entityName))}</td><td>${UI.esc(r.referenceNo || '-')}</td><td><span class="badge text-bg-success">${UI.esc(UI.msg(r.result))}</span></td></tr>`).join('')}</tbody></table><div class="server-footer"><span>${UI.endpoint('AuditLogs')}</span><span>${result.totalCount} ${UI.t('rows')}</span></div></div>`);
+async function loadAuditLog( page = 1, pageSize = AppState.pageSize || 25) {
+    const result = await UI.api('/Management/AuditLogs', { query: { page: page, pageSize: pageSize } });
+    const rows = result.items || [];
+    const total = result.totalCount || 0;
+    if (!rows.length) {$('#systemAudit').html(UI.empty('No data')); return; }
+
+    const totalPages = pageSize === 0 ? 1 : Math.ceil(total / pageSize);
+    const isAll = pageSize === 0;
+    const from = isAll? (total ? 1 : 0) : (page - 1) * pageSize + 1;
+    const to = isAll ? total : Math.min(page * pageSize, total);
+    const totalPageRows = (to - from) + 1;
+    const pagination = Pagination.render({
+        page,
+        pageSize,
+        total,
+        totalPages,
+        isAll,
+        selectId: 'auditPageSizeSelect',
+        onChange: 'loadAuditLog'
+    });
+
+    $('#systemAudit').html(`
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th class="px-3">${UI.t('Time')}</th>
+                        <th>${UI.t('User')}</th>
+                        <th>${UI.t('Action')}</th>
+                        <th>${UI.t('Entity')}</th>
+                        <th>${UI.t('Reference')}</th>
+                        <th>${UI.t('Result')}</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    ${rows.map(r => `
+                        <tr>
+                            <td class="px-3">${UI.formatDate(r.createdAt)}</td>
+                            <td>${UI.esc(r.userName)}</td>
+                            <td>${UI.esc(UI.auditAction(r.action))}</td>
+                            <td>${UI.esc(UI.auditEntity(r.entityName))}</td>
+                            <td>${UI.esc(r.referenceNo || '-')}</td>
+                            <td>
+                                <span class="badge text-bg-success">
+                                    ${UI.esc(UI.msg(r.result))}
+                                </span>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+
+            <div class="server-footer">
+                <span>${UI.endpoint('AuditLogs')}: ${total} ${UI.t('rows')}</span>
+                <span>${UI.t('Page')} ${page} &middot; ${totalPageRows} ${UI.t('rows')}</span>
+            </div>
+        </div>
+        ${pagination}`);
+
+    Pagination.bindPageSize('auditPageSizeSelect',(p, s) => loadAuditLog( p, s));
 }
 
 function statusOptions(){
@@ -336,7 +578,7 @@ function activeCheck(active){
 }
 
 function saveButton(id, rowId){
-  return `<button class="btn btn-primary w-100 mt-2" id="${id}" data-id="${UI.esc(rowId || '')}">${UI.t('Save')}</button>`;
+    return `<div class="col-md-12 d-flex justify-content-center"><button class="btn btn-primary w-25 mt-2" id="${id}" data-id="${UI.esc(rowId || '')}">${UI.t('Save')}</button></div>`;
 }
 
 async function afterSave(result, route){
@@ -369,7 +611,7 @@ async function afterStructureSave(result){
 
 function checkboxList(name, options, selected){
   const values = (selected || []).map(String);
-  return `<div class="border rounded p-2" style="max-height: 180px; overflow:auto">${(options || []).map(x => `<label class="form-check"><input class="form-check-input" type="checkbox" name="${name}" value="${UI.esc(x.id)}" ${values.includes(String(x.id)) ? 'checked' : ''}> ${UI.esc(x.text || x.name || x.id)}</label>`).join('')}</div>`;
+  return `<div class="border rounded p-2" style="max-height: 180px; overflow:auto">${(options || []).map(x => `<label class="form-check"><input class="form-check-input" type="checkbox" name="${name}" value="${UI.esc(x.id)}" ${values.includes(String(x.id)) ? 'checked' : ''}> ${UI.esc(UI.t(x.text || x.name || x.id))}</label>`).join('')}</div>`;
 }
 
 function checkedValues(name){

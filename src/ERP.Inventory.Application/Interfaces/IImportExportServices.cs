@@ -18,6 +18,17 @@ public interface IExportService
     Task<byte[]> ExportInventoryAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default);
     Task<byte[]> ExportHistoryAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default);
     Task<byte[]> ExportAuditAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default);
+    // Phase 6 — new exports
+    Task<byte[]> ExportQuantityBalanceAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default);
+    Task<byte[]> ExportInboundDocumentsAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default);
+    Task<byte[]> ExportBorrowDocumentsAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default);
+    Task<byte[]> ExportRepairDocumentsAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default);
+    Task<byte[]> ExportItemMasterAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default);
+    Task<byte[]> ExportWarehouseStructureAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default);
+    Task<byte[]> ExportQuantityTransactionsAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default);
+    Task<byte[]> ExportMoveDocumentsAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default);
+    Task<byte[]> ExportAdjustmentDocumentsAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default);
+    Task<byte[]> ExportInventoryCheckDocumentsAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default);
 }
 
 public interface ICurrentUserService

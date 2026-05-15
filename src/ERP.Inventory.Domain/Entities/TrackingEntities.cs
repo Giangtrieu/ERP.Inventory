@@ -18,7 +18,7 @@ public class CurrentItemLocation : AuditableEntity
     public string? ReferenceDocumentType { get; set; }
     public int? ReferenceDocumentId { get; set; }
     public string? ReferenceDocumentNo { get; set; }
-    public DateTime UpdatedLocationAt { get; set; } = DateTime.Now;
+    public DateTime UpdatedLocationAt { get; set; } = DateTime.UtcNow;
     public string UpdatedLocationBy { get; set; } = string.Empty;
 }
 
@@ -40,6 +40,6 @@ public class ItemMovementHistory
     public int DocumentId { get; set; }
     public string DocumentNo { get; set; } = string.Empty;
     public string? Note { get; set; }
-    public DateTime PerformedAt { get; set; } = DateTime.Now;
+    public DateTime PerformedAt { get; set; } = DateTime.UtcNow;
     public string PerformedBy { get; set; } = string.Empty;
 }

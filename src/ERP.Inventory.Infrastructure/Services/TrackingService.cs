@@ -36,9 +36,9 @@ public sealed class TrackingService : ITrackingService
                 x.ItemInstance != null &&
                 x.ItemInstance.Item != null &&
                 (x.ItemInstance.Item.ItemCode.Contains(normalized) ||
-                 (x.ItemInstance.SerialNumber != null && x.ItemInstance.SerialNumber.Contains(normalized)) ||
-                 (x.ItemInstance.Barcode != null && x.ItemInstance.Barcode.Contains(normalized)) ||
-                 x.ItemInstance.Item.DefaultName.Contains(normalized)))
+                 (x.ItemInstance.SerialNumber != null && x.ItemInstance.SerialNumber.Contains(normalized)))) //||
+                 //(x.ItemInstance.Barcode != null && x.ItemInstance.Barcode.Contains(normalized)) ||
+                 //x.ItemInstance.Item.DefaultName.Contains(normalized)))
             .Take(25)
             .ToListAsync(cancellationToken);
 
@@ -51,7 +51,7 @@ public sealed class TrackingService : ITrackingService
                 {
                     ItemInstanceId = x.ItemInstanceId,
                     ItemCode = x.ItemInstance.Item!.ItemCode,
-                    ItemName = GetItemName(x.ItemInstance.Item, user.LanguageCode),
+                    //ItemName = GetItemName(x.ItemInstance.Item, user.LanguageCode),
                     SerialNumber = x.ItemInstance.SerialNumber,
                     Barcode = x.ItemInstance.Barcode,
                     Status = status,
@@ -60,9 +60,11 @@ public sealed class TrackingService : ITrackingService
                     ReferenceDocumentNo = x.ReferenceDocumentNo,
                     UpdatedAt = x.UpdatedLocationAt,
                     UpdatedBy = x.UpdatedLocationBy,
-                    CanMove = status == ItemStatus.InStock,
-                    CanSendRepair = status is ItemStatus.InStock or ItemStatus.Damaged,
-                    CanLend = status == ItemStatus.InStock
+                    CanMove = status is ItemStatus.Normal or ItemStatus.Damaged or ItemStatus.Scrapped or ItemStatus.InStock,
+                    CanSendRepair = status is ItemStatus.Normal or ItemStatus.InStock or ItemStatus.Damaged,
+                    CanLend = status is ItemStatus.Normal or ItemStatus.InStock,
+                    ReferenceDocumentId = x.ReferenceDocumentId,
+                    ReferenceDocumentType = x.ReferenceDocumentType,
                 };
             })
             .ToArray();
@@ -115,7 +117,7 @@ public sealed class TrackingService : ITrackingService
     public async Task<ServiceResult<PagedResult<InventoryListRowDto>>> GetInventoryListAsync(string? keyword, int? warehouseId, int? categoryId, string? status, int page, int pageSize, CurrentUserContext user, CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
-        pageSize = Math.Clamp(pageSize, 1, 100);
+        if (!(pageSize == 0)) pageSize = Math.Clamp(pageSize, 1, 500);
 
         if (warehouseId.HasValue && !user.CanAccessWarehouse(warehouseId.Value))
         {
@@ -136,9 +138,14 @@ public sealed class TrackingService : ITrackingService
             .Include(x => x.ExternalParty)
             .AsQueryable();
 
+        // ── Warehouse scope (in SQL) ────────────────────────────────────────────
         if (warehouseId.HasValue)
         {
             query = query.Where(x => x.WarehouseId == warehouseId.Value);
+        }
+        else if (!user.IsAdmin)
+        {
+            query = query.Where(x => x.WarehouseId == null || user.WarehouseIds.Contains(x.WarehouseId.Value));
         }
 
         if (categoryId.HasValue)
@@ -146,10 +153,20 @@ public sealed class TrackingService : ITrackingService
             query = query.Where(x => x.ItemInstance != null && x.ItemInstance.Item != null && x.ItemInstance.Item.CategoryId == categoryId.Value);
         }
 
+        // ── Status filter ──────────────────────────────────────────────────────
         if (parsedStatus.HasValue)
         {
-            query = query.Where(x => x.ItemInstance != null && x.ItemInstance.Status == parsedStatus.Value);
+            if (parsedStatus == ItemStatus.InStock)
+                // "InStock" group filter: Normal + Damaged + Scrapped
+                query = query.Where(x => x.ItemInstance != null &&
+                    (x.ItemInstance.Status == ItemStatus.Normal ||
+                     x.ItemInstance.Status == ItemStatus.InStock ||
+                     x.ItemInstance.Status == ItemStatus.Damaged ||
+                     x.ItemInstance.Status == ItemStatus.Scrapped));
+            else
+                query = query.Where(x => x.ItemInstance != null && x.ItemInstance.Status == parsedStatus.Value);
         }
+
 
         if (!string.IsNullOrWhiteSpace(keyword))
         {
@@ -161,13 +178,10 @@ public sealed class TrackingService : ITrackingService
                  (x.ItemInstance.Barcode != null && x.ItemInstance.Barcode.Contains(key))));
         }
 
-        if (!user.IsAdmin)
-        {
-            query = query.Where(x => x.WarehouseId == null || user.WarehouseIds.Contains(x.WarehouseId.Value));
-        }
-
         var total = await query.CountAsync(cancellationToken);
-        var locations = await query.OrderBy(x => x.ItemInstance!.Item!.ItemCode)
+        if (pageSize == 0) pageSize = total == 0 ? 1 : total;
+        var locations = await query.AsSplitQuery()
+            .OrderBy(x => x.ItemInstance!.Item!.ItemCode)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
@@ -194,6 +208,115 @@ public sealed class TrackingService : ITrackingService
             PageSize = pageSize,
             TotalCount = total
         });
+    }
+
+    public async Task<ServiceResult<PagedResult<InventoryListRowDto>>> GetListInventoryAsync(string? keyword, int? warehouseId, int? itemId, string? status, int page, int pageSize, CurrentUserContext user, CancellationToken cancellationToken = default)
+    {
+        page = Math.Max(1, page);
+
+        if (pageSize != 0)
+            pageSize = Math.Clamp(pageSize, 1, 500);
+
+        if (warehouseId.HasValue && !user.CanAccessWarehouse(warehouseId.Value))
+        {
+            return ServiceResult<PagedResult<InventoryListRowDto>>
+                .Fail("Permission denied for this warehouse.");
+        }
+
+        ItemStatus? parsedStatus = null;
+
+        if (!string.IsNullOrWhiteSpace(status) &&
+            Enum.TryParse<ItemStatus>(status, true, out var statusValue))
+        {
+            parsedStatus = statusValue;
+        }
+
+        var query = _db.CurrentItemLocations
+            .AsNoTracking()
+            .AsQueryable();
+
+        // ================= FILTER =================
+
+        if (warehouseId.HasValue)
+        {
+            query = query.Where(x => x.WarehouseId == warehouseId.Value);
+        }
+
+        if (itemId.HasValue)
+        {
+            query = query.Where(x => x.ItemInstance != null &&
+                                     x.ItemInstance.ItemId == itemId.Value);
+        }
+
+        if (parsedStatus.HasValue)
+        {
+            if (parsedStatus == ItemStatus.InStock)
+                // "InStock" group: all in-warehouse items (Normal + legacy InStock + Damaged + Scrapped)
+                query = query.Where(x => x.ItemInstance != null &&
+                    (x.ItemInstance.Status == ItemStatus.Normal ||
+                     x.ItemInstance.Status == ItemStatus.InStock ||
+                     x.ItemInstance.Status == ItemStatus.Damaged ||
+                     x.ItemInstance.Status == ItemStatus.Scrapped));
+            else if (parsedStatus == ItemStatus.Normal)
+                // "Normal" filter: items in normal condition (Normal + legacy InStock)
+                query = query.Where(x => x.ItemInstance != null &&
+                    (x.ItemInstance.Status == ItemStatus.Normal ||
+                     x.ItemInstance.Status == ItemStatus.InStock));
+            else
+                query = query.Where(x => x.ItemInstance != null && x.ItemInstance.Status == parsedStatus.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var key = keyword.Trim();
+
+            query = query.Where(x =>
+                x.ItemInstance != null &&
+                x.ItemInstance.Item != null &&
+                (
+                    x.ItemInstance.Item.ItemCode.Contains(key) ||
+                    //x.ItemInstance.Item.DefaultName.Contains(key) ||
+                    (x.ItemInstance.SerialNumber != null &&
+                     x.ItemInstance.SerialNumber.Contains(key)) ||
+                    //(x.ItemInstance.Barcode != null &&
+                    // x.ItemInstance.Barcode.Contains(key)) ||
+                     (x.BinLocation != null && x.BinLocation.BinCode.Contains(key))
+                ));
+        }
+
+        if (!user.IsAdmin)
+        {
+            query = query.Where(x =>x.WarehouseId == null || user.WarehouseIds.Contains(x.WarehouseId.Value));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        if (pageSize == 0)
+            pageSize = total == 0 ? 1 : total;
+
+        var rows = await query.OrderBy(x => x.BinLocation!.BinCode).Skip((page - 1) * pageSize).Take(pageSize)
+            .Select(x => new InventoryListRowDto
+            {
+                //ItemInstanceId = x.ItemInstanceId,
+                ItemCode = x.ItemInstance!.Item!.ItemCode,
+                //ItemName =x.ItemInstance.Item.Translations.Where(t =>t.LanguageCode == user.LanguageCode &&
+                //            t.FieldName == "DefaultName").Select(t => t.Value).FirstOrDefault()?? x.ItemInstance.Item.DefaultName,
+                SerialNumber = x.ItemInstance.SerialNumber,
+                //MT = x.ItemInstance.MT,
+                Status = x.ItemInstance.Status,
+                CurrentLocation = x.BinLocation != null? x.BinLocation.BinCode: null,
+                Holder =x.ExternalParty != null? x.ExternalParty.Name: (x.Warehouse != null? x.Warehouse.Name: "Unknown"),
+                //LastUpdatedAt = x.UpdatedLocationAt
+            })
+            .ToArrayAsync(cancellationToken);
+
+        return ServiceResult<PagedResult<InventoryListRowDto>>
+            .Ok(new PagedResult<InventoryListRowDto>
+            {
+                Items = rows,
+                Page = page,
+                PageSize = pageSize,
+                TotalCount = total
+            });
     }
 
     private static string GetItemName(Item item, string languageCode)

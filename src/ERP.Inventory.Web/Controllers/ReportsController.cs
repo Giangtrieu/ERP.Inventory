@@ -26,7 +26,7 @@ public sealed class ReportsController : Controller
     [HttpGet("InventoryPreview")]
     public async Task<IActionResult> InventoryPreview([FromQuery] string? keyword, [FromQuery] int? warehouseId, [FromQuery] int? categoryId, [FromQuery] string? status, CancellationToken cancellationToken)
     {
-        var result = await _trackingService.GetInventoryListAsync(keyword, warehouseId, categoryId, status, 1, 15, _currentUserService.GetCurrentUser(), cancellationToken);
+        var result = await _trackingService.GetListInventoryAsync(keyword, warehouseId, categoryId, status, 1, 0, _currentUserService.GetCurrentUser(), cancellationToken);
         return Json(result);
     }
 
@@ -84,7 +84,7 @@ public sealed class ReportsController : Controller
 
         var total = await query.CountAsync(cancellationToken);
         var rows = await query.OrderByDescending(x => x.PerformedAt)
-            .Take(25)
+            //.Take(25)
             .Select(x => new
             {
                 x.PerformedAt,

@@ -13,7 +13,7 @@ public class SystemUser
     public string PasswordHash { get; set; } = string.Empty;
     public string PreferredLanguage { get; set; } = "vi";
     public bool IsActive { get; set; } = true;
-    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public ICollection<SystemUserRole> UserRoles { get; set; } = new List<SystemUserRole>();
 }
 
@@ -80,7 +80,7 @@ public class AuditLog
     public string? BeforeJson { get; set; }
     public string? AfterJson { get; set; }
     public string Result { get; set; } = "Success";
-    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
 public class Translation : AuditableEntity
@@ -96,7 +96,9 @@ public class Notification : AuditableEntity
 {
     public string UserId { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
-    public string Message { get; set; } = string.Empty;
+    public string Message_Vi { get; set; } = string.Empty;
+    public string Message_En { get; set; } = string.Empty;
+    public string Message_Zh { get; set; } = string.Empty;
     public string? LinkUrl { get; set; }
     public bool IsRead { get; set; }
 }

@@ -72,4 +72,11 @@ public sealed class DashboardController : Controller
         var result = await _dashboardService.GetOverdueBorrowAgingAsync(warehouseId, _currentUserService.GetCurrentUser(), cancellationToken);
         return Json(result);
     }
+
+    [HttpGet("QuantitySummary")]
+    public async Task<IActionResult> QuantitySummary([FromQuery] int? warehouseId, CancellationToken cancellationToken)
+    {
+        var result = await _dashboardService.GetQuantitySummaryAsync(warehouseId, _currentUserService.GetCurrentUser(), cancellationToken);
+        return Json(new { success = true, data = result });
+    }
 }

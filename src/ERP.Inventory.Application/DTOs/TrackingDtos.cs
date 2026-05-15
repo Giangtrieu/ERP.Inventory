@@ -18,6 +18,8 @@ public sealed class TrackingSearchResultDto
     public bool CanMove { get; init; }
     public bool CanSendRepair { get; init; }
     public bool CanLend { get; init; }
+    public string? ReferenceDocumentType { get; init; }
+    public int? ReferenceDocumentId { get; init; }
 }
 
 public sealed class MovementHistoryDto
@@ -39,6 +41,7 @@ public sealed class InventoryListRowDto
     public string ItemCode { get; init; } = string.Empty;
     public string ItemName { get; init; } = string.Empty;
     public string? SerialNumber { get; init; }
+    public string? MT { get; init; }
     public string? Barcode { get; init; }
     public ItemStatus Status { get; init; }
     public string CurrentLocation { get; init; } = string.Empty;

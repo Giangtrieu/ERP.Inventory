@@ -39,7 +39,7 @@ public static class SecuritySeedData
                 DisplayName = displayName,
                 PasswordHash = PasswordHashService.Hash("123456"),
                 PreferredLanguage = "vi",
-                CreatedAt = DateTime.Now
+                CreatedAt = DateTime.UtcNow
             };
             db.SystemUsers.Add(user);
             await db.SaveChangesAsync(cancellationToken);
@@ -77,7 +77,9 @@ public static class SecuritySeedData
             {
                 UserId = user.Id,
                 Title = "Welcome to ERP WMS",
-                Message = $"Account {userName} is ready with role {roleName}.",
+                Message_Vi = $"Tài khoản {userName} đã sẵn sàng với vai trò {roleName}.",
+                Message_En = $"Account {userName} is ready with role {roleName}.",
+                Message_Zh = $"账号 {userName} 已准备好担任该角色 {roleName}.",
                 LinkUrl = "/",
                 CreatedBy = "seed"
             });

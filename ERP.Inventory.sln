@@ -1,25 +1,22 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.30114.105
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.33530.505
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{5D9D417D-F35B-4269-9506-0C3AB0736DB9}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ERP.Inventory.Domain", "src\ERP.Inventory.Domain\ERP.Inventory.Domain.csproj", "{6FFECC77-7E5A-438A-9A85-83F76DFDE6F0}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ERP.Inventory.Domain", "src\ERP.Inventory.Domain\ERP.Inventory.Domain.csproj", "{6FFECC77-7E5A-438A-9A85-83F76DFDE6F0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ERP.Inventory.Application", "src\ERP.Inventory.Application\ERP.Inventory.Application.csproj", "{04BEB844-F97D-4DA4-BAB5-55B21861AE56}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ERP.Inventory.Application", "src\ERP.Inventory.Application\ERP.Inventory.Application.csproj", "{04BEB844-F97D-4DA4-BAB5-55B21861AE56}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ERP.Inventory.Infrastructure", "src\ERP.Inventory.Infrastructure\ERP.Inventory.Infrastructure.csproj", "{38C0BE5B-C383-4BAD-A0AF-8F303609FC5E}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ERP.Inventory.Infrastructure", "src\ERP.Inventory.Infrastructure\ERP.Inventory.Infrastructure.csproj", "{38C0BE5B-C383-4BAD-A0AF-8F303609FC5E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ERP.Inventory.Web", "src\ERP.Inventory.Web\ERP.Inventory.Web.csproj", "{93906254-3910-4F4F-9B2E-BA33E96E9BB5}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ERP.Inventory.Web", "src\ERP.Inventory.Web\ERP.Inventory.Web.csproj", "{93906254-3910-4F4F-9B2E-BA33E96E9BB5}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
-	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{6FFECC77-7E5A-438A-9A85-83F76DFDE6F0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
@@ -38,6 +35,9 @@ Global
 		{93906254-3910-4F4F-9B2E-BA33E96E9BB5}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{93906254-3910-4F4F-9B2E-BA33E96E9BB5}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{93906254-3910-4F4F-9B2E-BA33E96E9BB5}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{6FFECC77-7E5A-438A-9A85-83F76DFDE6F0} = {5D9D417D-F35B-4269-9506-0C3AB0736DB9}

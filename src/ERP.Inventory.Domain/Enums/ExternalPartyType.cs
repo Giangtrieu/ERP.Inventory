@@ -8,6 +8,8 @@ public enum ExternalPartyType
     Customer = 4,
     Department = 5,
     Employee = 6,
-    Logistics = 7
+    Logistics = 7,
+    Receiver = 8   // Người nhập kho (InboundDocument)
 }
+
 

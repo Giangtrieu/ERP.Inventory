@@ -17,7 +17,7 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "6.0.27")
+                .HasAnnotation("ProductVersion", "6.0.36")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder, 1L, 1);
@@ -136,6 +136,61 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.HasIndex("ItemInstanceId");
 
                     b.ToTable("AdjustmentDocumentLines");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.AdjustmentDocumentLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("AdjustmentDocumentId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ItemInstanceId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("NewLocationText")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("NewStatus")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("OldLocationText")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("OldStatus")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PerformedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdjustmentDocumentId");
+
+                    b.HasIndex("ItemInstanceId", "Timestamp");
+
+                    b.ToTable("AdjustmentDocumentLogs");
                 });
 
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.Attachment", b =>
@@ -398,6 +453,9 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.Property<DateTime?>("ReturnedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("TargetBinLocationId")
+                        .HasColumnType("int");
+
                     b.Property<string>("TargetExternalLocation")
                         .HasColumnType("nvarchar(max)");
 
@@ -415,7 +473,72 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
 
                     b.HasIndex("ItemInstanceId");
 
+                    b.HasIndex("TargetBinLocationId");
+
                     b.ToTable("BorrowDocumentLines");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.BorrowDocumentLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("BorrowDepartment")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("BorrowDocumentId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Borrower")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("BorrowerPhone")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DepartmentOwner")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("ItemInstanceId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("NewLocationText")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("NewStatus")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("OldLocationText")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("OldStatus")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PerformedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BorrowDocumentId");
+
+                    b.HasIndex("ItemInstanceId", "Timestamp");
+
+                    b.ToTable("BorrowDocumentLogs");
                 });
 
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.Branch", b =>
@@ -519,11 +642,11 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int?>("ExternalPartyId")
-                        .HasColumnType("int");
-
                     b.Property<string>("ExternalLocationText")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("ExternalPartyId")
+                        .HasColumnType("int");
 
                     b.Property<int>("ItemInstanceId")
                         .HasColumnType("int");
@@ -747,6 +870,10 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("DepartmentOwner")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime>("DocumentDate")
                         .HasColumnType("datetime2");
 
@@ -757,8 +884,19 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.Property<string>("Note")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("PartyDepartment")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PartyPhone")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime>("PostedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<int?>("ReceiverId")
+                        .HasColumnType("int");
 
                     b.Property<int?>("SourceExternalPartyId")
                         .HasColumnType("int");
@@ -779,6 +917,8 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
 
                     b.HasIndex("DocumentNo")
                         .IsUnique();
+
+                    b.HasIndex("ReceiverId");
 
                     b.HasIndex("SourceExternalPartyId");
 
@@ -849,6 +989,69 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.ToTable("InboundDocumentLines");
                 });
 
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.InboundDocumentLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DepartmentOwner")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("InboundDocumentId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ItemInstanceId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("NewLocationText")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("NewStatus")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("OldLocationText")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("OldStatus")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PerformedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Receiver")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ReceiverDepartment")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ReceiverPhone")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InboundDocumentId");
+
+                    b.HasIndex("ItemInstanceId", "Timestamp");
+
+                    b.ToTable("InboundDocumentLogs");
+                });
+
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.InventoryCheckDocument", b =>
                 {
                     b.Property<int>("Id")
@@ -889,6 +1092,10 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("ResponsibleStaff")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SessionStatus")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
@@ -1138,10 +1345,19 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.Property<int>("ItemId")
                         .HasColumnType("int");
 
+                    b.Property<string>("MT")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("OwnerName")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("SerialNumber")
                         .HasColumnType("nvarchar(450)");
 
                     b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TrackingType")
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("UpdatedAt")
@@ -1153,12 +1369,9 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Barcode")
-                        .IsUnique()
                         .HasFilter("[Barcode] IS NOT NULL");
 
-                    b.HasIndex("ItemId");
-
-                    b.HasIndex("SerialNumber")
+                    b.HasIndex("ItemId", "SerialNumber")
                         .IsUnique()
                         .HasFilter("[SerialNumber] IS NOT NULL");
 
@@ -1491,7 +1704,15 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.Property<string>("LinkUrl")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("Message")
+                    b.Property<string>("Message_En")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Message_Vi")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Message_Zh")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
@@ -1512,6 +1733,214 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Notifications");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.QuantityInventoryDocument", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+
+                    b.Property<string>("ApprovedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("DocumentDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DocumentNo")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("DocumentType")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("PostedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentNo")
+                        .IsUnique();
+
+                    b.HasIndex("WarehouseId");
+
+                    b.ToTable("QuantityInventoryDocuments");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.QuantityInventoryDocumentLine", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int>("QuantityInventoryDocumentId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SnCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("QuantityInventoryDocumentId");
+
+                    b.ToTable("QuantityInventoryDocumentLines");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.QuantityInventoryTransaction", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"), 1L, 1);
+
+                    b.Property<int>("DocumentId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("DocumentNo")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("PostedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PostedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("QuantityDelta")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("SnCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("StatusAfter")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TransactionType")
+                        .HasColumnType("int");
+
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("WarehouseId");
+
+                    b.HasIndex("DocumentNo", "ItemId", "SnCode");
+
+                    b.ToTable("QuantityInventoryTransactions");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.QuantityStockBalance", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("SnCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("WarehouseId", "ItemId", "SnCode", "Status")
+                        .IsUnique();
+
+                    b.ToTable("QuantityStockBalances");
                 });
 
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.Rack", b =>
@@ -1557,6 +1986,250 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.ToTable("Racks");
                 });
 
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.ReconciliationResult", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ErpLocationText")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ErpStatus")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ItemCode")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("ItemInstanceId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("RefListItemId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ResolvedItemName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ResultType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("SerialNumber")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("SessionId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ItemInstanceId");
+
+                    b.HasIndex("RefListItemId");
+
+                    b.HasIndex("SessionId");
+
+                    b.HasIndex("SessionId", "ResultType");
+
+                    b.ToTable("ReconciliationResults");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.ReconciliationSession", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("ERPOnlyCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MatchedCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("RefOnlyCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReferenceListId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("RunAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SessionNo")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("SessionStatus")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("TotalErp")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TotalRef")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReferenceListId");
+
+                    b.HasIndex("SessionNo")
+                        .IsUnique();
+
+                    b.HasIndex("WarehouseId");
+
+                    b.ToTable("ReconciliationSessions");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.ReferenceListHeader", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ListCode")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ListCode")
+                        .IsUnique();
+
+                    b.HasIndex("WarehouseId");
+
+                    b.ToTable("ReferenceListHeaders");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.ReferenceListItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("ImportedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ImportedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ItemCode")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int?>("ItemId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ItemInstanceId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("LastUpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("ReferenceListId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ResolvedItemName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SerialNumber")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("ItemInstanceId");
+
+                    b.HasIndex("ReferenceListId", "ItemCode", "SerialNumber")
+                        .IsUnique()
+                        .HasFilter("[SerialNumber] IS NOT NULL");
+
+                    b.ToTable("ReferenceListItems");
+                });
+
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.RepairDocument", b =>
                 {
                     b.Property<int>("Id")
@@ -1599,9 +2272,6 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int?>("ReceiveResult")
-                        .HasColumnType("int");
-
                     b.Property<int>("RepairVendorId")
                         .HasColumnType("int");
 
@@ -1642,6 +2312,9 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.Property<int?>("FromBinLocationId")
                         .HasColumnType("int");
 
+                    b.Property<bool>("IsReturned")
+                        .HasColumnType("bit");
+
                     b.Property<int>("ItemInstanceId")
                         .HasColumnType("int");
 
@@ -1668,11 +2341,75 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("FromBinLocationId");
+
                     b.HasIndex("ItemInstanceId");
 
                     b.HasIndex("RepairDocumentId");
 
+                    b.HasIndex("TargetBinLocationId");
+
                     b.ToTable("RepairDocumentLines");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.RepairDocumentLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ExternalLocation")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("ItemInstanceId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("NewLocationText")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("NewStatus")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("OldLocationText")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("OldStatus")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PerformedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("RepairDocumentId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RepairResultNote")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RepairVendorName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepairDocumentId");
+
+                    b.HasIndex("ItemInstanceId", "Timestamp");
+
+                    b.ToTable("RepairDocumentLogs");
                 });
 
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.Shelf", b =>
@@ -2067,6 +2804,25 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.Navigation("ItemInstance");
                 });
 
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.AdjustmentDocumentLog", b =>
+                {
+                    b.HasOne("ERP.Inventory.Domain.Entities.AdjustmentDocument", "AdjustmentDocument")
+                        .WithMany("Logs")
+                        .HasForeignKey("AdjustmentDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ERP.Inventory.Domain.Entities.ItemInstance", "ItemInstance")
+                        .WithMany()
+                        .HasForeignKey("ItemInstanceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AdjustmentDocument");
+
+                    b.Navigation("ItemInstance");
+                });
+
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.BinLocation", b =>
                 {
                     b.HasOne("ERP.Inventory.Domain.Entities.Shelf", "Shelf")
@@ -2116,9 +2872,35 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("ERP.Inventory.Domain.Entities.BinLocation", "TargetBinLocation")
+                        .WithMany()
+                        .HasForeignKey("TargetBinLocationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("BorrowDocument");
 
                     b.Navigation("FromBinLocation");
+
+                    b.Navigation("ItemInstance");
+
+                    b.Navigation("TargetBinLocation");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.BorrowDocumentLog", b =>
+                {
+                    b.HasOne("ERP.Inventory.Domain.Entities.BorrowDocument", "BorrowDocument")
+                        .WithMany("Logs")
+                        .HasForeignKey("BorrowDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ERP.Inventory.Domain.Entities.ItemInstance", "ItemInstance")
+                        .WithMany()
+                        .HasForeignKey("ItemInstanceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("BorrowDocument");
 
                     b.Navigation("ItemInstance");
                 });
@@ -2179,6 +2961,11 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.InboundDocument", b =>
                 {
+                    b.HasOne("ERP.Inventory.Domain.Entities.ExternalParty", "Receiver")
+                        .WithMany()
+                        .HasForeignKey("ReceiverId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("ERP.Inventory.Domain.Entities.ExternalParty", "SourceExternalParty")
                         .WithMany()
                         .HasForeignKey("SourceExternalPartyId")
@@ -2189,6 +2976,8 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                         .HasForeignKey("WarehouseId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Receiver");
 
                     b.Navigation("SourceExternalParty");
 
@@ -2225,6 +3014,25 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.Navigation("InboundDocument");
 
                     b.Navigation("Item");
+
+                    b.Navigation("ItemInstance");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.InboundDocumentLog", b =>
+                {
+                    b.HasOne("ERP.Inventory.Domain.Entities.InboundDocument", "InboundDocument")
+                        .WithMany("Logs")
+                        .HasForeignKey("InboundDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ERP.Inventory.Domain.Entities.ItemInstance", "ItemInstance")
+                        .WithMany()
+                        .HasForeignKey("ItemInstanceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("InboundDocument");
 
                     b.Navigation("ItemInstance");
                 });
@@ -2392,6 +3200,74 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.Navigation("TargetBinLocation");
                 });
 
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.QuantityInventoryDocument", b =>
+                {
+                    b.HasOne("ERP.Inventory.Domain.Entities.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.QuantityInventoryDocumentLine", b =>
+                {
+                    b.HasOne("ERP.Inventory.Domain.Entities.Item", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ERP.Inventory.Domain.Entities.QuantityInventoryDocument", "QuantityInventoryDocument")
+                        .WithMany("Lines")
+                        .HasForeignKey("QuantityInventoryDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Item");
+
+                    b.Navigation("QuantityInventoryDocument");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.QuantityInventoryTransaction", b =>
+                {
+                    b.HasOne("ERP.Inventory.Domain.Entities.Item", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ERP.Inventory.Domain.Entities.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Item");
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.QuantityStockBalance", b =>
+                {
+                    b.HasOne("ERP.Inventory.Domain.Entities.Item", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ERP.Inventory.Domain.Entities.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Item");
+
+                    b.Navigation("Warehouse");
+                });
+
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.Rack", b =>
                 {
                     b.HasOne("ERP.Inventory.Domain.Entities.WarehouseZone", "WarehouseZone")
@@ -2401,6 +3277,86 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("WarehouseZone");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.ReconciliationResult", b =>
+                {
+                    b.HasOne("ERP.Inventory.Domain.Entities.ItemInstance", "ItemInstance")
+                        .WithMany()
+                        .HasForeignKey("ItemInstanceId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ERP.Inventory.Domain.Entities.ReferenceListItem", "RefListItem")
+                        .WithMany()
+                        .HasForeignKey("RefListItemId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ERP.Inventory.Domain.Entities.ReconciliationSession", "Session")
+                        .WithMany("Results")
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ItemInstance");
+
+                    b.Navigation("RefListItem");
+
+                    b.Navigation("Session");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.ReconciliationSession", b =>
+                {
+                    b.HasOne("ERP.Inventory.Domain.Entities.ReferenceListHeader", "ReferenceList")
+                        .WithMany("Sessions")
+                        .HasForeignKey("ReferenceListId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ERP.Inventory.Domain.Entities.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ReferenceList");
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.ReferenceListHeader", b =>
+                {
+                    b.HasOne("ERP.Inventory.Domain.Entities.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.ReferenceListItem", b =>
+                {
+                    b.HasOne("ERP.Inventory.Domain.Entities.Item", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ERP.Inventory.Domain.Entities.ItemInstance", "ItemInstance")
+                        .WithMany()
+                        .HasForeignKey("ItemInstanceId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ERP.Inventory.Domain.Entities.ReferenceListHeader", "ReferenceList")
+                        .WithMany("Items")
+                        .HasForeignKey("ReferenceListId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Item");
+
+                    b.Navigation("ItemInstance");
+
+                    b.Navigation("ReferenceList");
                 });
 
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.RepairDocument", b =>
@@ -2416,6 +3372,11 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.RepairDocumentLine", b =>
                 {
+                    b.HasOne("ERP.Inventory.Domain.Entities.BinLocation", "FromBinLocation")
+                        .WithMany()
+                        .HasForeignKey("FromBinLocationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("ERP.Inventory.Domain.Entities.ItemInstance", "ItemInstance")
                         .WithMany()
                         .HasForeignKey("ItemInstanceId")
@@ -2424,6 +3385,34 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
 
                     b.HasOne("ERP.Inventory.Domain.Entities.RepairDocument", "RepairDocument")
                         .WithMany("Lines")
+                        .HasForeignKey("RepairDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ERP.Inventory.Domain.Entities.BinLocation", "TargetBinLocation")
+                        .WithMany()
+                        .HasForeignKey("TargetBinLocationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("FromBinLocation");
+
+                    b.Navigation("ItemInstance");
+
+                    b.Navigation("RepairDocument");
+
+                    b.Navigation("TargetBinLocation");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.RepairDocumentLog", b =>
+                {
+                    b.HasOne("ERP.Inventory.Domain.Entities.ItemInstance", "ItemInstance")
+                        .WithMany()
+                        .HasForeignKey("ItemInstanceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ERP.Inventory.Domain.Entities.RepairDocument", "RepairDocument")
+                        .WithMany("Logs")
                         .HasForeignKey("RepairDocumentId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
@@ -2525,11 +3514,15 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.AdjustmentDocument", b =>
                 {
                     b.Navigation("Lines");
+
+                    b.Navigation("Logs");
                 });
 
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.BorrowDocument", b =>
                 {
                     b.Navigation("Lines");
+
+                    b.Navigation("Logs");
                 });
 
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.Branch", b =>
@@ -2550,6 +3543,8 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.InboundDocument", b =>
                 {
                     b.Navigation("Lines");
+
+                    b.Navigation("Logs");
                 });
 
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.InventoryCheckDocument", b =>
@@ -2579,14 +3574,33 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.Navigation("Lines");
                 });
 
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.QuantityInventoryDocument", b =>
+                {
+                    b.Navigation("Lines");
+                });
+
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.Rack", b =>
                 {
                     b.Navigation("Shelves");
                 });
 
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.ReconciliationSession", b =>
+                {
+                    b.Navigation("Results");
+                });
+
+            modelBuilder.Entity("ERP.Inventory.Domain.Entities.ReferenceListHeader", b =>
+                {
+                    b.Navigation("Items");
+
+                    b.Navigation("Sessions");
+                });
+
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.RepairDocument", b =>
                 {
                     b.Navigation("Lines");
+
+                    b.Navigation("Logs");
                 });
 
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.Shelf", b =>
