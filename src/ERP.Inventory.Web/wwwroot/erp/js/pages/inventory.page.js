@@ -69,14 +69,15 @@ async function loadInventoryList(page = 1, pageSize = AppState.pageSize || 25) {
     });
 
     $('#inventoryTable').html(`<div class="table-wrap">
-    <table class="data-table"><thead><tr><th style="min-width: 25px;text-align: center;">STT</th><th class="px-3 td_max-width160">${UI.t('Item')}</th><th class="td_max-width160">${UI.t('Serial / MT')}</th><th>${UI.t('Status')}</th><th>${UI.t('Current Location')}</th><th>${UI.t('Holder')}</th></tr></thead>
+    <table class="data-table"><thead><tr><th style="min-width: 25px;text-align: center;">STT</th><th class="px-3 td_max-width160">${UI.t('Item')}</th><th class="td_max-width160">${UI.t('Serial / MT')}</th><th>${UI.t('OwnerName')}</th><th>${UI.t('Status')}</th><th>${UI.t('Current Location')}</th><th>${UI.t('Holder')}</th></tr></thead>
       <tbody>${AppState.inventoryRows.map((r, i) => `<tr>
       <td style="min-width: 25px;text-align: center;">${UI.esc(i + 1)}</td>
         <td class="px-3 fw-semibold td_max-width160">${UI.esc(r.itemCode)}</td>
         <td class="td_max-width160"><span class="link-item-tracking" data-key="${UI.esc(r.serialNumber)}">${UI.esc(r.serialNumber || r.barcode || '-')}</span><div class="small text-muted td_max-width160">${UI.esc(r.MT)}</div></td>
+        <td class="px-3 fw-semibold">${UI.esc(r.ownerName)}</td>
         <td>${UI.badge(r.status)}</td>
         <td>${UI.esc(r.currentLocation)}</td>
-        <td>${UI.esc(r.holder)}</td>
+        <td class="px-3 fw-semibold">${UI.esc(r.holder)}</td>
         
         <!--<td></button><button class="btn btn-light btn-sm btn-preview" data-index="${i}"><i class="bi bi-three-dots"></i></button></td>-->
       </tr>`).join('')}</tbody>

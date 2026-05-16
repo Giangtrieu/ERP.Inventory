@@ -278,6 +278,8 @@ public sealed class TrackingService : ITrackingService
                     //x.ItemInstance.Item.DefaultName.Contains(key) ||
                     (x.ItemInstance.SerialNumber != null &&
                      x.ItemInstance.SerialNumber.Contains(key)) ||
+                    (x.ItemInstance.OwnerName != null &&
+                     x.ItemInstance.OwnerName.Contains(key)) ||
                     //(x.ItemInstance.Barcode != null &&
                     // x.ItemInstance.Barcode.Contains(key)) ||
                      (x.BinLocation != null && x.BinLocation.BinCode.Contains(key))
@@ -302,6 +304,7 @@ public sealed class TrackingService : ITrackingService
                 //            t.FieldName == "DefaultName").Select(t => t.Value).FirstOrDefault()?? x.ItemInstance.Item.DefaultName,
                 SerialNumber = x.ItemInstance.SerialNumber,
                 //MT = x.ItemInstance.MT,
+                OwnerName = x.ItemInstance!.OwnerName,
                 Status = x.ItemInstance.Status,
                 CurrentLocation = x.BinLocation != null? x.BinLocation.BinCode: null,
                 Holder =x.ExternalParty != null? x.ExternalParty.Name: (x.Warehouse != null? x.Warehouse.Name: "Unknown"),

@@ -42,6 +42,7 @@ public sealed class InventoryListRowDto
     public string ItemName { get; init; } = string.Empty;
     public string? SerialNumber { get; init; }
     public string? MT { get; init; }
+    public string? OwnerName { get; init; }
     public string? Barcode { get; init; }
     public ItemStatus Status { get; init; }
     public string CurrentLocation { get; init; } = string.Empty;
