@@ -24,6 +24,12 @@
     </PackageReference>
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\ERP.Inventory.Application\ERP.Inventory.Application.csproj" />
+    <ProjectReference Include="..\ERP.Inventory.Domain\ERP.Inventory.Domain.csproj" />
+    <ProjectReference Include="..\ERP.Inventory.Infrastructure\ERP.Inventory.Infrastructure.csproj" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
     <Nullable>enable</Nullable>
