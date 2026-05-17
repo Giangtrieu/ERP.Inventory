@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+https://go.microsoft.com/fwlink/?LinkID=208121.
+-->
+<Project>
+  <PropertyGroup>
+    <History>True|2026-05-16T08:47:54.2486490Z;True|2026-05-16T15:38:32.0597017+07:00;True|2026-05-16T14:46:54.5361215+07:00;False|2026-05-16T14:45:27.1753594+07:00;False|2026-05-16T14:41:26.8105374+07:00;False|2026-05-16T14:38:15.8268795+07:00;False|2026-05-16T14:37:44.7140414+07:00;</History>
+    <LastFailureDetails />
+    <_PublishTargetUrl>D:\Bakup\Demo\ERP.Inventory\src\ERP.Inventory.Web\bin\Release\net6.0\publish\</_PublishTargetUrl>
+  </PropertyGroup>
+</Project>

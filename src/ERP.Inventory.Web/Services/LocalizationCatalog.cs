@@ -1681,6 +1681,13 @@ public static class LocalizationCatalog
 
         ["AuditAction.ConfirmImport"] = "Xác nhận nhập dữ liệu",
 
+        ["AuditAction.RunReconciliation"] = "Chạy đối soát",
+
+        ["AuditAction.ReplaceImport"] = "Thay thế nhập kho",
+
+        ["AuditEntity.ReferenceListHeader"] = "Tiêu đề danh sách tham chiếu",
+
+        ["AuditEntity.ReconciliationSession"] = "Phiên đối soát",
 
 
         ["AuditEntity.InboundDocument"] = "Phiếu nhập kho",
@@ -2412,6 +2419,13 @@ public static class LocalizationCatalog
 
             ["AuditAction.ConfirmImport"] = "ConfirmImport",
 
+            ["AuditAction.RunReconciliation"] = "Run Reconciliation",
+
+            ["AuditAction.ReplaceImport"] = "Replace Import",
+
+            ["AuditEntity.ReferenceListHeader"] = "Reference List Header",
+
+            ["AuditEntity.ReconciliationSession"] = "Reconciliation Session",
 
 
             ["AuditEntity.InboundDocument"] = "Inbound Document",
@@ -3975,6 +3989,13 @@ public static class LocalizationCatalog
 
         ["AuditAction.ConfirmImport"] = "确认导入。",
 
+        ["AuditAction.RunReconciliation"] = "运行对账",
+
+        ["AuditAction.ReplaceImport"] = "替换导入",
+
+        ["AuditEntity.ReferenceListHeader"] = "参考列表标题",
+
+        ["AuditEntity.ReconciliationSession"] = "对账会话",
 
 
         ["Success"] = "成功",
