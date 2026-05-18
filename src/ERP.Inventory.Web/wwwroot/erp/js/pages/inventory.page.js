@@ -17,13 +17,7 @@ Router.register('inventory', function(){
 });
 
 function exportInventoryFile(url) {
-    //window.location = `${url}?${$.param(reportInventoryFilterQuery())}`;
-    const base = window.AppPathBase || '';
-    let reqUrl = url;
-    if (base && !reqUrl.startsWith(base + '/') && reqUrl.startsWith('/')) {
-        reqUrl = base + reqUrl;
-    }
-    window.location = `${reqUrl}?${$.param(reportInventoryFilterQuery())}`;
+    window.location = `${UI.resolveUrl(url)}?${$.param(reportInventoryFilterQuery())}`;
 }
 
 function reportInventoryFilterQuery() {

@@ -250,8 +250,7 @@ window.ReconciliationPage = (() => {
     window.ExportSession = async function (sessionId) {
         const params = $.param({ resultType: $('#filter-type').val(), keyword: $('#filter-kw').val() });
        /* window.location = `/Reconciliation/ExportSession/${sessionId}?${params}`;*/
-        const base = window.AppPathBase || '';
-        window.location = `${base}/Reconciliation/ExportSession/${sessionId}?${params}`;
+        window.location = `${UI.resolveUrl(`/Reconciliation/ExportSession/${sessionId}`)}?${params}`;
         //const res = await UI.api(`/Reconciliation/ExportSession/${sessionId}?${params}`);
   }
 

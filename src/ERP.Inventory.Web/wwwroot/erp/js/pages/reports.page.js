@@ -43,13 +43,7 @@ function reportFilterQuery(){
 }
 
 function exportFile(url){
-  //window.location = `${url}?${$.param(reportFilterQuery())}`;
-    const base = window.AppPathBase || '';
-    let reqUrl = url;
-    if (base && !reqUrl.startsWith(base + '/') && reqUrl.startsWith('/')) {
-        reqUrl = base + reqUrl;
-    }
-    window.location = `${reqUrl}?${$.param(reportFilterQuery())}`;
+    window.location = `${UI.resolveUrl(url)}?${$.param(reportFilterQuery())}`;
 }
 
 function reportExportButtons(){

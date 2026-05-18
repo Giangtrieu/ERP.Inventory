@@ -7,12 +7,13 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Login - Warehouse B34G</title>
+    <title>B34G Warehouse ERP Login</title>
+    <link rel="icon" type="image/svg+xml" href="~/assets/icons/b34-warehouse.svg" />
     <link href="~/assets/css/bootstrap.min.css" rel="stylesheet" />
     <style>
         body { min-height: 100vh; display: grid; place-items: center; background: #f8fafc; color: #111827; }
         .login-card { width: min(420px, calc(100vw - 32px)); border: 1px solid #d1d5db; border-radius: 12px; background: #fff; box-shadow: 0 8px 24px rgba(15,23,42,.08); padding: 28px; }
-        .brand-icon { width: 44px; height: 44px; border-radius: 8px; background: #1e5bff; color: #fff; display: grid; place-items: center; font-weight: 800; }
+        .brand-icon { width: 44px; height: 44px; border-radius: 8px; background: linear-gradient(135deg, #12344d, #1f7a5a); color: #fff; display: grid; place-items: center; font-weight: 800; }
     </style>
 </head>
 <body>
@@ -20,8 +21,8 @@
         <div class="d-flex align-items-center gap-3 mb-4">
             <div class="brand-icon">B34</div>
             <div>
-                <h1 class="h4 fw-bold mb-0">Warehouse B34G</h1>
-                <div class="text-muted small">Warehouse Management System</div>
+                <h1 class="h4 fw-bold mb-0" data-i18n="brandTitle">B34G Warehouse ERP</h1>
+                <div class="text-muted small" data-i18n="brandSubtitle">Warehouse Management System</div>
             </div>
         </div>
         <form asp-action="Login" method="post">
@@ -29,7 +30,7 @@
             <input type="hidden" asp-for="ReturnUrl" />
             <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2"></div>
             <div class="mb-3">
-                <label asp-for="LanguageCode" class="form-label fw-semibold">Ngôn ngữ</label>
+                <label asp-for="LanguageCode" class="form-label fw-semibold" data-i18n="languageLabel">Ngôn ngữ</label>
                 <select asp-for="LanguageCode" class="form-select">
                     <option value="vi">Tiếng Việt</option>
                     <option value="en">English</option>
@@ -37,22 +38,77 @@
                 </select>
             </div>
             <div class="mb-3">
-                <label asp-for="UserName" class="form-label fw-semibold">Tài khoản</label>
+                <label asp-for="UserName" class="form-label fw-semibold" data-i18n="userNameLabel">Tài khoản</label>
                 <input asp-for="UserName" class="form-control" autocomplete="username" />
             </div>
             <div class="mb-3">
-                <label asp-for="Password" class="form-label fw-semibold">Mật khẩu</label>
+                <label asp-for="Password" class="form-label fw-semibold" data-i18n="passwordLabel">Mật khẩu</label>
                 <input asp-for="Password" class="form-control" type="password" autocomplete="current-password" />
             </div>
             <div class="form-check mb-4">
                 <input asp-for="RememberMe" class="form-check-input" />
-                <label asp-for="RememberMe" class="form-check-label">Ghi nhớ đăng nhập</label>
+                <label asp-for="RememberMe" class="form-check-label" data-i18n="rememberMeLabel">Ghi nhớ đăng nhập</label>
             </div>
-            <button class="btn btn-primary w-100" type="submit">Đăng nhập</button>
+            <button class="btn btn-primary w-100" type="submit" data-i18n="loginButton">Đăng nhập</button>
         </form>
-        <div class="mt-4 pt-3 border-top text-center text-muted small">
-            Tài khoản mặc định: <b>admin</b>, <b>manager</b>, <b>staff</b>, <b>viewer</b>.<br/>Mật khẩu: <b>123456</b>
+        <div class="mt-4 pt-3 border-top text-center text-muted small" data-i18n="demoAccountText">
+            Tài khoản mặc định: <b>admin</b>, <b>manager</b>, <b>staff</b>, <b>viewer</b>.<br />Mật khẩu: <b>123456</b>
         </div>
     </main>
+    <script>
+        const loginResources = {
+            vi: {
+                pageTitle: 'B34G Warehouse ERP Login',
+                brandTitle: 'B34G Warehouse ERP',
+                brandSubtitle: 'Hệ thống quản lý kho',
+                languageLabel: 'Ngôn ngữ',
+                userNameLabel: 'Tài khoản',
+                passwordLabel: 'Mật khẩu',
+                rememberMeLabel: 'Ghi nhớ đăng nhập',
+                loginButton: 'Đăng nhập',
+                demoAccountText: 'Tài khoản mặc định: <b>admin</b>, <b>manager</b>, <b>staff</b>, <b>viewer</b>.<br />Mật khẩu: <b>123456</b>'
+            },
+            en: {
+                pageTitle: 'B34G Warehouse ERP Login',
+                brandTitle: 'B34G Warehouse ERP',
+                brandSubtitle: 'Warehouse Management System',
+                languageLabel: 'Language',
+                userNameLabel: 'User name',
+                passwordLabel: 'Password',
+                rememberMeLabel: 'Remember sign-in',
+                loginButton: 'Sign in',
+                demoAccountText: 'Default accounts: <b>admin</b>, <b>manager</b>, <b>staff</b>, <b>viewer</b>.<br />Password: <b>123456</b>'
+            },
+            zh: {
+                pageTitle: 'B34G 仓库 ERP 登录',
+                brandTitle: 'B34G 仓库 ERP',
+                brandSubtitle: '仓库管理系统',
+                languageLabel: '语言',
+                userNameLabel: '账号',
+                passwordLabel: '密码',
+                rememberMeLabel: '记住登录',
+                loginButton: '登录',
+                demoAccountText: '默认账号：<b>admin</b>、<b>manager</b>、<b>staff</b>、<b>viewer</b>。<br />密码：<b>123456</b>'
+            }
+        };
+
+        function updateLoginLanguage(language) {
+            const resource = loginResources[language] || loginResources.vi;
+            document.title = resource.pageTitle;
+            document.querySelectorAll('[data-i18n]').forEach((element) => {
+                const key = element.getAttribute('data-i18n');
+                if (!resource[key]) return;
+                if (key === 'demoAccountText') {
+                    element.innerHTML = resource[key];
+                } else {
+                    element.textContent = resource[key];
+                }
+            });
+        }
+
+        const languageSelect = document.getElementById('LanguageCode');
+        updateLoginLanguage(languageSelect.value || 'vi');
+        languageSelect.addEventListener('change', (event) => updateLoginLanguage(event.target.value));
+    </script>
 </body>
 </html>

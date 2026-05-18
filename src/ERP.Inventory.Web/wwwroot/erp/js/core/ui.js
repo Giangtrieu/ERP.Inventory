@@ -3,6 +3,14 @@ window.UI = {
   t(key) { return (window.AppState && AppState.resources && AppState.resources[key]) || key; },
   enum(type, value) { return this.t(`Enum.${type}.${value}`); },
   endpoint(key) { return this.t(`Endpoint.${key}`); },
+  resolveUrl(url) {
+    const base = (window.AppPathBase || '').replace(/\/$/, '');
+    if (!url) return base || '/';
+    if (/^https?:\/\//i.test(url)) return url;
+    if (url.startsWith(base + '/')) return url;
+    if (url.startsWith('/')) return `${base}${url}` || url;
+    return `${base}/${url}`.replace(/\/{2,}/g, '/');
+  },
 
   auditAction(action) {
     const key = String(action || '');
@@ -211,28 +219,24 @@ window.UI = {
   },
 
   api(url, options = {}) {
-      const token = $('meta[name="request-verification-token"]').attr('content');
-      const base = window.AppPathBase || '';
-      let reqUrl = url;
-      if (base && !reqUrl.startsWith(base + '/') && reqUrl.startsWith('/')) {
-          reqUrl = base + reqUrl;
-      }
+    const token = $('meta[name="request-verification-token"]').attr('content');
+    const requestUrl = this.resolveUrl(url);
     const ajax = {
-      reqUrl,
+      url: requestUrl,
       method: options.method || 'GET',
       contentType: options.contentType || 'application/json',
       dataType: options.dataType || 'json'
     };
     if (token) ajax.headers = { 'RequestVerificationToken': token };
     if (options.data !== undefined) ajax.data = typeof options.data === 'string' ? options.data : JSON.stringify(options.data);
-    if (options.query) ajax.url += (url.includes('?') ? '&' : '?') + $.param(options.query);
+    if (options.query) ajax.url += (requestUrl.includes('?') ? '&' : '?') + $.param(options.query);
     return $.ajax(ajax);
   },
 
   upload(url, formData) {
     const token = $('meta[name="request-verification-token"]').attr('content');
     const ajax = {
-      url,
+      url: this.resolveUrl(url),
       method: 'POST',
       data: formData,
       processData: false,

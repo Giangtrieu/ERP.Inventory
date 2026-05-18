@@ -8,7 +8,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="request-verification-token" content="@Antiforgery.GetAndStoreTokens(Context).RequestToken" />
-    <title>Warehouse B34G</title>
+    <title>B34G Warehouse ERP</title>
+    <link rel="icon" type="image/svg+xml" href="~/assets/icons/b34-warehouse.svg" />
     <link href="~/assets/css/bootstrap.min.css" rel="stylesheet" />
     <link href="~/assets/css/bootstrap-icons.css" rel="stylesheet" />
     <link href="~/assets/css/css2.css" rel="stylesheet" />
@@ -18,10 +19,10 @@
     <div class="app-shell">
         <aside class="sidebar" id="sidebar">
             <div class="brand">
-                <div class="brand-icon">B34</div>
+                <div class="brand-icon"><i class="bi bi-box-seam"></i></div>
                 <div class="brand-text">
-                    <div class="fw-bold text-mute">Warehouse B34G</div>
-                    <div class="small text-muted">Inventory Enterprise</div>
+                    <div class="fw-bold text-mute">B34G Warehouse ERP</div>
+                    <div class="small text-muted">Warehouse Operations Portal</div>
                 </div>
             </div>
             <div class="nav-menu" id="sidebarMenu"></div>
@@ -37,7 +38,7 @@
                     </button>
                     <div class="global-search">
                         <i class="bi bi-search"></i>
-                        <input id="globalSearchInput" class="form-control" placeholder="Tìm mã hàng / serial / barcode" />
+                        <input id="globalSearchInput" class="form-control" placeholder="Search item code / serial / barcode" />
                     </div>
                 </div>
                 <div class="d-flex align-items-center gap-2 ms-auto">
@@ -63,7 +64,7 @@
 
     <div class="right-drawer" id="drawer">
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="fw-bold mb-0">Xem nhanh hàng hóa</h5>
+            <h5 class="fw-bold mb-0">Warehouse Item Quick View</h5>
             <div class="d-flex justify-content-end mb-2"><button class="btn btn-outline-primary btn-sm" id="btnPrintVoucher"><i class="bi bi-printer me-1"></i><span id="btnPrintVoucherText"></span></button><button class="btn btn-light" id="btnCloseDrawer"><i class="bi bi-x-lg"></i></button></div>
         </div>
         <div id="drawerBody"></div>
@@ -73,12 +74,12 @@
 
     <div class="swal-lite-backdrop" id="swalLite">
         <div class="swal-lite">
-            <h4 class="fw-bold" id="swalTitle">Xác nhận ghi sổ</h4>
-            <p class="text-muted" id="swalText">Nghiệp vụ sẽ được ghi sổ ngay.</p>
+            <h4 class="fw-bold" id="swalTitle">Confirm posting</h4>
+            <p class="text-muted" id="swalText">The warehouse transaction will be posted immediately.</p>
             <div class="audit-footer mb-3" id="swalSummary"></div>
             <div class="d-flex justify-content-end gap-2">
-                <button class="btn btn-light" id="swalCancel">Hủy</button>
-                <button class="btn btn-primary" id="swalConfirm">Xác nhận lưu & ghi sổ</button>
+                <button class="btn btn-light" id="swalCancel">Cancel</button>
+                <button class="btn btn-primary" id="swalConfirm">Confirm Save & Post</button>
             </div>
         </div>
     </div>

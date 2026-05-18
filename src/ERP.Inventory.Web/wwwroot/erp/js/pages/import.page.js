@@ -18,9 +18,7 @@ Router.register('import', async function(){
   </div>`);
   $('#btnImportTemplate').on('click', () => {
     const type = $('#app [name="importType"]').val();
-    //window.location = `/Import/Template?importType=${encodeURIComponent(type)}`;
-    const base = window.AppPathBase || '';
-    window.location = `${base}/Import/Template?importType=${encodeURIComponent(type)}`;
+    window.location = `${UI.resolveUrl('/Import/Template')}?importType=${encodeURIComponent(type)}`;
   });
   $('#btnImportUpload').on('click', uploadImportFile);
   $('#btnReloadImports').on('click', loadImportBatches);

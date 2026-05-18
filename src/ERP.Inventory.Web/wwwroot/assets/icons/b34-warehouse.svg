@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="B34G Warehouse">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#12344d" />
+      <stop offset="100%" stop-color="#1f7a5a" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)" />
+  <path d="M12 26.5 32 14l20 12.5v22A3.5 3.5 0 0 1 48.5 52h-33A3.5 3.5 0 0 1 12 48.5Zm6 3.2V46h8V34h12v12h8V29.7L32 21z" fill="#f4f7f2" />
+  <path d="M24 38h16v4H24zm0-8h16v4H24z" fill="#f0b44c" />
+</svg>

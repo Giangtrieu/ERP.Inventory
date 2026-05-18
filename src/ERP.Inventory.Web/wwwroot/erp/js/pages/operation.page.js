@@ -74,7 +74,7 @@ Router.register('operation', async function (type) {
 });
 
 function exportFile(url) {
-    window.location = `${url}?${$.param(reportFilterQuery())}`;
+    window.location = `${UI.resolveUrl(url)}?${$.param(reportFilterQuery())}`;
 }
 
 function reportFilterQuery() {

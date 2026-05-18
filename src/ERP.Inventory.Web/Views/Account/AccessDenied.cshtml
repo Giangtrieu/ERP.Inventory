@@ -1,8 +1,29 @@
 @{
     Layout = null;
 }
-<div style="font-family:Arial;padding:40px">
-    <h2>Không có quyền truy cập</h2>
-    <p>Tài khoản hiện tại không có quyền thực hiện chức năng này.</p>
-    <a href="/Erp">Quay lại hệ thống</a>
-</div>
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Access Denied | B34G Warehouse ERP</title>
+    <link rel="icon" type="image/svg+xml" href="~/assets/icons/b34-warehouse.svg" />
+    <link href="~/assets/css/bootstrap.min.css" rel="stylesheet" />
+</head>
+<body class="bg-light">
+    <main class="container py-5">
+        <div class="mx-auto bg-white border rounded-4 shadow-sm p-4 p-md-5" style="max-width:640px">
+            <div class="d-flex align-items-center gap-3 mb-3">
+                <div class="rounded-3 d-grid place-items-center text-white" style="width:52px;height:52px;background:linear-gradient(135deg,#12344d,#1f7a5a)">
+                    <span class="fw-bold">B34</span>
+                </div>
+                <div>
+                    <h1 class="h4 mb-1">Access denied</h1>
+                    <p class="text-muted mb-0">Your account does not have permission to use this warehouse ERP function.</p>
+                </div>
+            </div>
+            <a asp-controller="Erp" asp-action="Index" class="btn btn-primary">Return to ERP dashboard</a>
+        </div>
+    </main>
+</body>
+</html>

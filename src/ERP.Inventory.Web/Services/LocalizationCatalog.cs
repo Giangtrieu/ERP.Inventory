@@ -803,6 +803,8 @@ public static class LocalizationCatalog
         ["Global search item / serial / barcode"] = "Tìm mã hàng / serial / barcode",
 
         ["Inventory Enterprise"] = "Quản lý kho doanh nghiệp",
+        ["B34G Warehouse ERP"] = "ERP kho B34G",
+        ["Warehouse Operations Portal"] = "Cổng vận hành kho",
 
         ["Refresh"] = "Làm mới",
 
@@ -2005,6 +2007,8 @@ public static class LocalizationCatalog
         ["Receiver Purpose"] = "Mục đích nhập hàng",
 
         ["Warehouse B34G"] = "Kho B34G",
+        ["B34G Warehouse ERP"] = "ERP kho B34G",
+        ["Warehouse Operations Portal"] = "Cổng vận hành kho",
 
 
 
@@ -3166,6 +3170,8 @@ public static class LocalizationCatalog
         ["Global search item / serial / barcode"] = "搜索物料 / 序列号 / 条码",
 
         ["Inventory Enterprise"] = "企业库存管理",
+        ["B34G Warehouse ERP"] = "B34G 仓库 ERP",
+        ["Warehouse Operations Portal"] = "仓库运营门户",
 
         ["Refresh"] = "刷新",
 
@@ -4427,6 +4433,8 @@ public static class LocalizationCatalog
         ["Receiver is required."] = "必须填写收货人信息。",
 
         ["Warehouse B34G"] = "B34G 仓库",
+        ["B34G Warehouse ERP"] = "B34G 仓库 ERP",
+        ["Warehouse Operations Portal"] = "仓库运营门户",
 
 
 
