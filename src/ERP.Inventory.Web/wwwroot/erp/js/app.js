@@ -117,9 +117,9 @@ async function bootstrap() {
 
 async function loadResources(lang) {
   AppState.resources = await UI.api('/Localization/Resources', { query: { lang } });
-  document.title = `${UI.t('B34G Warehouse ERP')} | ${UI.t('Warehouse Operations Portal')}`;
+  document.title = `${UI.t('B34G Warehouse')} | ${UI.t('Warehouse Operations Portal')}`;
   $('#globalSearchInput').attr('placeholder', UI.t('Global search item / serial / barcode'));
-  $('.brand-text .fw-bold.text-mute').text(UI.t('B34G Warehouse ERP'));
+  $('.brand-text .fw-bold.text-mute').text(UI.t('B34G Warehouse'));
   $('.brand-text .small.text-muted').text(UI.t('Warehouse Operations Portal'));
   $('#btnPrintVoucherText').text(UI.t('Export PDF'));
 }

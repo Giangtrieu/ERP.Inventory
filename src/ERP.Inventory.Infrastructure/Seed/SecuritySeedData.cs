@@ -76,7 +76,7 @@ public static class SecuritySeedData
             db.Notifications.Add(new Notification
             {
                 UserId = user.Id,
-                Title = "Welcome to ERP WMS",
+                Title = "Welcome to WMS",
                 Message_Vi = $"Tài khoản {userName} đã sẵn sàng với vai trò {roleName}.",
                 Message_En = $"Account {userName} is ready with role {roleName}.",
                 Message_Zh = $"账号 {userName} 已准备好担任该角色 {roleName}.",
