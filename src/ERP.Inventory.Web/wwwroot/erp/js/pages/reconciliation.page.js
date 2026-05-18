@@ -174,7 +174,7 @@ window.ReconciliationPage = (() => {
         <div class="d-flex justify-content-between mb-2">
           <span class="text-muted small">${items.length} ${t('recon.itemcount')}</span>
           <div class="d-flex gap-2">
-            <a href="/Reconciliation/Template" class="btn btn-xs btn-outline-secondary" target="_blank">
+              <a href="${window.AppPathBase || ''}/Reconciliation/Template" class="btn btn-xs btn-outline-secondary" target="_blank">
               <i class="bi bi-download me-1"></i>${t('recon.template')}
             </a>
             <button class="btn btn-xs btn-outline-success" id="btn-import-detail">
@@ -207,7 +207,7 @@ window.ReconciliationPage = (() => {
       body: `
         <div class="alert alert-info small mb-3">
           <i class="bi bi-info-circle me-1"></i>${t('recon.importinfo')}<br>
-          <a href="/Reconciliation/Template" target="_blank">📥 ${t('recon.template')}</a>
+           <a href="${window.AppPathBase || ''}/Reconciliation/Template" target="_blank">📥 ${t('recon.template')}</a>
         </div>
         <div class="mb-3">
           <label class="form-label fw-semibold">${t('recon.importmode')} *</label>
@@ -249,7 +249,9 @@ window.ReconciliationPage = (() => {
 
     window.ExportSession = async function (sessionId) {
         const params = $.param({ resultType: $('#filter-type').val(), keyword: $('#filter-kw').val() });
-        window.location = `/Reconciliation/ExportSession/${sessionId}?${params}`;
+       /* window.location = `/Reconciliation/ExportSession/${sessionId}?${params}`;*/
+        const base = window.AppPathBase || '';
+        window.location = `${base}/Reconciliation/ExportSession/${sessionId}?${params}`;
         //const res = await UI.api(`/Reconciliation/ExportSession/${sessionId}?${params}`);
   }
 

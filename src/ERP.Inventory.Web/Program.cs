@@ -5,6 +5,7 @@ using ERP.Inventory.Infrastructure.Seed;
 using ERP.Inventory.Web.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -31,11 +32,18 @@ builder.Services.AddInventoryInfrastructure(builder.Configuration);
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
+        options.Cookie.Name = "B34G_Warehouse_Auth";
         options.LoginPath = "/Account/Login";
         options.LogoutPath = "/Account/Logout";
         options.AccessDeniedPath = "/Account/AccessDenied";
         options.SlidingExpiration = true;
     });
+
+builder.Services.AddAntiforgery(options =>
+{
+    options.Cookie.Name = "B34G_Warehouse_Antiforgery";
+    options.HeaderName = "RequestVerificationToken";
+});
 
 var app = builder.Build();
 
@@ -59,18 +67,25 @@ app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Erp}/{action=Index}/{id?}");
 
-if (app.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("SeedDatabase"))
+using (var scope = app.Services.CreateScope())
 {
-    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
-    await InventorySeedData.SeedAsync(db);
-}
 
-if (app.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("SeedSecurityData", true))
-{
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
-    await SecuritySeedData.SeedAsync(db);
+    // Auto migrate database
+    await db.Database.MigrateAsync();
+
+    // Seed security data
+    if (builder.Configuration.GetValue<bool>("SeedSecurityData", true))
+    {
+        await SecuritySeedData.SeedAsync(db);
+    }
+
+    // Seed sample inventory data ONLY in Development
+    if (app.Environment.IsDevelopment() &&
+        builder.Configuration.GetValue<bool>("SeedDatabase"))
+    {
+        await InventorySeedData.SeedAsync(db);
+    }
 }
 
 app.Run();

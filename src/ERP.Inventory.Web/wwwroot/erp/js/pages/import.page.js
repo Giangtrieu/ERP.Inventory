@@ -18,7 +18,9 @@ Router.register('import', async function(){
   </div>`);
   $('#btnImportTemplate').on('click', () => {
     const type = $('#app [name="importType"]').val();
-    window.location = `/Import/Template?importType=${encodeURIComponent(type)}`;
+    //window.location = `/Import/Template?importType=${encodeURIComponent(type)}`;
+    const base = window.AppPathBase || '';
+    window.location = `${base}/Import/Template?importType=${encodeURIComponent(type)}`;
   });
   $('#btnImportUpload').on('click', uploadImportFile);
   $('#btnReloadImports').on('click', loadImportBatches);
@@ -31,8 +33,9 @@ async function uploadImportFile(){
   const form = new FormData();
   form.append('importType', $('#app [name="importType"]').val());
   form.append('file', file);
-  const token = $('meta[name="request-verification-token"]').attr('content');
-  const result = await $.ajax({ url: '/Import/Upload', method: 'POST', data: form, processData: false, contentType: false, headers: token ? { RequestVerificationToken: token } : {} });
+  //const token = $('meta[name="request-verification-token"]').attr('content');
+  //const result = await $.ajax({ url: '/Import/Upload', method: 'POST', data: form, processData: false, contentType: false, headers: token ? { RequestVerificationToken: token } : {} });
+  const result = await UI.upload('/Import/Upload', form);
   if(!result.success){ UI.toast(UI.resultError(result)); return; }
   UI.toast(UI.t(result.message || 'Uploaded'));
   await loadImportBatches();

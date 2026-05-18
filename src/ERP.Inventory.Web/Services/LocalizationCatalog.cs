@@ -2004,6 +2004,8 @@ public static class LocalizationCatalog
 
         ["Receiver Purpose"] = "Mục đích nhập hàng",
 
+        ["Warehouse B34G"] = "Kho B34G",
+
 
 
         ["Inventory preview shows the current status and location of an item instance."] = "Xem trước tồn kho hiển thị trạng thái và vị trí hiện tại của một cá thể hàng hóa.",
@@ -4423,6 +4425,8 @@ public static class LocalizationCatalog
         ["Receiver"] = "收货人",
 
         ["Receiver is required."] = "必须填写收货人信息。",
+
+        ["Warehouse B34G"] = "B34G 仓库",
 
 
 

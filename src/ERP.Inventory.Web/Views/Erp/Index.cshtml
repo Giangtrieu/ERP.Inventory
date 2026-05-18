@@ -8,7 +8,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="request-verification-token" content="@Antiforgery.GetAndStoreTokens(Context).RequestToken" />
-    <title>ERP Inventory Management</title>
+    <title>Warehouse B34G</title>
     <link href="~/assets/css/bootstrap.min.css" rel="stylesheet" />
     <link href="~/assets/css/bootstrap-icons.css" rel="stylesheet" />
     <link href="~/assets/css/css2.css" rel="stylesheet" />
@@ -18,9 +18,9 @@
     <div class="app-shell">
         <aside class="sidebar" id="sidebar">
             <div class="brand">
-                <div class="brand-icon"><i class="bi bi-boxes"></i></div>
+                <div class="brand-icon">B34</div>
                 <div class="brand-text">
-                    <div class="fw-bold">ERP WMS</div>
+                    <div class="fw-bold text-mute">Warehouse B34G</div>
                     <div class="small text-muted">Inventory Enterprise</div>
                 </div>
             </div>
@@ -85,6 +85,9 @@
 
     <script src="~/lib/jquery/dist/jquery.min.js"></script>
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        window.AppPathBase = '@Context.Request.PathBase';
+    </script>
     <script src="~/erp/js/core/config.js" asp-append-version="true"></script>
     <script src="~/erp/js/core/ui.js" asp-append-version="true"></script>
     <script src="~/erp/js/core/combobox.js" asp-append-version="true"></script>

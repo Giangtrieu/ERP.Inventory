@@ -211,9 +211,14 @@ window.UI = {
   },
 
   api(url, options = {}) {
-    const token = $('meta[name="request-verification-token"]').attr('content');
+      const token = $('meta[name="request-verification-token"]').attr('content');
+      const base = window.AppPathBase || '';
+      let reqUrl = url;
+      if (base && !reqUrl.startsWith(base + '/') && reqUrl.startsWith('/')) {
+          reqUrl = base + reqUrl;
+      }
     const ajax = {
-      url,
+      reqUrl,
       method: options.method || 'GET',
       contentType: options.contentType || 'application/json',
       dataType: options.dataType || 'json'
