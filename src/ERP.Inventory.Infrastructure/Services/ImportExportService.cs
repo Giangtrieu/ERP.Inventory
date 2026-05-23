@@ -1320,8 +1320,8 @@ public sealed class ImportExportService : IImportService, IExportService
 
                     inboundDocumentLog.Add(new InboundDocumentLog
                     {
-                        InboundDocumentId = document.Id,
-                        ItemInstanceId = instance.Id,
+                        InboundDocument = document,
+                        ItemInstance = instance,
                         Action = "InboundReceive",
                         OldStatus = "Reserved",
                         NewStatus = line.Condition,
