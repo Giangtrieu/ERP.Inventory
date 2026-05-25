@@ -924,6 +924,12 @@ public static class LocalizationCatalog
 
         ["Borrower"] = "Người mượn",
 
+        ["Returner"] = "Người trả hàng",
+
+        ["ReturnerCode"] = "Mã người trả hàng",
+
+        ["ReturnerName"] = "Tên người trả hàng",
+
         ["Borrow Warehouse"] = "Kho cho mượn",
 
         ["Due Date"] = "Ngày hẹn trả",
@@ -1136,6 +1142,8 @@ public static class LocalizationCatalog
 
         ["Borrow"] = "Mượn",
 
+        ["Return"] = "Nhận trả",
+
         ["Send To Repair"] = "Gửi sửa chữa",
 
         ["Receive From Repair"] = "Nhận sửa chữa",
@@ -1332,7 +1340,7 @@ public static class LocalizationCatalog
 
         ["Item instance {0}/{1} does not belong to selected warehouse."] = "Hàng hóa {0}/{1} không thể chuyển đi sửa chữa (trạng thái: {2}).",
 
-        ["Item {0}/{1} cannot be sent to repair (status: {2})."] = "Con hàng {0}/{1} không thuộc kho đã chọn.",
+        ["Item {0}/{1} cannot be sent to repair."] = "Con hàng {0}/{1} không đủ điều kiện gửi sửa chữa.",
 
         ["Item instance {0} is not located in a warehouse bin."] = "Con hàng {0} không nằm trong bin nội bộ của kho.",
 
@@ -1572,7 +1580,7 @@ public static class LocalizationCatalog
 
         ["Repair vendor {0} not found."] = "Nhà cung cấp sửa chữa {0} không tìm thấy.",
 
-        ["Item instance {0}/{1} cannot be lent (status: {2})."] = "Hàng hóa {0}/{1} không thể được cho mượn (trạng thái: {2}).",
+        ["Item instance {0}/{1} cannot be lent."] = "Hàng hóa {0}/{1} không thể được cho mượn.",
 
         ["Code-Name"] = "Mã-Tên",
 
@@ -3291,6 +3299,12 @@ public static class LocalizationCatalog
 
         ["Borrower"] = "借用人",
 
+        ["Returner"] = "归还人",
+
+        ["ReturnerCode"] = "归还人编码",
+
+        ["ReturnerName"] = "归还人姓名",
+
         ["Borrow Warehouse"] = "借出仓库",
 
         ["Due Date"] = "应还日期",
@@ -3502,6 +3516,8 @@ public static class LocalizationCatalog
         ["Reports"] = "报表",
 
         ["Borrow"] = "借用",
+
+        ["Return"] = "归还",
 
         ["Send To Repair"] = "送修",
 
@@ -3933,7 +3949,7 @@ public static class LocalizationCatalog
 
 
 
-        ["Item instance {0}/{1} cannot be lent (status: {2})."] = "物品  {0}/{1}  当前无法借出（状态：{2})。",
+        ["Item instance {0}/{1} cannot be lent."] = "物品  {0}/{1}  当前无法借出。",
 
         ["Code-Name."] = "编码-名称。",
 

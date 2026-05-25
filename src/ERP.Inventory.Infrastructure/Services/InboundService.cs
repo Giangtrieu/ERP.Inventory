@@ -102,11 +102,11 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
                 DepartmentOwner = request.DepartmentOwner.Trim(),
                 WarehouseId = warehouse.Id,
                 Note = request.Note,
-                CreatedAt = now,
+                CreatedAt = request.DocumentDate,
                 CreatedBy = user.UserName,
                 ApprovedBy = request.ApprovedBy.Trim().Length > 0 ? request.ApprovedBy.Trim() : user.UserName,
-                ApprovedAt = now,
-                PostedAt = now
+                ApprovedAt = request.DocumentDate,
+                PostedAt = request.DocumentDate
             };
             _db.InboundDocuments.Add(document);
             await _db.SaveChangesAsync(cancellationToken);
@@ -123,7 +123,7 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
                         ItemCode = line.ItemCode,
                         DefaultName = line.ItemCode.ToString(),
                         CategoryId = itemCategory == null? 0 : itemCategory.Id,
-                        CreatedAt = now,
+                        CreatedAt = request.DocumentDate,
                         IsActive = true,
                         UnitId = unit == null ? 0 : unit.Id,
                         IsSerialManaged = true,
@@ -144,7 +144,7 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
                     Status = ResolveInboundStatus(line.Condition),
                     TrackingType = ItemTrackingType.LocationTracked,
                     OwnerName = string.IsNullOrWhiteSpace(request.OwnerName) ? null : request.OwnerName.Trim(),
-                    CreatedAt = now,
+                    CreatedAt = request.DocumentDate,
                     CreatedBy = user.UserName,
                 };
                 _db.ItemInstances.Add(instance);
@@ -161,7 +161,7 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
                     BinLocationId = bin!.Id,
                     Condition = string.IsNullOrEmpty(line.Condition) ? "Normal" : line.Condition,
                     Note = line.Note,
-                    CreatedAt = now,
+                    CreatedAt = request.DocumentDate,
                     CreatedBy = user.UserName
                 });
 
@@ -174,9 +174,9 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
                     ReferenceDocumentType = nameof(InboundDocument),
                     ReferenceDocumentId = document.Id,
                     ReferenceDocumentNo = document.DocumentNo,
-                    UpdatedLocationAt = now,
+                    UpdatedLocationAt = request.DocumentDate,
                     UpdatedLocationBy = user.UserName,
-                    CreatedAt = now,
+                    CreatedAt = request.DocumentDate,
                     CreatedBy = user.UserName
                 });
 
@@ -199,7 +199,7 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
                     OldLocationText = "Supplier",
                     NewLocationText = bin.FullPath,
                     PerformedBy = user.UserName,
-                    Timestamp = now,
+                    Timestamp = request.DocumentDate,
                     Note = line.Note
                 });
             }
@@ -226,7 +226,7 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
                 Status = ResolveInboundStatus(line.Condition),
                 TrackingType = ItemTrackingType.LocationTracked,
                 OwnerName = string.IsNullOrWhiteSpace(request.OwnerName) ? null : request.OwnerName.Trim(),
-                CreatedAt = now, CreatedBy = user.UserName
+                CreatedAt = request.DocumentDate, CreatedBy = user.UserName
             };
             _db.ItemInstances.Add(instance);
             await _db.SaveChangesAsync(cancellationToken);
@@ -237,7 +237,7 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
                 SerialNumber = instance.SerialNumber, Barcode = instance.Barcode,
                 Quantity = 1, BinLocationId = bin!.Id,
                 Condition = string.IsNullOrEmpty(line.Condition)? "Normal": line.Condition, Note = line.Note,
-                CreatedAt = now, CreatedBy = user.UserName
+                CreatedAt = request.DocumentDate, CreatedBy = user.UserName
             });
 
             _db.CurrentItemLocations.Add(new CurrentItemLocation
@@ -246,8 +246,8 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
                 WarehouseId = warehouse.Id, BinLocationId = bin.Id,
                 ReferenceDocumentType = nameof(InboundDocument), ReferenceDocumentId = oldDocument.Id,
                 ReferenceDocumentNo = oldDocument.DocumentNo,
-                UpdatedLocationAt = now, UpdatedLocationBy = user.UserName,
-                CreatedAt = now, CreatedBy = user.UserName
+                UpdatedLocationAt = request.DocumentDate, UpdatedLocationBy = user.UserName,
+                CreatedAt = request.DocumentDate, CreatedBy = user.UserName
             });
 
             await ApplyStockDeltaAsync(warehouse.Id, bin.Id, item.Id, instance.Status, line.Quantity, user, cancellationToken);
@@ -269,7 +269,7 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
                 OldLocationText = "Supplier",
                 NewLocationText = bin.FullPath,
                 PerformedBy = user.UserName,
-                Timestamp = now,
+                Timestamp = request.DocumentDate,
                 Note = line.Note
             });
         }

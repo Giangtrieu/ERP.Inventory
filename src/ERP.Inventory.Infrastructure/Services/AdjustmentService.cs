@@ -36,11 +36,11 @@ public sealed class AdjustmentService : InventoryOperationBase
             DocumentDate = request.DocumentDate,
             WarehouseId = warehouse.Id,
             Reason = request.Reason,
-            CreatedAt = now,
+            CreatedAt = request.DocumentDate,
             CreatedBy = user.UserName,
             ApprovedBy = user.UserName,
-            ApprovedAt = now,
-            PostedAt = now
+            ApprovedAt = request.DocumentDate,
+            PostedAt = request.DocumentDate
         };
         _db.AdjustmentDocuments.Add(document);
         await _db.SaveChangesAsync(cancellationToken);
@@ -107,7 +107,7 @@ public sealed class AdjustmentService : InventoryOperationBase
         current.BinLocationId = targetBin?.Id; current.ExternalPartyId = targetExternalPartyId;
         current.ExternalLocationText = null;
         current.ReferenceDocumentType = nameof(AdjustmentDocument); current.ReferenceDocumentId = document.Id;
-        current.ReferenceDocumentNo = document.DocumentNo; current.UpdatedLocationAt = now; current.UpdatedLocationBy = user.UserName;
+        current.ReferenceDocumentNo = document.DocumentNo; current.UpdatedLocationAt = document.PostedAt; current.UpdatedLocationBy = user.UserName;
 
         _db.AdjustmentDocumentLines.Add(new AdjustmentDocumentLine
         {
@@ -119,7 +119,7 @@ public sealed class AdjustmentService : InventoryOperationBase
             TargetBinLocationId = targetBin?.Id,
             TargetExternalPartyId = targetExternalPartyId,
             Reason = line.Reason,
-            CreatedAt = now,
+            CreatedAt = document.PostedAt,
             CreatedBy = user.UserName
         });
 
@@ -142,7 +142,7 @@ public sealed class AdjustmentService : InventoryOperationBase
             NewLocationText = targetBin?.FullPath ?? (targetExternalPartyId.HasValue ? "External" : "Unknown"),
             Reason = line.Reason,
             PerformedBy = user.UserName,
-            Timestamp = now
+            Timestamp = document.PostedAt
         });
 
         return ServiceResult<PostedDocumentDto>.Ok(null);
@@ -180,7 +180,7 @@ public sealed class AdjustmentService : InventoryOperationBase
         oldLocation.ExternalLocationText = null;
         oldLocation.ReferenceDocumentType = nameof(AdjustmentDocument); 
         oldLocation.ReferenceDocumentId = document.Id;
-        oldLocation.ReferenceDocumentNo = document.DocumentNo; oldLocation.UpdatedLocationAt = now; 
+        oldLocation.ReferenceDocumentNo = document.DocumentNo; oldLocation.UpdatedLocationAt = document.PostedAt; 
         oldLocation.UpdatedLocationBy = user.UserName;
         
         // ===== NEW SERIAL =====
@@ -197,7 +197,7 @@ public sealed class AdjustmentService : InventoryOperationBase
                 Barcode = line.NewSerialNumber,
                 Status = ItemStatus.Normal,
                 IsActive = true,
-                CreatedAt = now,
+                CreatedAt = document.PostedAt,
                 CreatedBy = user.UserName
             };
 
@@ -213,9 +213,9 @@ public sealed class AdjustmentService : InventoryOperationBase
                 ReferenceDocumentType = nameof(AdjustmentDocument),
                 ReferenceDocumentId = document.Id,
                 ReferenceDocumentNo = document.DocumentNo,
-                UpdatedLocationAt = now,
+                UpdatedLocationAt = document.PostedAt,
                 UpdatedLocationBy = user.UserName,
-                CreatedAt = now,
+                CreatedAt = document.PostedAt,
                 CreatedBy = user.UserName
             });
 
@@ -241,7 +241,7 @@ public sealed class AdjustmentService : InventoryOperationBase
                 TargetBinLocationId = null,
                 TargetExternalPartyId = null,
                 Reason = line.Reason,
-                CreatedAt = now,
+                CreatedAt = document.PostedAt,
                 CreatedBy = user.UserName
             },
             new AdjustmentDocumentLine
@@ -254,7 +254,7 @@ public sealed class AdjustmentService : InventoryOperationBase
                 TargetBinLocationId = actualBin?.Id,
                 TargetExternalPartyId = null,
                 Reason = line.Reason,
-                CreatedAt = now,
+                CreatedAt = document.PostedAt,
                 CreatedBy = user.UserName
             });
 
@@ -277,7 +277,7 @@ public sealed class AdjustmentService : InventoryOperationBase
             NewLocationText = "Disposed",
             Reason = line.Reason,
             PerformedBy = user.UserName,
-            Timestamp = now
+            Timestamp = document.PostedAt
         });
         _db.AdjustmentDocumentLogs.Add(new AdjustmentDocumentLog
         {
@@ -290,7 +290,7 @@ public sealed class AdjustmentService : InventoryOperationBase
             NewLocationText = actualBin?.FullPath ?? "Unknown",
             Reason = line.Reason,
             PerformedBy = user.UserName,
-            Timestamp = now
+            Timestamp = document.PostedAt
         });
 
         return ServiceResult<PostedDocumentDto>.Ok(null);

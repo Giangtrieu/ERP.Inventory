@@ -164,6 +164,11 @@ window.OperationPayloadConfig = {
         payload: (h, rows, intOrNull) => ({
             BorrowDocumentNo: h('borrowDocumentNo'),
             returnDate: h('returnDate'),
+            returner: h('returner'),
+            borrowDepartment: h('borrowDepartment'),
+            approvedBy: h('approvedBy'),
+            borrowerPhone: h('borrowerPhone'),
+            departmentOwner: h('departmentOwner'),
             lines: rows
         })
     }

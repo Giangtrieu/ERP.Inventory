@@ -11,6 +11,7 @@ using System;
 using System.Text.Json;
 using System.Xml.Linq;
 using NetTopologySuite.Index.HPRtree;
+using SQLitePCL;
 
 namespace ERP.Inventory.Infrastructure.Services;
 
@@ -1251,14 +1252,14 @@ public sealed class ImportExportService : IImportService, IExportService
                 var document = new InboundDocument
                 {
                     DocumentNo = docNo,
-                    DocumentDate = now,
+                    DocumentDate = DateTime.Parse(Value(first, "DocumentDate")),
                     WarehouseId = warehouse.Id,
                     CreatedBy = user.UserName,
                     ApprovedBy = user.UserName,
                     ApprovedAt = DateTime.Parse(Value(first, "DocumentDate")),
-                    PostedAt = now,
+                    PostedAt = DateTime.Parse(Value(first, "DocumentDate")),
                     PartyDepartment = Value(first, "Department"),
-                    DepartmentOwner = "",
+                    DepartmentOwner = Value(first, "Department"),
                 };
 
                 documents.Add(document);
@@ -1284,7 +1285,7 @@ public sealed class ImportExportService : IImportService, IExportService
                         TrackingType = isQtyOnly ? ItemTrackingType.QuantityOnly : ItemTrackingType.LocationTracked,
                         OwnerName    = NullIfEmpty(Value(row, "OwnerName")),
                         CreatedBy    = user.UserName,
-                        CreatedAt    = now
+                        CreatedAt    = DateTime.Parse(Value(row, "DocumentDate")),
                     };
 
                     instances.Add(instance);
@@ -1313,7 +1314,7 @@ public sealed class ImportExportService : IImportService, IExportService
                         LocationType = LocationType.BinLocation,
                         ReferenceDocumentNo = docNo,
                         ReferenceDocumentType = nameof(InboundDocument),
-                        UpdatedLocationAt = now,
+                        UpdatedLocationAt = DateTime.Parse(Value(row, "DocumentDate")),
                         UpdatedLocationBy = user.UserName,
                         CreatedBy = user.UserName
                     });
@@ -1328,11 +1329,11 @@ public sealed class ImportExportService : IImportService, IExportService
                         Receiver = $"{Value(row, "PartyCode")}-{Value(row, "Name")}",
                         ReceiverPhone = Value(row, "Phone"),
                         ReceiverDepartment = Value(row, "Department"),
-                        DepartmentOwner = "",
+                        DepartmentOwner = Value(row, "Department"),
                         OldLocationText = "Supplier",
                         NewLocationText = bin.FullPath,
                         PerformedBy = user.UserName,
-                        Timestamp = now,
+                        Timestamp = DateTime.Parse(Value(row, "DocumentDate")),
                         Note = Value(row, "Note")
                     });
 
@@ -1426,7 +1427,7 @@ public sealed class ImportExportService : IImportService, IExportService
                     DocumentType = nameof(InboundDocument),
                     DocumentId = document.Id,
                     DocumentNo = document.DocumentNo,
-                    PerformedAt = now,
+                    PerformedAt = line.CreatedAt,
                     PerformedBy = user.UserName
                 });
 
@@ -1443,7 +1444,7 @@ public sealed class ImportExportService : IImportService, IExportService
                     DocumentId = document.Id,
                     DocumentNo = document.DocumentNo,
                     PostedBy = user.UserName,
-                    PostedAt = now
+                    PostedAt = line.CreatedAt,
                 });
 
             }
@@ -1520,8 +1521,8 @@ public sealed class ImportExportService : IImportService, IExportService
                 BorrowerPhone = Value(firstRow, "BorrowerPhone"),
                 DepartmentOwner = Value(firstRow, "DepartmentOwner"),
                 CreatedBy = user.UserName,
-                ApprovedAt = DateTime.UtcNow,
-                PostedAt = DateTime.UtcNow
+                ApprovedAt = borrowDate,
+                PostedAt = borrowDate
             };
             _db.BorrowDocuments.Add(document);
             await _db.SaveChangesAsync(cancellationToken);
@@ -1551,7 +1552,7 @@ public sealed class ImportExportService : IImportService, IExportService
                 current.ReferenceDocumentType = nameof(BorrowDocument);
                 current.ReferenceDocumentId = document.Id;
                 current.ReferenceDocumentNo = document.DocumentNo;
-                current.UpdatedLocationAt = DateTime.UtcNow;
+                current.UpdatedLocationAt = DateTime.Parse(Value(row, "BorrowDate"));
                 current.UpdatedLocationBy = user.UserName;
 
 

@@ -74,11 +74,11 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
                 BorrowDepartment = request.BorrowDepartment.Trim(),
                 BorrowerPhone = request.BorrowerPhone.Trim(),
                 DepartmentOwner = request.DepartmentOwner.Trim(),
-                CreatedAt = now,
+                CreatedAt = request.BorrowDate,
                 CreatedBy = user.UserName,
                 ApprovedBy = request.ApprovedBy.Trim(),
-                ApprovedAt = now,
-                PostedAt = now
+                ApprovedAt = request.BorrowDate,
+                PostedAt = request.BorrowDate
             };
             _db.BorrowDocuments.Add(document);
             await _db.SaveChangesAsync(cancellationToken);
@@ -110,7 +110,7 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
                     FromBinLocationId = fromBinLocationId,
                     TargetExternalLocation = targetExternalLocation,
                     Note = line.Note,
-                    CreatedAt = now,
+                    CreatedAt = request.BorrowDate,
                     CreatedBy = user.UserName
                 });
 
@@ -145,7 +145,7 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
                     OldLocationText = fromDisplay,
                     NewLocationText = toDisplay,
                     PerformedBy = user.UserName,
-                    Timestamp = now,
+                    Timestamp = request.BorrowDate,
                     Note = line.Note
                 });
             }
@@ -167,7 +167,7 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
             if (!processedInstances.Add(instance.Id))
                 return ServiceResult<PostedDocumentDto>.Fail($"Item instance {line.ItemCode}/{line.SerialNumber} is already used in another line.");
             if (!_statePolicy.CanLend(instance.Status))
-                return ServiceResult<PostedDocumentDto>.Fail($"Item instance {line.ItemCode}/{line.SerialNumber} cannot be lent (status: {instance.Status}).");
+                return ServiceResult<PostedDocumentDto>.Fail($"Item instance {line.ItemCode}/{line.SerialNumber} cannot be lent.");
             
             var current = await GetCurrentLocationAsync(instance.Id, cancellationToken);
             var fromWarehouseId = current.WarehouseId; var fromBinLocationId = current.BinLocationId;
@@ -190,7 +190,7 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
                     FromBinLocationId = fromBinLocationId,
                     TargetExternalLocation = targetExternalLocation,
                     Note = line.Note,
-                    CreatedAt = now,
+                    CreatedAt = request.BorrowDate,
                     CreatedBy = user.UserName
                 });
             }
@@ -200,7 +200,7 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
             current.LocationType = LocationType.Borrower; current.WarehouseId = warehouse.Id;
             current.BinLocationId = null; current.ExternalPartyId = borrower.Id; current.ExternalLocationText = targetExternalLocation;
             current.ReferenceDocumentType = nameof(BorrowDocument); current.ReferenceDocumentId = oldDocument.Id;
-            current.ReferenceDocumentNo = oldDocument.DocumentNo; current.UpdatedLocationAt = now; current.UpdatedLocationBy = user.UserName;
+            current.ReferenceDocumentNo = oldDocument.DocumentNo; current.UpdatedLocationAt = request.BorrowDate; current.UpdatedLocationBy = user.UserName;
 
             if (fromWarehouseId.HasValue && fromBinLocationId.HasValue)
                 await ApplyStockDeltaAsync(fromWarehouseId.Value, fromBinLocationId, instance.ItemId, oldStatus, -1, user, cancellationToken);
@@ -224,7 +224,7 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
                 OldLocationText = fromDisplay,
                 NewLocationText = toDisplay,
                 PerformedBy = user.UserName,
-                Timestamp = now,
+                Timestamp = request.BorrowDate,
                 Note = line.Note
             });
         }
@@ -252,6 +252,33 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
             return ServiceResult<PostedDocumentDto>.Fail("Borrow document ID or document number is required.");
         }
         if (document == null) return ServiceResult<PostedDocumentDto>.Fail("Borrow document not found.");
+        var requiredErrors = new List<string>();
+        if (string.IsNullOrWhiteSpace(request.BorrowDepartment)) requiredErrors.Add("Borrow department is required.");
+        if (string.IsNullOrWhiteSpace(request.ApprovedBy)) requiredErrors.Add("Approver is required.");
+        if (string.IsNullOrWhiteSpace(request.BorrowerPhone)) requiredErrors.Add("Phone is required.");
+        if (string.IsNullOrWhiteSpace(request.DepartmentOwner)) requiredErrors.Add("Department owner is required.");
+        if (string.IsNullOrWhiteSpace(request.Returner)) requiredErrors.Add("Borrower is required.");
+        if (!request.Lines.Any()) requiredErrors.Add("At least one item is required.");
+        if (requiredErrors.Count > 0) return ServiceResult<PostedDocumentDto>.Fail(requiredErrors);
+
+        var parts = request.Returner.Split('-', 2);
+        if (parts.Length == 0 || string.IsNullOrWhiteSpace(parts[0])) return ServiceResult<PostedDocumentDto>.Fail($"Borrower {request.Returner} not found.");
+        request.ReturnerCode = parts[0].Trim();
+        request.ReturnerName = parts.Length > 1 ? parts[1] : "";
+        var borrower = await FindPartyByCodeAsync(request.ReturnerCode, ExternalPartyType.Borrower, cancellationToken);
+        if (borrower == null)
+        {
+            borrower = new ExternalParty
+            {
+                PartyCode = request.ReturnerCode,
+                Name = request.ReturnerName,
+                PartyType = ExternalPartyType.Borrower,
+                Phone = request.BorrowerPhone,
+                CreatedBy = user.UserName
+            };
+            _db.ExternalParties.Add(borrower);
+            await _db.SaveChangesAsync(cancellationToken);
+        }
 
         await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
         var now = _clock.UtcNow;
@@ -296,7 +323,7 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
             {
                 borrowLine.IsReturned = true; borrowLine.ReturnCondition = line.Condition;
                 borrowLine.ReturnedAt = request.ReturnDate; borrowLine.Note = line.Note;
-                borrowLine.UpdatedAt = now; borrowLine.UpdatedBy = user.UserName;
+                borrowLine.UpdatedAt = request.ReturnDate; borrowLine.UpdatedBy = user.UserName;
             } else return ServiceResult<PostedDocumentDto>.Fail($"Item {line.ItemCode}/{line.SerialNumber} is not included in borrow document {document.DocumentNo}.");
 
             if (fromWarehouseId.HasValue && fromBinLocationId.HasValue)
@@ -315,14 +342,14 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
                 Action = "BorrowReturn",
                 OldStatus = oldStatus.ToString(),
                 NewStatus = targetStatus.ToString(),
-                Borrower = document.Borrower != null ? $"{document.Borrower.PartyCode}-{document.Borrower.Name}" : null,
-                BorrowDepartment = document.BorrowDepartment,
-                BorrowerPhone = document.BorrowerPhone,
-                DepartmentOwner = document.DepartmentOwner,
+                Borrower = borrower != null ? $"{request.ReturnerCode}-{request.ReturnerName}" : null,
+                BorrowDepartment = request.BorrowDepartment,
+                BorrowerPhone = request.BorrowerPhone,
+                DepartmentOwner = request.DepartmentOwner,
                 OldLocationText = fromDisplay,
                 NewLocationText = targetBin?.FullPath ?? "Lost",
                 PerformedBy = user.UserName,
-                Timestamp = now,
+                Timestamp = request.ReturnDate,
                 Note = line.Note
             });
         }

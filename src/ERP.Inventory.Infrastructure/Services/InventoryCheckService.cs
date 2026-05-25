@@ -47,11 +47,11 @@ public sealed class InventoryCheckService : InventoryOperationBase
                 ResponsibleStaff = request.ResponsibleStaff,
                 SessionStatus = "InProgress",
                 // DocumentBase.Status tetap Posted — SessionStatus track tiến trình riêng
-                CreatedAt = now,
+                CreatedAt = request.SessionDate,
                 CreatedBy = user.UserName,
                 ApprovedBy = user.UserName,
-                ApprovedAt = now,
-                PostedAt = now,
+                ApprovedAt = request.SessionDate,
+                PostedAt = request.SessionDate,
                 Note = request.Note
             };
             _db.InventoryCheckDocuments.Add(document);

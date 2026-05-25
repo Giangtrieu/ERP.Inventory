@@ -67,10 +67,10 @@ Router.register('quantity-inventory', async function () {
 
   // ── Inventory filter events (delegated) ──────────────────────────────
   $(document).off('change.qtyFilter input.qtyFilter')
-    .on('change.qtyFilter input.qtyFilter',
+  .on('change.qtyFilter input.qtyFilter', '.cbo-value',
       '#qtyContent [name="filterWarehouseId"], #qtyContent [name="filterItemId"], #qtyContent [name="filterStatus"], #qtyContent [name="keyword"], #qtyContent [name="filterOwnerName"]',
       UI.debounce(() => loadQuantityInventory(1), 250));
-
+    
   // ── Detail back button ───────────────────────────────────────────────
   $(document).off('click.qtyBack').on('click.qtyBack', '#btnQtyBack', function () {
     qtySelectedItem = null;
@@ -140,11 +140,12 @@ async function loadQuantityInventory(page = 1, pageSize = AppState.pageSize || 2
   qtyBalanceRows = data.items || [];
   if (!qtyBalanceRows.length) { $('#quantityInventoryTable').html(UI.empty('No data')); return; }
 
+  const isAll = pageSize === 0;
   const pagination = Pagination.render({
     page, pageSize,
     total: data.totalCount,
     totalPages: Math.ceil(data.totalCount / pageSize),
-    isAll: false,
+    isAll,
     selectId: 'qtyBalancePageSizeSelect',
     onChange: 'loadQuantityInventory'
   });
@@ -232,7 +233,7 @@ async function loadQtyDetailPanel(itemCode, itemName, warehouseId) {
       </tr>`).join('')}</tbody>
       </table>
       <div class="server-footer">
-        <span>${UI.t('Item Instances')}: ${rows.length} ${UI.t('rows')}</span>
+        <span>${UI.t('Item Instance')}: ${rows.length} ${UI.t('rows')}</span>
       </div>
     </div>`);
 }

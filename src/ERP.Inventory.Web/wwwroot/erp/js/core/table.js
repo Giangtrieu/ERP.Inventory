@@ -503,6 +503,72 @@ window.OperationLineConfig = {
             }
         ],
 
+        'borrow-return': [
+            {
+                col: 'col-md-3',
+                type: 'input',
+                inputType: 'text',
+                label: 'Borrow Document No',
+                name: 'borrowDocumentNo'
+            },
+            {
+                col: 'col-md-3',
+                type: 'input',
+                inputType: 'date',
+                label: 'Return Date',
+                name: 'returnDate',
+                value: () => today()
+            },
+            {
+                col: 'col-md-3',
+                type: 'select',
+                label: 'Return Warehouse',
+                name: 'warehouseId',
+                source: () => AppState.lookups.warehouses,
+                value: vm => vm.warehouseId
+            },
+            {
+                col: 'col-md-3',
+                type: 'custom',
+                render: () => UI.inputBorrorer(
+                    'Returner',
+                    'text',
+                    '',
+                    'returner',
+                    'Code-Name'
+                )
+            },
+            {
+                col: 'col-md-3',
+                type: 'input',
+                inputType: 'text',
+                label: 'Borrow Department',
+                name: 'borrowDepartment'
+            },
+            {
+                col: 'col-md-3',
+                type: 'input',
+                inputType: 'text',
+                label: 'Approver',
+                name: 'approvedBy'
+            },
+            {
+                col: 'col-md-3',
+                type: 'input',
+                inputType: 'text',
+                label: 'Borrower Phone',
+                name: 'borrowerPhone'
+            },
+            {
+                col: 'col-md-3',
+                type: 'input',
+                inputType: 'text',
+                label: 'Department Owner',
+                name: 'departmentOwner'
+            },
+            
+        ],
+
         default: [
             {
                 col: 'col-md-4',

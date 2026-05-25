@@ -157,6 +157,15 @@ public sealed class BorrowReturnRequest
 {
     public int BorrowDocumentId { get; init; }
     /// <summary>Alternative string lookup for import (find by DocumentNo).</summary>
+
+    public string ReturnerCode { get; set; } = string.Empty;
+    public string ReturnerName { get; set; } = string.Empty;
+    public string Returner { get; init; } = string.Empty;
+    public string Purpose { get; init; } = string.Empty;
+    public string BorrowDepartment { get; init; } = string.Empty;
+    public string ApprovedBy { get; init; } = string.Empty;
+    public string BorrowerPhone { get; init; } = string.Empty;
+    public string DepartmentOwner { get; init; } = string.Empty;
     public string? BorrowDocumentNo { get; init; }
     public DateTime ReturnDate { get; init; } = DateTime.UtcNow;
     public string? ReturnLocationBinCode { get; init; }

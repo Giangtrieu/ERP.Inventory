@@ -29,7 +29,7 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
             {
                 PartyCode = request.RepairVendorCode,
                 ContactName = request.RepairVendorCode,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = request.SendDate,
                 CreatedBy = user.UserName,
                 Email = "",
                 IsActive = true,
@@ -76,7 +76,7 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
                 ExpectedReturnDate = request.ExpectedReturnDate,
                 Reason = request.Reason,
                 CreatedAt = now, CreatedBy = user.UserName,
-                ApprovedBy = user.UserName, ApprovedAt = now, PostedAt = now
+                ApprovedBy = user.UserName, ApprovedAt = request.SendDate, PostedAt = request.SendDate,
             };
             _db.RepairDocuments.Add(document);
             await _db.SaveChangesAsync(cancellationToken);
@@ -107,7 +107,7 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
                 return ServiceResult<PostedDocumentDto>.Fail($"Item instance {line.ItemCode}/{line.SerialNumber} is already in repair document {document.DocumentNo}.");
 
             if (!_statePolicy.CanSendToRepair(instance.Status))
-                return ServiceResult<PostedDocumentDto>.Fail($"Item {line.ItemCode}/{line.SerialNumber} cannot be sent to repair (status: {instance.Status}).");
+                return ServiceResult<PostedDocumentDto>.Fail($"Item {line.ItemCode}/{line.SerialNumber} cannot be sent to repair.");
 
             var oldStatus = instance.Status;
             var current = await GetCurrentLocationAsync(instance.Id, cancellationToken);
@@ -122,7 +122,7 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
             {
                 RepairDocumentId = document.Id, ItemInstanceId = instance.Id,
                 FromBinLocationId = fromBinLocationId, TargetExternalLocation = targetExternalLocation,
-                RepairResultNote = line.Note, CreatedAt = now, CreatedBy = user.UserName
+                RepairResultNote = line.Note, CreatedAt = request.SendDate, CreatedBy = user.UserName
             });
 
             instance.Status = ItemStatus.Repairing;
@@ -131,7 +131,7 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
             current.ExternalLocationText = targetExternalLocation;
             current.ReferenceDocumentType = nameof(RepairDocument); current.ReferenceDocumentId = document.Id;
             current.ReferenceDocumentNo = document.DocumentNo;
-            current.UpdatedLocationAt = now; current.UpdatedLocationBy = user.UserName;
+            current.UpdatedLocationAt = request.SendDate; current.UpdatedLocationBy = user.UserName;
 
             if (fromWarehouseId.HasValue && fromBinLocationId.HasValue)
                 await ApplyStockDeltaAsync(fromWarehouseId.Value, fromBinLocationId, instance.ItemId, oldStatus, -1, user, cancellationToken);
@@ -152,7 +152,7 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
                 OldLocationText = fromDisplay,
                 NewLocationText = toDisplay,
                 PerformedBy = user.UserName,
-                Timestamp = now,
+                Timestamp = request.SendDate,
                 Note = string.IsNullOrWhiteSpace(line.Note) ? request.Reason : line.Note
             });
         }
