@@ -256,14 +256,17 @@ public sealed class TrackingService : ITrackingService
                     (x.ItemInstance.Status == ItemStatus.Normal ||
                      x.ItemInstance.Status == ItemStatus.InStock ||
                      x.ItemInstance.Status == ItemStatus.Damaged ||
-                     x.ItemInstance.Status == ItemStatus.Scrapped));
+                     x.ItemInstance.Status == ItemStatus.Scrapped) && x.BinLocation != null);
             else if (parsedStatus == ItemStatus.Normal)
                 // "Normal" filter: items in normal condition (Normal + legacy InStock)
                 query = query.Where(x => x.ItemInstance != null &&
                     (x.ItemInstance.Status == ItemStatus.Normal ||
-                     x.ItemInstance.Status == ItemStatus.InStock));
-            else
-                query = query.Where(x => x.ItemInstance != null && x.ItemInstance.Status == parsedStatus.Value);
+                     x.ItemInstance.Status == ItemStatus.InStock) && x.BinLocation != null);
+            else if(parsedStatus == ItemStatus.Lost)
+                // "Normal" filter: items in normal condition (Normal + legacy InStock)
+                query = query.Where(x => x.ItemInstance != null && (x.ItemInstance.Status != ItemStatus.LentOut ||
+                     x.ItemInstance.Status == ItemStatus.Repairing) && x.BinLocation == null);
+            else query = query.Where(x => x.ItemInstance != null && x.ItemInstance.Status == parsedStatus.Value);
         }
 
         if (!string.IsNullOrWhiteSpace(keyword))

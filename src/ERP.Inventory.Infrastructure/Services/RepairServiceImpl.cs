@@ -102,9 +102,12 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
 
             if (!processedInstances.Add(instance.Id))
                 return ServiceResult<PostedDocumentDto>.Fail($"Item instance {line.ItemCode}/{line.SerialNumber} is duplicated in this request.");
-
-            if (existingInstanceIds.Contains(instance.Id))
-                return ServiceResult<PostedDocumentDto>.Fail($"Item instance {line.ItemCode}/{line.SerialNumber} is already in repair document {document.DocumentNo}.");
+            if (isNew)
+            {
+                if (existingInstanceIds.Contains(instance.Id))
+                    return ServiceResult<PostedDocumentDto>.Fail($"Item instance {line.ItemCode}/{line.SerialNumber} is already in repair document {document.DocumentNo}.");
+            }
+           
 
             if (!_statePolicy.CanSendToRepair(instance.Status))
                 return ServiceResult<PostedDocumentDto>.Fail($"Item {line.ItemCode}/{line.SerialNumber} cannot be sent to repair.");
@@ -118,12 +121,29 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
             if (!fromWarehouseId.HasValue || !fromBinLocationId.HasValue)
                 return ServiceResult<PostedDocumentDto>.Fail($"Item instance {line.ItemCode}/{line.SerialNumber} is not located in a warehouse bin.");
 
-            _db.RepairDocumentLines.Add(new RepairDocumentLine
+            var existingLine = await _db.RepairDocumentLines.FirstOrDefaultAsync(x => x.RepairDocumentId == document.Id && x.ItemInstanceId == instance.Id && _statePolicy.CanSendToRepair(instance.Status), cancellationToken);
+            if (existingLine != null)
             {
-                RepairDocumentId = document.Id, ItemInstanceId = instance.Id,
-                FromBinLocationId = fromBinLocationId, TargetExternalLocation = targetExternalLocation,
-                RepairResultNote = line.Note, CreatedAt = request.SendDate, CreatedBy = user.UserName
-            });
+                existingLine.IsReturned = false;
+                existingLine.RepairResultNote = line.Note;
+                existingLine.FromBinLocationId = fromBinLocationId;
+                existingLine.TargetExternalLocation = targetExternalLocation;
+
+            }
+            else
+            {
+                _db.RepairDocumentLines.Add(new RepairDocumentLine
+                {
+                    RepairDocumentId = document.Id,
+                    ItemInstanceId = instance.Id,
+                    FromBinLocationId = fromBinLocationId,
+                    TargetExternalLocation = targetExternalLocation,
+                    RepairResultNote = line.Note,
+                    CreatedAt = request.SendDate,
+                    CreatedBy = user.UserName,
+                    IsReturned = false,
+                });
+            }
 
             instance.Status = ItemStatus.Repairing;
             current.LocationType = LocationType.RepairVendor; current.WarehouseId = fromWarehouseId;

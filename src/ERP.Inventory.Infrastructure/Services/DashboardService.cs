@@ -24,18 +24,33 @@ public sealed class DashboardService : IDashboardService
             warehouseId, user);
 
         // Batch all status counts into a single query using GroupBy
-        var statusCounts = await query
-            .GroupBy(x => x.ItemInstance!.Status)
-            .Select(g => new { Status = g.Key, Count = g.Count() })
-            .ToArrayAsync(cancellationToken);
+        //var statusCounts = await query
+        //    .GroupBy(x => x.ItemInstance!.Status)
+        //    .Select(g => new { Status = g.Key, Count = g.Count() })
+        //    .ToArrayAsync(cancellationToken);
 
-        var total = statusCounts.Sum(x => x.Count);
-        var inStock = statusCounts.Where(x => x.Status == ItemStatus.Normal || x.Status == ItemStatus.InStock || x.Status == ItemStatus.Scrapped || x.Status == ItemStatus.Damaged).Sum(x => x.Count);
-        var repairing = statusCounts.Where(x => x.Status == ItemStatus.Repairing).Sum(x => x.Count);
-        var lentOut = statusCounts.Where(x => x.Status == ItemStatus.LentOut).Sum(x => x.Count);
-        var damagedOrLost = statusCounts
-            .Where(x => x.Status == ItemStatus.Damaged || x.Status == ItemStatus.Lost || x.Status == ItemStatus.Scrapped)
-            .Sum(x => x.Count);
+        var total = await query.CountAsync(cancellationToken);
+
+        var inStock = await query.CountAsync(x => x.BinLocation != null &&
+            (x.ItemInstance!.Status == ItemStatus.Normal ||
+            x.ItemInstance.Status == ItemStatus.InStock ||
+            x.ItemInstance.Status == ItemStatus.Scrapped ||
+            x.ItemInstance.Status == ItemStatus.Damaged),
+            cancellationToken);
+
+        var repairing = await query.CountAsync(x => x.BinLocation == null &&
+            x.ItemInstance!.Status == ItemStatus.Repairing,
+            cancellationToken);
+
+        var lentOut = await query.CountAsync(x => x.BinLocation == null &&
+            x.ItemInstance!.Status == ItemStatus.LentOut,
+            cancellationToken);
+
+        var damagedOrLost = await query.CountAsync(x =>
+            x.ItemInstance!.Status == ItemStatus.Damaged ||
+            x.ItemInstance.Status == ItemStatus.Lost ||
+            x.ItemInstance.Status == ItemStatus.Scrapped,
+            cancellationToken);
 
         // Overdue borrow count
         var now = DateTime.UtcNow;

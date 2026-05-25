@@ -180,6 +180,8 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
             {
                 existingLine.IsReturned = false; existingLine.ReturnCondition = null;
                 existingLine.ReturnedAt = null; existingLine.Note = line.Note;
+                existingLine.FromBinLocationId = fromBinLocationId;
+                existingLine.TargetExternalLocation = targetExternalLocation;
             }
             else
             {
