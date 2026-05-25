@@ -5,7 +5,7 @@ window.OperationLineConfig = {
                 ['col-stt', '#'],
                 ['col-item-code', 'Item'],
                 ['col-serial', 'Serial'],
-                //['col-bin', 'MT'],
+                ['col-bin', 'MT'],
                 ['col-bin', 'Bin'],
                 ['col-select', 'Condition'],
                 ['col-action', '']
@@ -15,7 +15,7 @@ window.OperationLineConfig = {
             ${tdStt(index)}
             ${tdItem()}
             ${tdSerial()}
-            <!--<td class="col-bin"><input class="form-control form-control-sm" name="mt"></td>-->
+            <td class="col-bin"><input class="form-control form-control-sm" name="mt"></td>
             ${tdBin()}
             <td class="col-select">${selectInline('condition', AppState.lookups.inboundConditions, false, 'Normal')}</td>
             ${tdDelete()}
@@ -253,7 +253,7 @@ window.OperationLineConfig = {
                 type: 'input',
                 inputType: 'text',
                 label: 'OwnerName',
-                name: 'OwnerName'
+                name: 'ownerName'
             },
             {
                 col: 'col-md-4',

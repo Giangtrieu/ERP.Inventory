@@ -612,6 +612,8 @@ public static class LocalizationCatalog
 
         ["Status"] = "Trạng thái",
 
+        ["sessionStatus"] = "Trạng thái",
+
         ["Category"] = "Nhóm hàng",
 
         ["Keyword"] = "Từ khóa",
@@ -796,6 +798,9 @@ public static class LocalizationCatalog
 
         ["Unit Name"] = "Tên đơn vị",
 
+
+        ["Are you sure you want to finalize this inventory check session? Missing items will be calculated and adjustments generated if needed."] = "Bạn có chắc chắn muốn hoàn tất phiên kiểm kê này không? Các vật tư thiếu sẽ được tính toán và tạo phiếu điều chỉnh nếu cần.",
+
         ["Serial managed"] = "Quản lý theo serial",
 
         ["This permanently removes unused trash data only."] = "Chỉ xóa hẳn dữ liệu rác chưa phát sinh nghiệp vụ.",
@@ -910,7 +915,7 @@ public static class LocalizationCatalog
 
         ["Mark read"] = "Đã đọc",
 
-        ["Borrow Document No"] = "Mã phiếu mượn",
+        ["Borrow Document No"] = "Mã đầu đơn",
 
         ["Borrow Date"] = "Ngày mượn",
 
@@ -938,7 +943,7 @@ public static class LocalizationCatalog
 
         ["Documents"] = "Danh sách phiếu",
 
-        ["Document No"] = "Mã phiếu",
+        ["Document No"] = "Mã đầu đơn",
 
         ["Document Date"] = "Ngày chứng từ",
 
@@ -1022,7 +1027,7 @@ public static class LocalizationCatalog
 
         ["Audit Entity"] = "Đối tượng nhật ký",
 
-        ["Reference No"] = "Mã tham chiếu",
+        ["Reference No"] = "Mã đầu đơn",
 
         ["Time"] = "Thời gian",
 
@@ -1099,6 +1104,8 @@ public static class LocalizationCatalog
         ["Session Date"] = "Ngày kiểm kê",
 
         ["Count Method"] = "Phương pháp đếm",
+
+        ["countMethod"] = "Phương pháp đếm",
 
         ["Responsible Staff"] = "Nhân sự phụ trách",
 
@@ -1274,7 +1281,7 @@ public static class LocalizationCatalog
 
         ["One target bin can only receive one item. Return each repaired item to a separate bin."] = "Một bin đích chỉ nhận một con hàng. Hãy trả từng hàng sửa chữa vào bin riêng.",
 
-        ["Borrow document number is required."] = "Bắt buộc nhập mã phiếu mượn.",
+        ["Borrow document number is required."] = "Bắt buộc nhập Mã đầu đơn.",
 
         ["Borrow warehouse is required."] = "Bắt buộc chọn kho cho mượn.",
 
@@ -1290,7 +1297,7 @@ public static class LocalizationCatalog
 
         ["Department owner is required."] = "Bắt buộc nhập chủ quản bộ phận.",
 
-        ["Borrow document number already exists."] = "Mã phiếu mượn đã tồn tại.",
+        ["Borrow document number already exists."] = "Mã đầu đơn đã tồn tại.",
 
         ["Borrower is invalid."] = "Người mượn không hợp lệ.",
 
@@ -2233,7 +2240,7 @@ public static class LocalizationCatalog
         ["RepairDocumentNo"] = "Số phiếu sửa chữa",
         ["ReturnLocationBinCode"] = "Vị trí nhập trả",
         ["NewStatus"] = "Trạng thái mới",
-        ["MT"] = "Model/Type",
+        //["MT"] = "Model/Type",
         ["Condition"] = "Tình trạng",
         ["BorrowerCode"] = "Mã người mượn",
         ["BorrowDate"] = "Ngày mượn",
@@ -2711,6 +2718,8 @@ public static class LocalizationCatalog
             ["RepairReceive"] = "Receive from repair",
 
 
+            ["sessionStatus"] = "Status",
+            ["countMethod"] = "Count Method",
 
             // ─── Document Log action keys ──────────────────────────────────
 
@@ -2898,7 +2907,7 @@ public static class LocalizationCatalog
             ["RepairDocumentNo"] = "Repair Document No.",
             ["ReturnLocationBinCode"] = "Return Location (Bin)",
             ["NewStatus"] = "New Status",
-            ["MT"] = "Model/Type",
+            //["MT"] = "Model/Type",
             ["Condition"] = "Condition",
             ["BorrowerCode"] = "Borrower Code",
             ["BorrowDate"] = "Borrow Date",
@@ -2986,6 +2995,8 @@ public static class LocalizationCatalog
         ["Warehouse"] = "仓库",
 
         ["Status"] = "状态",
+
+        ["sessionStatus"] = "状态",
 
         ["Category"] = "类别",
 
@@ -3171,6 +3182,9 @@ public static class LocalizationCatalog
 
 
 
+
+        ["Are you sure you want to finalize this inventory check session? Missing items will be calculated and adjustments generated if needed."] = "您确定要完成此次库存盘点吗？如有缺失物料，系统将自动计算并生成调整记录（如有需要）。",
+
         ["Serial managed"] = "按序列号管理",
 
         ["This permanently removes unused trash data only."] = "仅彻底删除未被业务引用的垃圾数据。",
@@ -3178,7 +3192,9 @@ public static class LocalizationCatalog
         ["Global search item / serial / barcode"] = "搜索物料 / 序列号 / 条码",
 
         ["Inventory Enterprise"] = "企业库存管理",
+
         ["B34G Warehouse"] = "B34G 仓库",
+
         ["Warehouse Operations Portal"] = "仓库运营门户",
 
         ["Refresh"] = "刷新",
@@ -3474,6 +3490,8 @@ public static class LocalizationCatalog
         ["Session Date"] = "盘点日期",
 
         ["Count Method"] = "盘点方法",
+
+        ["countMethod"] = "盘点方法",
 
         ["Responsible Staff"] = "负责人",
 
@@ -4624,7 +4642,7 @@ public static class LocalizationCatalog
         ["RepairDocumentNo"] = "维修单号",
         ["ReturnLocationBinCode"] = "归还库位",
         ["NewStatus"] = "新状态",
-        ["MT"] = "型号",
+        //["MT"] = "型号",
         ["Condition"] = "状态",
         ["BorrowerCode"] = "借用人代码",
         ["BorrowDate"] = "借用日期",

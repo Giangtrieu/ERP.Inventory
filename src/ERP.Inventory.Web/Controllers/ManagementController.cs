@@ -92,6 +92,90 @@ public sealed class ManagementController : ManagementBaseController
     [HttpDelete("Item/{id:int}")][Authorize(Roles = "Admin")][ValidateAntiForgeryToken]
     public Task<IActionResult> DeleteItem(int id, CancellationToken ct) => _masterData.DeleteItem(id, ct);
 
+    [HttpGet("ItemInstance/{id:int}")][Authorize(Roles = "Admin,Warehouse Manager")]
+    public async Task<IActionResult> ItemInstance(int id, CancellationToken ct)
+    {
+        var user = CurrentUserService.GetCurrentUser();
+        var row = await Db.ItemInstances
+            .AsNoTracking()
+            .Where(x => x.Id == id)
+            .Select(x => new
+            {
+                x.Id,
+                x.ItemId,
+                ItemCode = x.Item != null ? x.Item.ItemCode : string.Empty,
+                ItemName = x.Item != null ? x.Item.DefaultName : string.Empty,
+                x.SerialNumber,
+                x.MT,
+                x.Barcode,
+                x.OwnerName,
+                Status = x.Status.ToString(),
+                CurrentLocation = Db.CurrentItemLocations
+                    .Where(l => l.ItemInstanceId == x.Id)
+                    .Select(l => l.BinLocation != null
+                        ? l.BinLocation.FullPath
+                        : !string.IsNullOrWhiteSpace(l.ExternalLocationText)
+                            ? (l.ExternalParty != null ? l.ExternalParty.Name + " - " + l.ExternalLocationText : l.ExternalLocationText)
+                            : (l.ExternalParty != null ? l.ExternalParty.Name : (l.Warehouse != null ? l.Warehouse.Name : "Unknown")))
+                    .FirstOrDefault(),
+                WarehouseId = Db.CurrentItemLocations
+                    .Where(l => l.ItemInstanceId == x.Id)
+                    .Select(l => l.WarehouseId)
+                    .FirstOrDefault()
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (row == null) return NotFound();
+        if (row.WarehouseId.HasValue && !user.CanAccessWarehouse(row.WarehouseId.Value)) return Forbid();
+        return Json(row);
+    }
+
+    [HttpPut("ItemInstanceUpdate/{id:int}")][Authorize(Roles = "Admin,Warehouse Manager")][ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateItemInstance(int id, [FromBody] ItemInstanceRequest request, CancellationToken ct)
+    {
+        var validation = ValidateRequired(("ItemId", request.ItemId?.ToString()));
+        if (validation != null) return validation;
+
+        var user = CurrentUserService.GetCurrentUser();
+        var entity = await Db.ItemInstances.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (entity == null) return NotFound();
+
+        var currentWarehouseId = await Db.CurrentItemLocations
+            .Where(x => x.ItemInstanceId == id)
+            .Select(x => x.WarehouseId)
+            .FirstOrDefaultAsync(ct);
+        if (currentWarehouseId.HasValue && !user.CanAccessWarehouse(currentWarehouseId.Value)) return Forbid();
+
+        if (!request.ItemId.HasValue)
+            return Json(new { success = false, message = "ItemId is required." });
+
+        var itemId = request.ItemId.Value;
+        if (!await Db.Items.AnyAsync(x => x.Id == itemId && x.IsActive, ct))
+            return Json(new { success = false, message = "Item is invalid." });
+
+        var serialNumber = NullIfWhiteSpace(request.SerialNumber);
+        var barcode = NullIfWhiteSpace(request.Barcode);
+        var mt = NullIfWhiteSpace(request.MT);
+        var ownerName = NullIfWhiteSpace(request.OwnerName);
+
+        if (serialNumber != null && await Db.ItemInstances.AnyAsync(x => x.Id != id && x.ItemId == itemId && x.SerialNumber == serialNumber, ct))
+            return Json(new { success = false, message = $"Serial {serialNumber} already exists for item {itemId}." });
+
+        if (barcode != null && await Db.ItemInstances.AnyAsync(x => x.Id != id && x.Barcode == barcode, ct))
+            return Json(new { success = false, message = $"Barcode {barcode} already exists." });
+
+        entity.ItemId = itemId;
+        entity.SerialNumber = serialNumber;
+        entity.MT = mt;
+        entity.Barcode = barcode;
+        entity.OwnerName = ownerName;
+
+        Touch(entity);
+        AddAudit("Update", nameof(ItemInstance), entity.Id, entity.SerialNumber ?? entity.Barcode ?? entity.Id.ToString());
+        await Db.SaveChangesAsync(ct);
+        return Json(new { success = true, data = new { entity.Id, entity.ItemId, entity.SerialNumber, entity.Barcode, entity.MT, entity.OwnerName } });
+    }
+
     // ─── Warehouse Structure ──────────────────────────────────
     [HttpGet("WarehouseStructure")]
     public Task<IActionResult> WarehouseStructure([FromQuery] int? warehouseId, [FromQuery] bool? isActive, [FromQuery] string? keyword, [FromQuery] int page, [FromQuery] int pageSize, CancellationToken ct) => _warehouseStructure.List(warehouseId, isActive, keyword, page, pageSize, ct);
@@ -148,4 +232,13 @@ public sealed class ManagementController : ManagementBaseController
 
     [HttpGet("ImportBatches")]
     public Task<IActionResult> ImportBatches(CancellationToken ct) => _system.ImportBatches(ct);
+
+    public sealed class ItemInstanceRequest
+    {
+        public int? ItemId { get; init; }
+        public string? SerialNumber { get; init; }
+        public string? MT { get; init; }
+        public string? Barcode { get; init; }
+        public string? OwnerName { get; init; }
+    }
 }

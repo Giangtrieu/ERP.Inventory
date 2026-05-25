@@ -175,6 +175,7 @@ public sealed class TrackingService : ITrackingService
                 (x.ItemInstance.Item.ItemCode.Contains(key) ||
                  x.ItemInstance.Item.DefaultName.Contains(key) ||
                  (x.ItemInstance.SerialNumber != null && x.ItemInstance.SerialNumber.Contains(key)) ||
+                 (x.ItemInstance.MT != null && x.ItemInstance.MT.Contains(key)) ||
                  (x.ItemInstance.Barcode != null && x.ItemInstance.Barcode.Contains(key))));
         }
 
@@ -281,6 +282,8 @@ public sealed class TrackingService : ITrackingService
                     //x.ItemInstance.Item.DefaultName.Contains(key) ||
                     (x.ItemInstance.SerialNumber != null &&
                      x.ItemInstance.SerialNumber.Contains(key)) ||
+                    (x.ItemInstance.MT != null &&
+                     x.ItemInstance.MT.Contains(key)) ||
                     (x.ItemInstance.OwnerName != null &&
                      x.ItemInstance.OwnerName.Contains(key)) ||
                     //(x.ItemInstance.Barcode != null &&
@@ -301,17 +304,17 @@ public sealed class TrackingService : ITrackingService
         var rows = await query.OrderBy(x => x.BinLocation!.BinCode).Skip((page - 1) * pageSize).Take(pageSize)
             .Select(x => new InventoryListRowDto
             {
-                //ItemInstanceId = x.ItemInstanceId,
+                ItemInstanceId = x.ItemInstanceId,
                 ItemCode = x.ItemInstance!.Item!.ItemCode,
-                //ItemName =x.ItemInstance.Item.Translations.Where(t =>t.LanguageCode == user.LanguageCode &&
-                //            t.FieldName == "DefaultName").Select(t => t.Value).FirstOrDefault()?? x.ItemInstance.Item.DefaultName,
+                ItemName = x.ItemInstance.Item.DefaultName,
                 SerialNumber = x.ItemInstance.SerialNumber,
-                //MT = x.ItemInstance.MT,
+                MT = x.ItemInstance.MT,
                 OwnerName = x.ItemInstance!.OwnerName,
+                Barcode = x.ItemInstance.Barcode,
                 Status = x.ItemInstance.Status,
                 CurrentLocation = x.BinLocation != null? x.BinLocation.BinCode: null,
                 Holder =x.ExternalParty != null? x.ExternalParty.Name: (x.Warehouse != null? x.Warehouse.Name: "Unknown"),
-                //LastUpdatedAt = x.UpdatedLocationAt
+                LastUpdatedAt = x.UpdatedLocationAt
             })
             .ToArrayAsync(cancellationToken);
 

@@ -50,8 +50,8 @@ Router.register('operation', async function (type) {
         <button class="btn btn-outline-secondary btn-sm" id="btnLoadDocuments"><i class="bi bi-arrow-clockwise"></i></button>
       </div>
       <div class="row g-3 mb-3">
-        <div class="col-md-3">${UI.input('From Date', 'date', '', 'docFromDate')}</div>
-        <div class="col-md-3">${UI.input('To Date', 'date', '', 'docToDate')}</div>
+        <div class="col-md-3">${UI.input('From Date', 'date', firstDay(), 'docFromDate')}</div>
+        <div class="col-md-3">${UI.input('To Date', 'date', today(), 'docToDate')}</div>
         <div class="col-md-4">${UI.input('Keyword', 'text', '', 'docKeyword')}</div>
         <div class="col-md-2 d-flex align-items-end"><label class="form-label w-100"><span class="fw-semibold small"></span><button class="btn btn-primary w-100" id="btnSearchDocuments">${UI.t('Search')}</button></label></div>
       </div>
@@ -117,6 +117,9 @@ function renderOperationLines(type, vm) {
 
 function today() {
     return new Date().toISOString().slice(0, 10);
+}
+function firstDay() {
+    return new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
 }
 
 function renderOperationHeader(type, vm) {
@@ -583,7 +586,7 @@ $(document).on('click', '.link-item-tracking', function () {
 function renderDocumentDetail(detail, docType) {
     const h = detail.header || {};
     const extra = h.extra || {};
-    const extraRows = Object.keys(extra).length ? `<div class="audit-footer mt-2"><div class="row g-3 mb-3">${Object.entries(extra).map(([k, v]) => { let value = v || '-'; if (k.toLowerCase().includes('date')) { value = v ? UI.formatDate(v) : '-'; } return `<div class="col-md-6">${UI.t(detailLabel(k))}: <b>${UI.esc(value)}</b></div>`; }).join('')}</div></div>` : '';
+    const extraRows = Object.keys(extra).length ? `<div class="audit-footer mt-2"><div class="row g-3 mb-3">${Object.entries(extra).map(([k, v]) => { let value = v || '-'; if (k.toLowerCase().includes('date')) { value = v ? UI.formatDate(v) : '-'; } return `<div class="col-md-6">${UI.t(detailLabel(k))}: <b>${UI.esc(UI.t(value))}</b></div>`; }).join('')}</div></div>` : '';
     const lines = detail.lines || [];
     const historyHtml = detail.history && detail.history.length ? `
       <div class="form-section-title mt-3">${UI.t('History & Timeline')}</div>
@@ -710,7 +713,7 @@ function handleEnterFlow(e) {
         return;
     }
 
-    const skipNames = ['condition', 'newStatus', 'lineReason', 'lineNote', 'result'];
+    const skipNames = ['condition', 'mt', 'newStatus', 'lineReason', 'lineNote', 'result'];
 
     const row = input.closest('tr');
     const inputs = Array.from(row.querySelectorAll('input, select')).filter

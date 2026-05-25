@@ -303,7 +303,7 @@ button.card:hover {
 .px_td { text-align: center; }
 
 /* Legacy compat */
-.td_max-width160 { min-width: 50px; max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+.td_max-width160 { min-width: 50px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
 .td_max-width100 { min-width: 50px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
 .td_max-width50  { min-width: 20px; max-width: 70px; overflow: hidden; text-overflow: ellipsis; }
 .td_max-width30  { max-width: 36px; overflow: hidden; text-overflow: ellipsis; }
