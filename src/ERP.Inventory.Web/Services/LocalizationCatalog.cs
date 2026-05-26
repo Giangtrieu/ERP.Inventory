@@ -921,15 +921,31 @@ public static class LocalizationCatalog
 
         ["Borrow Department"] = "Bộ phận mượn",
 
+        ["Return Department"] = "Bộ phận trả",
+
         ["Approver"] = "Người xét duyệt",
 
         ["Borrower Phone"] = "Số điện thoại",
 
-        ["Department Owner"] = "Chủ quản bộ phận",
+        ["Department Owner"] = "Chủ quản bộ phận kho",
+
+        ["Borrowing Department"] = "Bên mượn",
+
+        ["Returning Department"] = "Bên trả",
+
+        ["Receiving Department"] = "Bên nhập kho",
+
+        ["Warehouse Department"] = "Bên kho",
 
         ["Borrower"] = "Người mượn",
 
         ["Returner"] = "Người trả hàng",
+
+        ["RepairSenderCode"] = "Mã người gửi sửa chữa",
+
+        ["RepairSenderName"] = "Tên người gửi sửa chữa",
+
+        ["Repair Sender Information"] = "Thông tin người gửi sửa chữa",
 
         ["ReturnerCode"] = "Mã người trả hàng",
 
@@ -1325,6 +1341,8 @@ public static class LocalizationCatalog
 
         ["Item instance {0} not found."] = "Không tìm thấy con hàng {0}.",
 
+        ["Item instance not found."] = "Không tìm thấy con hàng .",
+
         ["Item instance {0} is not InStock."] = "Con hàng {0} không ở trạng thái trong kho.",
 
         ["Item instance {0} cannot be sent to repair."] = "Con hàng {0} không đủ điều kiện gửi sửa chữa.",
@@ -1589,9 +1607,12 @@ public static class LocalizationCatalog
 
         ["Item instance {0}/{1} cannot be lent."] = "Hàng hóa {0}/{1} không thể được cho mượn.",
 
+        ["Code"] = "Mã",
+
+        ["Name"] = "Tên",
+
         ["Code-Name"] = "Mã-Tên",
 
-      
 
         ["Current user cannot manage warehouse {0}"] = "Người dùng hiện tại không có quyền quản lý kho {0}",
 
@@ -1705,6 +1726,10 @@ public static class LocalizationCatalog
         ["AuditEntity.ReferenceListHeader"] = "Tiêu đề danh sách tham chiếu",
 
         ["AuditEntity.ReconciliationSession"] = "Phiên đối soát",
+
+        ["AuditEntity.ItemInstance"] = "Mặt hàng cụ thể",
+
+        ["AuditAction.InventoryCheckFinalize"] = "Kiểm kê",
 
 
         ["AuditEntity.InboundDocument"] = "Phiếu nhập kho",
@@ -2010,10 +2035,13 @@ public static class LocalizationCatalog
         ["New Location"] = "Vị trí mới",
 
 
+        ["Only permanently delete items with no transaction history."] = "Chỉ xóa vĩnh viễn các mặt hàng chưa phát sinh nghiệp vụ.",
 
         ["Receiver Phone"] = "Số điện thoại người nhập",
 
         ["Receiver Name"] = "Tên người nhập",
+
+        ["Receiver Code"] = "Mã người nhập",
 
         ["Receiver Department"] = "Bộ phận người nhập",
 
@@ -2243,6 +2271,7 @@ public static class LocalizationCatalog
         //["MT"] = "Model/Type",
         ["Condition"] = "Tình trạng",
         ["BorrowerCode"] = "Mã người mượn",
+        ["BorrowerName"] = "Tên người mượn",
         ["BorrowDate"] = "Ngày mượn",
         ["DueDate"] = "Hạn trả",
         ["BorrowDepartment"] = "Phòng ban mượn",
@@ -2447,6 +2476,10 @@ public static class LocalizationCatalog
             ["AuditEntity.ReferenceListHeader"] = "Reference List Header",
 
             ["AuditEntity.ReconciliationSession"] = "Reconciliation Session",
+
+            ["AuditEntity.ItemInstance"] = "Item Instance",
+
+            ["AuditAction.InventoryCheckFinalize"] = "InventoryCheck",
 
 
             ["AuditEntity.InboundDocument"] = "Inbound Document",
@@ -2910,6 +2943,7 @@ public static class LocalizationCatalog
             //["MT"] = "Model/Type",
             ["Condition"] = "Condition",
             ["BorrowerCode"] = "Borrower Code",
+            ["BorrowerName"] = "Borrower Name",
             ["BorrowDate"] = "Borrow Date",
             ["DueDate"] = "Due Date",
             ["BorrowDepartment"] = "Borrow Department",
@@ -2937,6 +2971,9 @@ public static class LocalizationCatalog
             ["AdjustmentDocuments"] = "Adjustment Documents",
             ["InventoryCheckDocuments"] = "Inventory Check Documents",
             ["QuantityTransactions"] = "Quantity Transactions",
+
+            ["RepairSenderCode"] = "Repair Sender Code",
+            ["RepairSenderName"] = "Repair Sender Name",
 
         })
 
@@ -3307,15 +3344,31 @@ public static class LocalizationCatalog
 
         ["Borrow Department"] = "借用部门",
 
+        ["Return Department"] = "归还部门",
+
         ["Approver"] = "审批人",
 
         ["Borrower Phone"] = "联系电话",
 
-        ["Department Owner"] = "部门主管",
+        ["Department Owner"] = "仓库部门主管",
+
+        ["Borrowing Department"] = "借用部门",
+
+        ["Returning Department"] = "归还部门",
+
+        ["Receiving Department"] = "收货部门",
+
+        ["Warehouse Department"] = "仓库部门",
 
         ["Borrower"] = "借用人",
 
         ["Returner"] = "归还人",
+
+        ["RepairSenderCode"] = "送修人编码",
+
+        ["RepairSenderName"] = "送修人姓名",
+
+        ["Repair Sender Information"] = "送修人信息",
 
         ["ReturnerCode"] = "归还人编码",
 
@@ -3703,7 +3756,7 @@ public static class LocalizationCatalog
 
         ["Item {0} not found."] = "未找到物料 {0}。",
 
-        ["Item instance {0} not found."] = "未找到物料实例 {0}。",
+        ["Item instance not found."] = "未找到物料实例 。",
 
         ["Item instance {0} is not InStock."] = "物料实例 {0} 不在库。",
 
@@ -3969,7 +4022,11 @@ public static class LocalizationCatalog
 
         ["Item instance {0}/{1} cannot be lent."] = "物品  {0}/{1}  当前无法借出。",
 
-        ["Code-Name."] = "编码-名称。",
+        ["Code"] = "编码",
+
+        ["Name"] = "名称",
+
+        ["Code-Name"] = "编码-名称",
 
         
 
@@ -4038,6 +4095,12 @@ public static class LocalizationCatalog
         ["AuditEntity.ReferenceListHeader"] = "参考列表标题",
 
         ["AuditEntity.ReconciliationSession"] = "对账会话",
+
+        ["AuditAction.InventoryCheckFinalize"] = "对账会话",
+
+        ["AuditEntity.ItemInstance"] = "物料实例",
+
+        ["AuditAction.InventoryCheckFinalize"] = "盘点",
 
 
         ["Success"] = "成功",
@@ -4455,12 +4518,15 @@ public static class LocalizationCatalog
         ["Users can access inventory movement history through the system interface to track the status and location changes of item instances over time."] = "用户可以通过系统界面访问库存移动历史，以跟踪物料实例随时间的状态和位置变化。",
 
 
+        ["Only permanently delete items with no transaction history."] = "仅永久删除未产生业务记录的物料。",
 
         ["Receiver Phone"] = "收货人电话",
 
         ["Receiver Department"] = "收货部门",
 
         ["Receiver Name"] = "收货人姓名",
+
+        ["Receiver Code"] = "录入人编码",
 
         ["Receiver"] = "收货人",
 
@@ -4645,6 +4711,7 @@ public static class LocalizationCatalog
         //["MT"] = "型号",
         ["Condition"] = "状态",
         ["BorrowerCode"] = "借用人代码",
+        ["BorrowerName"] = "借用人姓名",
         ["BorrowDate"] = "借用日期",
         ["DueDate"] = "到期日",
         ["BorrowDepartment"] = "借用部门",

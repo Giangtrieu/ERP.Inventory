@@ -62,7 +62,7 @@ async function renderTrackingDetail(item){
     target.html(`<div class="card p-3 mt-2"><div class="row g-3">
     <div class="form-title">${UI.t('Item Information')} ${item.serialNumber}</div>
     <div class="col-lg-4 d-flex"><div class="card info-card w-100"><div class="card-body"><h3>${UI.esc(item.itemCode)}</h3><p class="text-muted mb-2">${UI.esc(item.itemName)}</p><p class="mb-1">${UI.t('Serial')}: <b>${UI.esc(item.serialNumber || '-')}</b></p><p class="mb-0">${UI.t('Barcode')}: ${UI.esc(item.barcode || '-')}</p></div></div></div>
-    <div class="col-lg-4 d-flex"><div class="card info-card w-100"><div class="card-body">${UI.badge(item.status)}<p class="mt-3 mb-1">${UI.t('Holder')}: <b>${UI.esc(item.holderName)}</b></p><p class="mb-0">${UI.t('Reference')}: <b>${UI.esc(item.referenceDocumentNo || '-')}</b></p></div></div></div>
+    <div class="col-lg-4 d-flex"><div class="card info-card w-100"><div class="card-body">${UI.badge(item.status)}<p class="mt-3 mb-1">${UI.t('Holder')}: <b>${UI.esc(item.holderName)}</b></p><p class="mb-0">${UI.t('Document No')}: <b>${UI.esc(item.referenceDocumentNo || '-')}</b></p></div></div></div>
     <div class="col-lg-4 d-flex"><div class="card info-card w-100"><div class="card-body"><h3>${UI.t('Current Location')}</h3><p>${UI.esc(item.locationPath)}</p><p class="small text-muted">${UI.t('Updated')}: ${UI.formatDate(item.updatedAt)} ${UI.t('by')} ${UI.esc(item.updatedBy)}</p>${renderQuickActions(item)}</div></div></div>
   </div></div>  
   <ul class="nav nav-tabs mt-3">
@@ -71,11 +71,12 @@ async function renderTrackingDetail(item){
   </ul>
   <div class="tab-content card tab-card">
     <div class="tab-pane fade show active" id="timelineTab"><div id="timeline">${UI.loading()}</div></div>
-    <div class="tab-pane fade p-4" id="documentsTab">${relatedDocumentsTable(item)}</div>
+    <div class="tab-pane fade p-4" id="documentsTab">${UI.loading()}</div>
     <div class="tab-pane fade p-4" id="stockTab"><div class="audit-footer">${UI.t('Current state is calculated from CurrentItemLocation and StockBalance in SQL Server.')}</div></div>
   </div>`);
     //<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stockTab">${UI.t('Stock Balance')}</button></li> // bo ton kho
   await renderTimeline(item.itemInstanceId);
+  await relatedDocumentsTable(item.itemInstanceId);
 }
 
 function renderQuickActions(item){
@@ -99,9 +100,51 @@ async function renderTimeline(itemInstanceId){
   </div>`).join('') + `<div class="server-footer"><span>${UI.t('Page')} ${result.data.page}</span><span>${result.data.totalCount} ${UI.t('history rows')}</span></div>`);
 }
 
-function relatedDocumentsTable(item){
-  return `<div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Reference')}</th><th>${UI.t('Current Status')}</th><th>${UI.t('Holder')}</th><th>${UI.t('Updated At')}</th><th></th></tr></thead>
-    <tbody><tr><td class="px-3">${UI.esc(item.referenceDocumentNo || '-')}</td><td>${UI.badge(item.status)}</td><td>${UI.esc(item.holderName)}</td><td>${UI.formatDate(item.updatedAt)}</td><td><button class="btn btn-light btn-sm btn-doc-detail" data-id="${item.referenceDocumentId}" data-type="${UI.esc(mapDocumentType(item.referenceDocumentType))}" title="${UI.t('View Detail')}"><i class="bi bi-eye"></i></button></td></tr></tbody></table></div>`;
+async function relatedDocumentsTable(itemInstanceId) {
+    const result = await UI.api(`/Tracking/History/${itemInstanceId}`, { query: { page: 1, pageSize: 20 } });
+    if (!result.success) { $('#timeline').html(UI.empty(UI.resultError(result))); return; }
+    const rows = result.data?.items || [];
+
+    if (!rows.length) {
+        $('#documentsTab').html(UI.empty('No data'));
+        return;
+    }
+
+    const html = `
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th class="px-3">${UI.t('Document No')}</th>
+                        <th>${UI.t('Current Status')}</th>
+                        <th>${UI.t('Holder')}</th>
+                        <th>${UI.t('Updated At')}</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map(r => `
+                        <tr>
+                            <td class="px-3">${UI.esc(r.documentNo || '-')}</td>
+                            <td>${UI.badge(r.newStatus)}</td>
+                            <td>${UI.esc(r.toLocation || '-')}</td>
+                            <td>${UI.formatDate(r.performedAt)}</td>
+                            <td>
+                                <button class="btn btn-light btn-sm btn-doc-detail"
+                                    data-id="${r.documentId}"
+                                    data-type="${UI.esc(mapDocumentType(r.documentType))}"
+                                    title="${UI.t('View Detail')}">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    $('#documentsTab').html(html);
 }
 
 function mapDocumentType(docType) {

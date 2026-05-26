@@ -20,7 +20,7 @@ Router.register('operation', async function (type) {
         <div class="card mb-3"><div class="card-body">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <div class="form-section-title mb-0">${UI.t('Line Items')}</div>
-            ${type != 'repair-send' && type != 'repair-receive' ? `<button class="btn btn-sm btn-primary" id="btnAddOperationLine"><i class="bi bi-plus-circle me-2"></i>${UI.t('Add line')}</button>` : ''}
+            <button class="btn btn-sm btn-primary" id="btnAddOperationLine"><i class="bi bi-plus-circle me-2"></i>${UI.t('Add line')}</button>
             
           </div>
           <div id="operationValidation"></div>
@@ -169,6 +169,22 @@ function wireOperationEvents(type, vm) {
     $('#app input[name="docKeyword"], #app input[name="docFromDate"], #app input[name="docToDate"]').on('change input', UI.debounce(() => loadOperationDocuments(type), 300));
     $('#app [name="approvedBy"]').on('input', function () {
         $('#operationApprovedBy').text($(this).val() || '-');
+    });
+
+    $(document).on('keydown.removeOperationLine', function (e) {
+        // Ctrl + X
+        if (e.ctrlKey && e.key.toLowerCase() === 'x') {
+            e.preventDefault();
+            const $targetRow = $('#operationLineBody tr.selected').length ? $('#operationLineBody tr.selected') : $('#operationLineBody tr:last');
+            if ($targetRow.length) $targetRow.find('.btn-remove-line').trigger('click')
+        }
+    });
+
+    $(document).on('keydown.addOperationLine', function (e) {
+        if (e.ctrlKey && e.key.toLowerCase() === 'm') {
+            e.preventDefault();
+            $('#btnAddOperationLine').trigger('click');
+        }
     });
     refreshOperationRowAvailability(type);
     checkDuplicateSerialRealtime();

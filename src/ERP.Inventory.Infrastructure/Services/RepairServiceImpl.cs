@@ -21,21 +21,21 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
         if (!request.Lines.Any()) return ServiceResult<PostedDocumentDto>.Fail("At least one item is required.");
 
         // Resolve vendor by code
-        if (string.IsNullOrWhiteSpace(request.RepairVendorCode)) return ServiceResult<PostedDocumentDto>.Fail("Repair vendor code is required.");
-        var vendor = await FindPartyByCodeAsync(request.RepairVendorCode, ExternalPartyType.RepairVendor, cancellationToken);
+        if (string.IsNullOrWhiteSpace(request.RepairSenderCode)) return ServiceResult<PostedDocumentDto>.Fail("Repair vendor code is required.");
+        var vendor = await FindPartyByCodeAsync(request.RepairSenderCode, ExternalPartyType.RepairVendor, cancellationToken);
         if (vendor == null)
         {
             vendor = new ExternalParty
             {
-                PartyCode = request.RepairVendorCode,
-                ContactName = request.RepairVendorCode,
+                PartyCode = request.RepairSenderCode,
+                ContactName = request.RepairSenderName,
                 CreatedAt = request.SendDate,
                 CreatedBy = user.UserName,
                 Email = "",
                 IsActive = true,
                 Phone = "",
                 PartyType = ExternalPartyType.RepairVendor,
-                Name = request.RepairVendorCode,
+                Name = request.RepairSenderName,
             };
             _db.ExternalParties.Add(vendor);
             await _db.SaveChangesAsync(cancellationToken);

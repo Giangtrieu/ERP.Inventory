@@ -18,7 +18,8 @@ window.OperationPayloadConfig = {
             warehouseId: intOrNull(h('warehouseId')),
             documentDate: h('documentDate'),
             documentNo: h('documentNo'),
-            receiver: h('receiver'),
+            receiverCode: h('receiverCode'),
+            receiverName: h('receiverName'),
             receiverPhone: h('receiverPhone'),
             receiverDepartment: h('receiverDepartment'),
             departmentOwner: h('departmentOwner'),
@@ -100,7 +101,8 @@ window.OperationPayloadConfig = {
 
         payload: (h, rows, intOrNull) => ({
             documentNo: (h('documentNo') || '').trim().toUpperCase() || null,
-            repairVendorCode: h('repairVendorCode'),
+            repairSenderCode: h('repairSenderCode'),
+            repairSenderName: h('repairSenderName'),
             sendDate: h('sendDate'),
             expectedReturnDate: h('expectedReturnDate') || null,
             reason: h('reason'),
@@ -139,7 +141,8 @@ window.OperationPayloadConfig = {
         payload: (h, rows, intOrNull) => ({
             documentNo: h('documentNo'),
             warehouseId: intOrNull(h('warehouseId')),
-            borrower: h('borrower'),
+            borrowerCode: h('borrowerCode'),
+            borrowerName: h('borrowerName'),
             borrowDate: h('borrowDate'),
             dueDate: h('dueDate'),
             purpose: h('purpose'),
@@ -164,7 +167,8 @@ window.OperationPayloadConfig = {
         payload: (h, rows, intOrNull) => ({
             BorrowDocumentNo: h('borrowDocumentNo'),
             returnDate: h('returnDate'),
-            returner: h('returner'),
+            returnerCode: h('returnerCode'),
+            returnerName: h('returnerName'),
             borrowDepartment: h('borrowDepartment'),
             approvedBy: h('approvedBy'),
             borrowerPhone: h('borrowerPhone'),

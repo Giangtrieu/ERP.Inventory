@@ -36,38 +36,38 @@ public sealed class TrackingService : ITrackingService
                 x.ItemInstance != null &&
                 x.ItemInstance.Item != null &&
                 (x.ItemInstance.Item.ItemCode.Contains(normalized) ||
+                (x.ReferenceDocumentNo!= null && x.ReferenceDocumentNo.Contains(normalized))||
                  (x.ItemInstance.SerialNumber != null && x.ItemInstance.SerialNumber.Contains(normalized)))) //||
                  //(x.ItemInstance.Barcode != null && x.ItemInstance.Barcode.Contains(normalized)) ||
                  //x.ItemInstance.Item.DefaultName.Contains(normalized)))
             .Take(25)
             .ToListAsync(cancellationToken);
 
-        var result = rows
-            .Where(x => x.WarehouseId == null || user.CanAccessWarehouse(x.WarehouseId.Value))
-            .Select(x =>
-            {
-                var status = x.ItemInstance!.Status;
-                return new TrackingSearchResultDto
-                {
-                    ItemInstanceId = x.ItemInstanceId,
-                    ItemCode = x.ItemInstance.Item!.ItemCode,
-                    //ItemName = GetItemName(x.ItemInstance.Item, user.LanguageCode),
-                    SerialNumber = x.ItemInstance.SerialNumber,
-                    Barcode = x.ItemInstance.Barcode,
-                    Status = status,
-                    HolderName = x.ExternalParty?.Name ?? x.Warehouse?.Name ?? "Warehouse",
-                    LocationPath = CurrentLocationDisplay(x),
-                    ReferenceDocumentNo = x.ReferenceDocumentNo,
-                    UpdatedAt = x.UpdatedLocationAt,
-                    UpdatedBy = x.UpdatedLocationBy,
-                    CanMove = status is ItemStatus.Normal or ItemStatus.Damaged or ItemStatus.Scrapped or ItemStatus.InStock,
-                    CanSendRepair = status is ItemStatus.Normal or ItemStatus.InStock or ItemStatus.Damaged,
-                    CanLend = status is ItemStatus.Normal or ItemStatus.InStock,
-                    ReferenceDocumentId = x.ReferenceDocumentId,
-                    ReferenceDocumentType = x.ReferenceDocumentType,
-                };
-            })
-            .ToArray();
+        var result =
+         (from x in rows
+             join h in _db.ItemMovementHistories .Where(h => h.DocumentType == nameof(InboundDocument))
+                on x.ItemInstanceId equals h.ItemInstanceId into historyGroup
+             from h in historyGroup.OrderByDescending(t => t.Id).Take(1).DefaultIfEmpty()
+             where x.WarehouseId == null || user.CanAccessWarehouse(x.WarehouseId.Value)
+             select new TrackingSearchResultDto
+             {
+                 ItemInstanceId = x.ItemInstanceId,
+                 ItemCode = x.ItemInstance!.Item!.ItemCode,
+                 SerialNumber = x.ItemInstance.SerialNumber,
+                 Barcode = x.ItemInstance.Barcode,
+                 Status = x.ItemInstance.Status,
+                 HolderName = x.ExternalParty != null? x.ExternalParty.Name
+                     : x.Warehouse != null? x.Warehouse.Name: "Warehouse",
+                 LocationPath = CurrentLocationDisplay(x),
+                 ReferenceDocumentNo = h != null ? h.DocumentNo : null,
+                 UpdatedAt = x.UpdatedLocationAt,
+                 UpdatedBy = x.UpdatedLocationBy,
+                 CanMove = x.ItemInstance.Status is ItemStatus.Normal or ItemStatus.Damaged or ItemStatus.Scrapped or ItemStatus.InStock,
+                 CanSendRepair = x.ItemInstance.Status is ItemStatus.Normal or ItemStatus.InStock or ItemStatus.Damaged,
+                 CanLend = x.ItemInstance.Status is ItemStatus.Normal or ItemStatus.InStock,
+                 ReferenceDocumentId = x.ReferenceDocumentId,
+                 ReferenceDocumentType = x.ReferenceDocumentType
+             }).ToArray();
 
         return ServiceResult<IReadOnlyCollection<TrackingSearchResultDto>>.Ok(result);
     }
@@ -101,6 +101,8 @@ public sealed class TrackingService : ITrackingService
                 OldStatus = x.OldStatus,
                 NewStatus = x.NewStatus,
                 DocumentNo = x.DocumentNo,
+                DocumentId = x.DocumentId,
+                DocumentType = x.DocumentType,
                 PerformedBy = x.PerformedBy
             })
             .ToArrayAsync(cancellationToken);
@@ -174,6 +176,7 @@ public sealed class TrackingService : ITrackingService
             query = query.Where(x => x.ItemInstance != null && x.ItemInstance.Item != null &&
                 (x.ItemInstance.Item.ItemCode.Contains(key) ||
                  x.ItemInstance.Item.DefaultName.Contains(key) ||
+                  (x.ReferenceDocumentNo != null && x.ReferenceDocumentNo.Contains(key)) ||
                  (x.ItemInstance.SerialNumber != null && x.ItemInstance.SerialNumber.Contains(key)) ||
                  (x.ItemInstance.MT != null && x.ItemInstance.MT.Contains(key)) ||
                  (x.ItemInstance.Barcode != null && x.ItemInstance.Barcode.Contains(key))));
@@ -232,9 +235,32 @@ public sealed class TrackingService : ITrackingService
             parsedStatus = statusValue;
         }
 
-        var query = _db.CurrentItemLocations
-            .AsNoTracking()
-            .AsQueryable();
+        //var query = _db.CurrentItemLocations
+        //    .AsNoTracking()
+        //    .AsQueryable();
+
+        var query =
+            from loc in _db.CurrentItemLocations.AsNoTracking()
+            let inboundTx = _db.ItemMovementHistories
+                .Where(tx =>
+                    tx.ItemInstanceId == loc.ItemInstanceId &&
+                    tx.DocumentType == nameof(InboundDocument))
+                .FirstOrDefault()
+            select new
+            {
+                loc.ExternalParty,
+                loc.ItemInstance,
+                loc.BinLocation,
+                loc.WarehouseId,
+                DocumentNo = inboundTx != null ? inboundTx.DocumentNo : null,
+                loc.ItemInstanceId,
+                ItemName = loc.ItemInstance.Item.DefaultName,
+                CurrentLocation = loc.BinLocation != null ? loc.BinLocation.BinCode : null,
+                Holder = loc.ExternalParty != null ? loc.ExternalParty.Name :
+                         (loc.Warehouse != null ? loc.Warehouse.Name : "Unknown"),
+                loc.UpdatedLocationAt,
+                loc.Warehouse
+            };
 
         // ================= FILTER =================
 
@@ -282,6 +308,7 @@ public sealed class TrackingService : ITrackingService
                     //x.ItemInstance.Item.DefaultName.Contains(key) ||
                     (x.ItemInstance.SerialNumber != null &&
                      x.ItemInstance.SerialNumber.Contains(key)) ||
+                      (x.DocumentNo != null && x.DocumentNo.Contains(key)) ||
                     (x.ItemInstance.MT != null &&
                      x.ItemInstance.MT.Contains(key)) ||
                     (x.ItemInstance.OwnerName != null &&
@@ -304,6 +331,7 @@ public sealed class TrackingService : ITrackingService
         var rows = await query.OrderBy(x => x.BinLocation!.BinCode).Skip((page - 1) * pageSize).Take(pageSize)
             .Select(x => new InventoryListRowDto
             {
+                DocumentNo = x.DocumentNo,
                 ItemInstanceId = x.ItemInstanceId,
                 ItemCode = x.ItemInstance!.Item!.ItemCode,
                 ItemName = x.ItemInstance.Item.DefaultName,

@@ -32,12 +32,15 @@ public sealed class MovementHistoryDto
     public ItemStatus OldStatus { get; init; }
     public ItemStatus NewStatus { get; init; }
     public string DocumentNo { get; init; } = string.Empty;
+    public long DocumentId { get; init; }
+    public string DocumentType { get; init; } = string.Empty;
     public string PerformedBy { get; init; } = string.Empty;
 }
 
 public sealed class InventoryListRowDto
 {
     public int ItemInstanceId { get; init; }
+    public string? DocumentNo { get; init; } = string.Empty;
     public string ItemCode { get; init; } = string.Empty;
     public string ItemName { get; init; } = string.Empty;
     public string? SerialNumber { get; init; }
@@ -45,7 +48,7 @@ public sealed class InventoryListRowDto
     public string? OwnerName { get; init; }
     public string? Barcode { get; init; }
     public ItemStatus Status { get; init; }
-    public string CurrentLocation { get; init; } = string.Empty;
+    public string? CurrentLocation { get; init; } = string.Empty;
     public string Holder { get; init; } = string.Empty;
     public DateTime LastUpdatedAt { get; init; }
 }

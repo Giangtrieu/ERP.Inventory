@@ -59,12 +59,9 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
         // ── Resolve Receiver (người nhập kho) — optional ─────────────
         int? receiverId = null;
         string receiverDisplay = string.Empty;
-        if (!string.IsNullOrWhiteSpace(request.Receiver))
+        if (!string.IsNullOrWhiteSpace(request.ReceiverCode))
         {
-            var rParts = request.Receiver.Split('-', 2);
-            request.ReceiverCode = rParts[0].Trim();
-            request.ReceiverName = rParts.Length > 1 ? rParts[1].Trim() : string.Empty;
-            if (!string.IsNullOrWhiteSpace(request.ReceiverCode))
+            if (!string.IsNullOrWhiteSpace(request.ReceiverName))
             {
                 var receiver = await FindPartyByCodeAsync(request.ReceiverCode, ExternalPartyType.Receiver, cancellationToken);
                 if (receiver == null)
@@ -307,8 +304,8 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
             }
 
             var bin = await FindBinByCodeAsync(line.BinCode, cancellationToken);
-            if (bin == null) { errors.Add($"Bin {line.BinCode} not found."); continue; }
-            if (bin.WarehouseId != warehouse.Id) { errors.Add($"Bin {line.BinCode} does not belong to warehouse {warehouse.WarehouseCode}."); continue; }
+            if (bin == null) { errors.Add($"BinCode {line.BinCode} not found."); continue; }
+            if (bin.WarehouseId != warehouse.Id) { errors.Add($"BinCode {line.BinCode} does not belong to warehouse {warehouse.WarehouseCode}."); continue; }
             if (!binCodes.Add(line.BinCode)) errors.Add($"Bin {line.BinCode} is already used in another inbound line.");
             if (await BinHasActiveItemAsync(bin.Id, null, cancellationToken)) errors.Add($"Bin {bin.FullPath} already contains another active item.");
         }

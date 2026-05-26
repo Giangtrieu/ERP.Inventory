@@ -67,9 +67,10 @@
 
     'repair-send': {
         headers: {
-            repairVendorCode: 'Vendor',
+            repairSenderCode: 'RepairSenderCode',
+            repairSenderName: 'RepairSenderName',
             sendDate: 'Send Date',
-            reason: 'Reason'
+            //reason: 'Reason'
         },
 
         rows: {
@@ -99,7 +100,8 @@
         headers: {
             documentNo: 'Borrow Document No',
             warehouseId: 'Borrow Warehouse',
-            borrower: 'Borrower',
+            borrowerCode: 'BorrowerCode',
+            borrowerName: 'BorrowerName',
             borrowDate: 'Borrow Date',
             dueDate: 'Due Date',
             borrowDepartment: 'Borrow Department',
@@ -121,6 +123,9 @@
         headers: {
             borrowDocumentNo: 'Borrow Document No',
             returnDate: 'Return Date',
+            returnerName: 'ReturnerName',
+            returnerCode: 'ReturnerCode',
+            borrowDepartment: 'Borrow Department',
             warehouseId: 'Return Warehouse'
         },
 

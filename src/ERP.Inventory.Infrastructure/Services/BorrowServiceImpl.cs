@@ -26,7 +26,7 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
         if (string.IsNullOrWhiteSpace(request.ApprovedBy)) requiredErrors.Add("Approver is required.");
         if (string.IsNullOrWhiteSpace(request.BorrowerPhone)) requiredErrors.Add("Phone is required.");
         if (string.IsNullOrWhiteSpace(request.DepartmentOwner)) requiredErrors.Add("Department owner is required.");
-        if (string.IsNullOrWhiteSpace(request.Borrower)) requiredErrors.Add("Borrower is required.");
+        if (string.IsNullOrWhiteSpace(request.BorrowerCode)) requiredErrors.Add("Borrower is required.");
         if (!request.Lines.Any()) requiredErrors.Add("At least one item is required.");
         if (requiredErrors.Count > 0) return ServiceResult<PostedDocumentDto>.Fail(requiredErrors);
 
@@ -38,11 +38,7 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
         //if (borrower == null) return ServiceResult<PostedDocumentDto>.Fail($"Borrower {request.BorrowerCode} not found.");
 
         await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
-
-        var parts = request.Borrower.Split('-', 2);
-        if (parts.Length == 0 || string.IsNullOrWhiteSpace(parts[0])) return ServiceResult<PostedDocumentDto>.Fail($"Borrower {request.Borrower} not found.");
-        request.BorrowerCode = parts[0].Trim();
-        request.BorrowerName = parts.Length > 1 ? parts[1] : "";
+        if (string.IsNullOrWhiteSpace(request.BorrowerCode)) return ServiceResult<PostedDocumentDto>.Fail($"Borrower {request.Borrower} not found.");
         var borrower = await FindPartyByCodeAsync(request.BorrowerCode, ExternalPartyType.Borrower, cancellationToken);
         if (borrower == null)
         {
@@ -259,14 +255,11 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
         if (string.IsNullOrWhiteSpace(request.ApprovedBy)) requiredErrors.Add("Approver is required.");
         if (string.IsNullOrWhiteSpace(request.BorrowerPhone)) requiredErrors.Add("Phone is required.");
         if (string.IsNullOrWhiteSpace(request.DepartmentOwner)) requiredErrors.Add("Department owner is required.");
-        if (string.IsNullOrWhiteSpace(request.Returner)) requiredErrors.Add("Borrower is required.");
+        if (string.IsNullOrWhiteSpace(request.ReturnerCode)) requiredErrors.Add("Borrower is required.");
         if (!request.Lines.Any()) requiredErrors.Add("At least one item is required.");
         if (requiredErrors.Count > 0) return ServiceResult<PostedDocumentDto>.Fail(requiredErrors);
 
-        var parts = request.Returner.Split('-', 2);
-        if (parts.Length == 0 || string.IsNullOrWhiteSpace(parts[0])) return ServiceResult<PostedDocumentDto>.Fail($"Borrower {request.Returner} not found.");
-        request.ReturnerCode = parts[0].Trim();
-        request.ReturnerName = parts.Length > 1 ? parts[1] : "";
+        if (string.IsNullOrWhiteSpace(request.ReturnerCode)) return ServiceResult<PostedDocumentDto>.Fail($"Borrower {request.Returner} not found.");
         var borrower = await FindPartyByCodeAsync(request.ReturnerCode, ExternalPartyType.Borrower, cancellationToken);
         if (borrower == null)
         {

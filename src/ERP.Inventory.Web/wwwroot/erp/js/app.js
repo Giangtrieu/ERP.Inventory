@@ -8,6 +8,7 @@ window.AppState = {
   currentTrackingKeyword: '',
   page: 1,
   pageSize: 25,
+  lang: 'vi',
 };
 
 $(async function () {
@@ -27,6 +28,7 @@ $(async function () {
   // Language switch
   $('#languageSelect').on('change', async function () {
     const lang = $(this).val();
+    AppState.lang = lang;
     await UI.api('/App/Language', { method: 'POST', data: { language: lang } });
     await loadResources(lang);
     await loadLookups();
@@ -107,6 +109,7 @@ async function bootstrap() {
   const boot = await UI.api('/App/Bootstrap');
   AppState.user = boot.user;
   AppState.permissions = boot.permissions;
+    AppState.lang = boot.user.language || 'vi';
   $('#currentUserBadge').text(`${boot.user.displayName || boot.user.userName} · ${boot.user.roles.join(', ')}`);
   $('#languageSelect').val(boot.user.language || 'vi');
   updateNotificationBadge(boot.notifications.unread);
@@ -116,13 +119,113 @@ async function bootstrap() {
 }
 
 async function loadResources(lang) {
-  AppState.resources = await UI.api('/Localization/Resources', { query: { lang } });
-  document.title = `${UI.t('B34G Warehouse')} | ${UI.t('Warehouse Operations Portal')}`;
-  $('#globalSearchInput').attr('placeholder', UI.t('Global search item / serial / barcode'));
-  $('.brand-text .fw-bold.text-mute').text(UI.t('B34G Warehouse'));
-  $('.brand-text .small.text-muted').text(UI.t('Warehouse Operations Portal'));
-  $('#btnPrintVoucherText').text(UI.t('Export PDF'));
+    const cacheKey = `i18n_resources_${lang}`;
+    const cacheTimeKey = `${cacheKey}_time`;
+    const cached = localStorage.getItem(cacheKey);
+    const cacheTime = localStorage.getItem(cacheTimeKey);
+    const expired = !cacheTime || (Date.now() - Number(cacheTime)) > 6 * 60 * 60 * 1000;
+    if (cached && !expired) {
+        AppState.resources = JSON.parse(cached);
+    } else {
+        const resources = await UI.api('/Localization/Resources', {
+            query: { lang }
+        });
+        AppState.resources = resources;
+
+        localStorage.setItem(cacheKey, JSON.stringify(resources));
+        localStorage.setItem(cacheTimeKey, Date.now().toString());
+    }
+    //clearLookupCache();
+    refreshUI();
+  //AppState.resources = await UI.api('/Localization/Resources', { query: { lang } });
 }
+
+async function refreshUI() {
+    document.title = `${UI.t('B34G Warehouse')} | ${UI.t('Warehouse Operations Portal')}`;
+    $('#globalSearchInput').attr('placeholder', UI.t('Global search item / serial / barcode'));
+    $('.brand-text .fw-bold.text-mute').text(UI.t('B34G Warehouse'));
+    $('.brand-text .small.text-muted').text(UI.t('Warehouse Operations Portal'));
+    $('#btnPrintVoucherText').text(UI.t('Export PDF'));
+}
+
+//const CACHE_VERSION = 'v1';
+//const CACHE_HOURS = 12;
+
+//function cleanupOldVersions() {
+//    Object.keys(localStorage)
+//        .filter(x => x.startsWith('cache_') && !x.startsWith(`cache_${CACHE_VERSION}_`))
+//        .forEach(x => localStorage.removeItem(x));
+//}
+
+//function cleanupExpiredCache() {
+//    const expireMs = CACHE_HOURS * 3600000;
+
+//    Object.keys(localStorage)
+//        .filter(x => x.startsWith(`cache_${CACHE_VERSION}_`) && x.endsWith('_time'))
+//        .forEach(timeKey => {
+//            const time = Number(localStorage.getItem(timeKey));
+
+//            if (Date.now() - time > expireMs) {
+//                localStorage.removeItem(timeKey.replace('_time', ''));
+//                localStorage.removeItem(timeKey);
+//            }
+//        });
+//}
+
+//async function cachedApi(url, options = {}) {
+//    const lang = AppState.lang || localStorage.getItem('lang') || 'vi';
+//    const key = `cache_${CACHE_VERSION}_${lang}_${url}_${JSON.stringify(options)}`;
+//    const timeKey = `${key}_time`;
+//    const cache = localStorage.getItem(key);
+//    const time = localStorage.getItem(timeKey);
+
+//    if (cache && time && Date.now() - Number(time) < CACHE_HOURS * 3600000)
+//        return JSON.parse(cache);
+
+//    const data = await UI.api(url, options);
+
+//    localStorage.setItem(key, JSON.stringify(data));
+//    localStorage.setItem(timeKey, Date.now());
+
+//    return data;
+//}
+
+//function clearLookupCache() {
+//    Object.keys(localStorage)
+//        .filter(x => x.startsWith(`cache_${CACHE_VERSION}_`))
+//        .forEach(x => localStorage.removeItem(x));
+//}
+
+//async function loadLookups() {
+
+//    cleanupOldVersions();
+//    cleanupExpiredCache();
+
+//    const [warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType] = await Promise.all([
+//        cachedApi('/Lookup/Warehouses'),
+//        cachedApi('/Lookup/Categories'),
+//         cachedApi('/Lookup/Statuses'),
+//        cachedApi('/Lookup/ItemStatusView'),
+//        cachedApi('/Lookup/InventoryStatuses'),
+//        cachedApi('/Lookup/ExternalParties', { query: { type: 'Supplier' } }),
+//        cachedApi('/Lookup/ExternalParties', { query: { type: 'RepairVendor' } }),
+//        cachedApi('/Lookup/ExternalParties', { query: { type: 'Borrower' } }),
+//        cachedApi('/Lookup/Items'),
+//        cachedApi('/Lookup/RepairResults'),
+//        cachedApi('/Lookup/BorrowReturnConditions'),
+//        cachedApi('/Lookup/InventoryCheckResults'),
+//        cachedApi('/Lookup/ExternalPartyTypes'),
+//        cachedApi('/Lookup/DocumentPeriodType'),
+//    ]);
+
+//    const inboundConditions = [
+//        { id: 'Normal', text: UI.t('Enum.ItemStatus.Normal') || 'Normal' },
+//        { id: 'Damaged', text: UI.t('Enum.ItemStatus.Damaged') || 'Damaged' },
+//        { id: 'Scrapped', text: UI.t('Enum.ItemStatus.Scrapped') || 'Scrapped' },
+//    ];
+
+//    AppState.lookups = { warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, inboundConditions, documentPeriodType };
+//}
 
 async function loadLookups() {
   const [warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType] = await Promise.all([

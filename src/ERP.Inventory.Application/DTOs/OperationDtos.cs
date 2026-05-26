@@ -80,7 +80,8 @@ public sealed class RepairSendRequest
     /// </summary>
     public string DocumentNo { get; init; } = string.Empty;
     /// <summary>Text code for repair vendor. Backend resolves to ExternalParty Id.</summary>
-    public string RepairVendorCode { get; init; } = string.Empty;
+    public string RepairSenderCode { get; init; } = string.Empty;
+    public string RepairSenderName { get; init; } = string.Empty;
     public DateTime SendDate { get; init; } = DateTime.UtcNow;
     public DateTime? ExpectedReturnDate { get; init; }
     public string Reason { get; init; } = string.Empty;

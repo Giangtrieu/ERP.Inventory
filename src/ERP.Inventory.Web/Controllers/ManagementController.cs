@@ -6,6 +6,7 @@ using ERP.Inventory.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Threading;
 
 namespace ERP.Inventory.Web.Controllers;
 
@@ -174,6 +175,63 @@ public sealed class ManagementController : ManagementBaseController
         AddAudit("Update", nameof(ItemInstance), entity.Id, entity.SerialNumber ?? entity.Barcode ?? entity.Id.ToString());
         await Db.SaveChangesAsync(ct);
         return Json(new { success = true, data = new { entity.Id, entity.ItemId, entity.SerialNumber, entity.Barcode, entity.MT, entity.OwnerName } });
+    }
+
+    [HttpDelete("ItemInstanceDelete/{id:int}")]
+    [Authorize(Roles = "Admin,Warehouse Manager")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteItemInstance(int id, CancellationToken ct)
+    {
+        if (id == 0)return Json(new { success = false, message = "Item instance not found." });
+
+        var user = CurrentUserService.GetCurrentUser();
+        var entity = await Db.ItemInstances.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (entity == null)return NotFound();
+
+        var hasDelete =await Db.BorrowDocumentLines.AnyAsync(x => x.ItemInstanceId == id, ct) || await Db.RepairDocumentLines.AnyAsync(x => x.ItemInstanceId == id, ct);
+        if (hasDelete)
+        {
+            return Json(new{ success = false,message = "Cannot hard delete this record because it is referenced by operational data. Use soft delete instead."});
+        }
+
+        var current = await Db.CurrentItemLocations .Where(x => x.ItemInstanceId == id).ToListAsync(ct);
+
+        if (!current.Any())return NotFound();
+
+        var history = await Db.ItemMovementHistories.Where(x => x.ItemInstanceId == id).ToListAsync(ct);
+        var itemTransaction = await Db.InventoryTransactions.Where(x => x.ItemInstanceId == id).ToListAsync(ct);
+        var inboundLog = await Db.InboundDocumentLogs.Where(x => x.ItemInstanceId == id).ToListAsync(ct);
+        var inboundLine = await Db.InboundDocumentLines .Where(x => x.ItemInstanceId == id) .ToListAsync(ct);
+        var adjustLog = await Db.AdjustmentDocumentLogs.Where(x => x.ItemInstanceId == id).ToListAsync(ct);
+        var adjustLine = await Db.AdjustmentDocumentLines.Where(x => x.ItemInstanceId == id).ToListAsync(ct);
+        var moveLine = await Db.MoveDocumentLines.Where(x => x.ItemInstanceId == id).ToListAsync(ct);
+        var inventoryCheck = await Db.InventoryCheckLines.Where(x => x.ItemInstanceId == id).ToListAsync(ct);
+
+        await using var transaction = await Db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            if (inboundLog.Any()) Db.InboundDocumentLogs.RemoveRange(inboundLog);
+            if (inboundLine.Any()) Db.InboundDocumentLines.RemoveRange(inboundLine);
+            if (adjustLog.Any()) Db.AdjustmentDocumentLogs.RemoveRange(adjustLog);
+            if (adjustLine.Any()) Db.AdjustmentDocumentLines.RemoveRange(adjustLine);
+            if (moveLine.Any()) Db.MoveDocumentLines.RemoveRange(moveLine);
+            if (inventoryCheck.Any()) Db.InventoryCheckLines.RemoveRange(inventoryCheck);
+            if (itemTransaction.Any()) Db.InventoryTransactions.RemoveRange(itemTransaction);
+            if (history.Any()) Db.ItemMovementHistories.RemoveRange(history);
+
+            Db.CurrentItemLocations.RemoveRange(current);
+            Db.ItemInstances.Remove(entity);
+            AddAudit("HardDelete", nameof(ItemInstance), entity.Id, entity.SerialNumber ?? entity.Barcode ?? entity.Id.ToString());
+
+            await Db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            return Json(new{ success = true, message = "Deleted successfully."});
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync(ct);
+            return Json(new { success = false,message = ex.Message});
+        }
     }
 
     // ─── Warehouse Structure ──────────────────────────────────

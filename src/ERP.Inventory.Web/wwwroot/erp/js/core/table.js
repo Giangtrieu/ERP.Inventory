@@ -217,14 +217,31 @@ window.OperationLineConfig = {
                 name: 'documentNo'
             },
             {
+                col: 'col-12',
+                type: 'custom',
+                render: () => `
+                <div class="form-section-title"> ${UI.t('Receiving Department')}</div> `
+            },
+            {
                 col: 'col-md-4',
                 type: 'custom',
                 render: () => UI.inputBorrorer(
-                    'Receiver',
+                    'Receiver Code',
                     'text',
                     '',
-                    'receiver',
-                    'Code-Name'
+                    'receiverCode',
+                    'Code'
+                )
+            },
+            {
+                col: 'col-md-4',
+                type: 'custom',
+                render: () => UI.inputBorrorer(
+                    'Receiver Name',
+                    'text',
+                    '',
+                    'receiverName',
+                    'Name'
                 )
             },
             {
@@ -238,15 +255,15 @@ window.OperationLineConfig = {
                 col: 'col-md-4',
                 type: 'input',
                 inputType: 'text',
-                label: 'Receiver Department',
-                name: 'receiverDepartment'
+                label: 'Approver',
+                name: 'approvedBy'
             },
             {
                 col: 'col-md-4',
                 type: 'input',
                 inputType: 'text',
-                label: 'Department Owner',
-                name: 'departmentOwner'
+                label: 'Receiver Department',
+                name: 'receiverDepartment'
             },
             {
                 col: 'col-md-4',
@@ -256,12 +273,19 @@ window.OperationLineConfig = {
                 name: 'ownerName'
             },
             {
+                col: 'col-12',
+                type: 'custom',
+                render: () => `
+                <div class="form-section-title"> ${UI.t('Warehouse Department')}</div> `
+            },
+            {
                 col: 'col-md-4',
                 type: 'input',
                 inputType: 'text',
-                label: 'Approver',
-                name: 'approvedBy'
-            }
+                label: 'Department Owner',
+                name: 'departmentOwner'
+            },
+            
         ],
 
         move: [
@@ -370,9 +394,10 @@ window.OperationLineConfig = {
             {
                 col: 'col-md-4',
                 type: 'input',
-                inputType: 'text',
-                label: 'Vendor',
-                name: 'repairVendorCode'
+                inputType: 'date',
+                label: 'Expected Return',
+                name: 'expectedReturnDate',
+                value: () => today()
             },
             {
                 col: 'col-md-4',
@@ -383,15 +408,27 @@ window.OperationLineConfig = {
                 value: () => today()
             },
             {
-                col: 'col-md-4',
-                type: 'input',
-                inputType: 'date',
-                label: 'Expected Return',
-                name: 'expectedReturnDate',
-                value: () => today()
+                col: 'col-12',
+                type: 'custom',
+                render: () => `
+                <div class="form-section-title"> ${UI.t('Repair Sender Information')}</div> `
             },
             {
-                col: 'col-md-8',
+                col: 'col-md-4',
+                type: 'input',
+                inputType: 'text',
+                label: 'RepairSenderCode',
+                name: 'repairSenderCode'
+            },
+            {
+                col: 'col-md-4',
+                type: 'input',
+                inputType: 'text',
+                label: 'RepairSenderName',
+                name: 'repairSenderName'
+            },
+            {
+                col: 'col-md-4',
                 type: 'input',
                 inputType: 'text',
                 label: 'Reason',
@@ -456,14 +493,31 @@ window.OperationLineConfig = {
                 value: () => today()
             },
             {
+                col: 'col-12',
+                type: 'custom',
+                render: () => `
+                <div class="form-section-title"> ${UI.t('Borrowing Department')}</div> `
+            },
+            {
                 col: 'col-md-3',
                 type: 'custom',
                 render: () => UI.inputBorrorer(
-                    'Borrower',
+                    'BorrowerCode',
                     'text',
                     '',
-                    'borrower',
-                    'Code-Name'
+                    'borrowerCode',
+                    'Code'
+                )
+            },
+            {
+                col: 'col-md-3',
+                type: 'custom',
+                render: () => UI.inputBorrorer(
+                    'BorrowerName',
+                    'text',
+                    '',
+                    'borrowerName',
+                    'Name'
                 )
             },
             {
@@ -486,6 +540,19 @@ window.OperationLineConfig = {
                 inputType: 'text',
                 label: 'Borrower Phone',
                 name: 'borrowerPhone'
+            },
+            {
+                col: 'col-md-9',
+                type: 'input',
+                inputType: 'text',
+                label: 'Purpose',
+                name: 'purpose'
+            },
+            {
+                col: 'col-12',
+                type: 'custom',
+                render: () => `
+                <div class="form-section-title"> ${UI.t('Warehouse Department')}</div> `
             },
             {
                 col: 'col-md-3',
@@ -494,25 +561,18 @@ window.OperationLineConfig = {
                 label: 'Department Owner',
                 name: 'departmentOwner'
             },
-            {
-                col: 'col-md-9',
-                type: 'input',
-                inputType: 'text',
-                label: 'Purpose',
-                name: 'purpose'
-            }
         ],
 
         'borrow-return': [
             {
-                col: 'col-md-3',
+                col: 'col-md-4',
                 type: 'input',
                 inputType: 'text',
                 label: 'Borrow Document No',
                 name: 'borrowDocumentNo'
             },
             {
-                col: 'col-md-3',
+                col: 'col-md-4',
                 type: 'input',
                 inputType: 'date',
                 label: 'Return Date',
@@ -520,7 +580,7 @@ window.OperationLineConfig = {
                 value: () => today()
             },
             {
-                col: 'col-md-3',
+                col: 'col-md-4',
                 type: 'select',
                 label: 'Return Warehouse',
                 name: 'warehouseId',
@@ -528,39 +588,62 @@ window.OperationLineConfig = {
                 value: vm => vm.warehouseId
             },
             {
-                col: 'col-md-3',
+                col: 'col-12',
+                type: 'custom',
+                render: () => `
+                <div class="form-section-title"> ${UI.t('Returning Department')}</div> `
+            },
+            {
+                col: 'col-md-4',
                 type: 'custom',
                 render: () => UI.inputBorrorer(
-                    'Returner',
+                    'ReturnerCode',
                     'text',
                     '',
-                    'returner',
-                    'Code-Name'
+                    'returnerCode',
+                    'Code'
                 )
             },
             {
-                col: 'col-md-3',
+                col: 'col-md-4',
+                type: 'custom',
+                render: () => UI.inputBorrorer(
+                    'ReturnerName',
+                    'text',
+                    '',
+                    'returnerName',
+                    'Name'
+                )
+            },
+            {
+                col: 'col-md-4',
                 type: 'input',
                 inputType: 'text',
-                label: 'Borrow Department',
+                label: 'Return Department',
                 name: 'borrowDepartment'
             },
             {
-                col: 'col-md-3',
+                col: 'col-md-4',
                 type: 'input',
                 inputType: 'text',
                 label: 'Approver',
                 name: 'approvedBy'
             },
             {
-                col: 'col-md-3',
+                col: 'col-md-4',
                 type: 'input',
                 inputType: 'text',
                 label: 'Borrower Phone',
                 name: 'borrowerPhone'
             },
             {
-                col: 'col-md-3',
+                col: 'col-12',
+                type: 'custom',
+                render: () => `
+                <div class="form-section-title"> ${UI.t('Warehouse Department')}</div> `
+            },
+            {
+                col: 'col-md-4',
                 type: 'input',
                 inputType: 'text',
                 label: 'Department Owner',

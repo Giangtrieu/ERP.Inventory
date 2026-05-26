@@ -73,21 +73,24 @@ async function loadInventoryList(page = 1, pageSize = AppState.pageSize || 25) {
   });
 
   $('#inventoryTable').html(`<div class="table-wrap">
-    <table class="data-table"><thead><tr><th style="min-width: 25px;text-align: center;">STT</th><th class="px-3 td_max-width160">${UI.t('Item')}</th><th class="td_max-width160">${UI.t('Serial / MT')}</th><th>${UI.t('OwnerName')}</th><th>${UI.t('Status')}</th><th>${UI.t('Current Location')}</th><th>${UI.t('Holder')}</th>${canEdit ? `<th>${UI.t('Actions')}</th>` : ''}</tr></thead>
+    <table class="data-table"><thead><tr><th style="min-width: 25px;text-align: center;">STT</th><th class="px-3">${UI.t('Document No')}</th><th class="px-3 td_max-width160">${UI.t('Item')}</th><th class="td_max-width160">${UI.t('Serial / MT')}</th><th>${UI.t('OwnerName')}</th><th>${UI.t('Status')}</th><th>${UI.t('Current Location')}</th><th>${UI.t('Holder')}</th>${canEdit ? `<th>${UI.t('Actions')}</th>` : ''}</tr></thead>
       <tbody>${AppState.inventoryRows.map((r, i) => `<tr>
       <td style="min-width: 25px;text-align: center;">${UI.esc(i + 1)}</td>
+      <td style="min-width: 25px;">${UI.esc(r.documentNo)}</td>
         <td class="px-3 fw-semibold td_max-width160">${UI.esc(r.itemCode)}<div class="small text-muted td_max-width160">${UI.esc(r.itemName || '')}</div></td>
         <td class="td_max-width160"><span class="link-item-tracking" data-key="${UI.esc(r.serialNumber || r.barcode || r.itemCode)}">${UI.esc(r.serialNumber || r.barcode || '-')}</span><div class="small text-muted td_max-width160">${UI.esc(r.mt || r.MT || '')}</div></td>
         <td class="px-3 fw-semibold">${UI.esc(r.ownerName)}</td>
         <td>${UI.badge(r.status)}</td>
         <td>${UI.esc(r.currentLocation)}</td>
         <td class="px-3 fw-semibold">${UI.esc(r.holder)}</td>
-        ${canEdit ? `<td><button class="btn btn-light btn-sm btn-edit-inventory-item" title="${UI.t('Edit')}" data-id="${UI.esc(r.itemInstanceId)}"><i class="bi bi-pencil"></i></button></td>` : ''}
+        ${canEdit ? `<td><button class="btn btn-light btn-sm btn-edit-inventory-item" title="${UI.t('Edit')}" data-id="${UI.esc(r.itemInstanceId)}"><i class="bi bi-pencil"></i></button><button class= "btn btn-sm btn-outline-danger btn-delete-inventory-item" title = "${UI.t('Hard Delete')}" data-id="${UI.esc(r.itemInstanceId)}" > <i class="bi bi-trash"></i></button></td>` : ''}
       </tr>`).join('')}</tbody>
     </table>
     <div class="server-footer"><span>${UI.endpoint('InventoryList')}: ${data.totalCount} ${UI.t('rows')}</span><span>${UI.t('Page')} ${data.page} &middot; ${totalPage} ${UI.t('rows')}</span></div>
   </div>${pagination}`);
 }
+
+$(document).on('click', '.btn-delete-inventory-item', function () {hardDeleteInventoryItem($(this).data('id')); });
 
 $(document).on('change', '#inventoryPageSizeSelect', function () {
   const newSize = parseInt($(this).val(), 10);
@@ -111,6 +114,15 @@ $(document).on('click', '#btnSaveInventoryItem', async function () {
   const result = await UI.api(`/Management/ItemInstanceUpdate/${id}`, { method: 'PUT', data });
   await afterInventoryItemSave(result);
 });
+
+function hardDeleteInventoryItem(id) {
+    UI.confirm('Hard Delete', 'Only permanently delete items with no transaction history.', `<div>ID: <b>${id}</b></div>`, async function () {
+        const result = await UI.api(`/Management/ItemInstanceDelete/${id}`, { method: 'DELETE', data: {id} });
+        UI.toast(result.success ? UI.t('Record deleted.') : UI.resultError(result));
+        await loadLookups();
+        await loadInventoryList(AppState.inventoryPage || 1, AppState.inventoryPageSize || AppState.pageSize || 25);
+    });
+}
 
 async function openInventoryItemForm(id) {
   if (!id) return;

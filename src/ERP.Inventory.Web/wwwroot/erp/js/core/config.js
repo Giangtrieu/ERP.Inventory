@@ -57,6 +57,6 @@ window.AppConfig = {
         
     },
    canPrintPDF: [
-       "tracking", "move", "inventory-check", "adjustment", "repair-send", "repair-receive", "borrow-lend", "borrow-return",
+       "tracking", "inbound","move", "inventory-check", "adjustment", "repair-send", "repair-receive", "borrow-lend", "borrow-return",
    ]
 };
