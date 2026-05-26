@@ -228,7 +228,7 @@ async function refreshUI() {
 //}
 
 async function loadLookups() {
-  const [warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType] = await Promise.all([
+    const [warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType] = await Promise.all([
     UI.api('/Lookup/Warehouses'),
     UI.api('/Lookup/Categories'),
     //UI.api('/Lookup/Statuses'),
@@ -243,6 +243,7 @@ async function loadLookups() {
     UI.api('/Lookup/InventoryCheckResults'),
     UI.api('/Lookup/ExternalPartyTypes'),
     UI.api('/Lookup/DocumentPeriodType'),
+    UI.api('/Import/Types'),
   ]);
 
   // Inbound condition = only in-warehouse sub-statuses: Normal / Damaged / Scrapped
@@ -252,7 +253,7 @@ async function loadLookups() {
     { id: 'Scrapped',text: UI.t('Enum.ItemStatus.Scrapped')|| 'Scrapped'},
   ];
 
-  AppState.lookups = { warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, inboundConditions, documentPeriodType };
+    AppState.lookups = { warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, inboundConditions, documentPeriodType, importType };
 }
 
 // ═════════════════════════════════════════════════════════════

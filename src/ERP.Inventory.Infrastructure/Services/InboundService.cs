@@ -138,6 +138,7 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
                     SerialNumber = serialNumber,
                     Barcode = serialNumber, // Barcode = SerialNumber
                     MT = line.MT,
+                    DocumentNo = document.DocumentNo,
                     Status = ResolveInboundStatus(line.Condition),
                     TrackingType = ItemTrackingType.LocationTracked,
                     OwnerName = string.IsNullOrWhiteSpace(request.OwnerName) ? null : request.OwnerName.Trim(),

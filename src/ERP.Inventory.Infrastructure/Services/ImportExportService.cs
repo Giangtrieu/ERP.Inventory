@@ -1281,6 +1281,7 @@ public sealed class ImportExportService : IImportService, IExportService
                         SerialNumber = serial,
                         MT           = Value(row, "MT"),
                         Barcode      = serial,
+                        DocumentNo   = docNo,
                         Status       = Enum.Parse<ItemStatus>(Value(row, "Condition")),
                         TrackingType = isQtyOnly ? ItemTrackingType.QuantityOnly : ItemTrackingType.LocationTracked,
                         OwnerName    = NullIfEmpty(Value(row, "OwnerName")),

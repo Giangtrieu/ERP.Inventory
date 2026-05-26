@@ -306,6 +306,7 @@ public sealed class QuantityInstanceDto
     public string SnCode { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
     public string TrackingType { get; init; } = string.Empty;
+    public string DocumentNo { get; init; } = string.Empty;
     public string WarehouseCode { get; init; } = string.Empty;
     public decimal Quantity { get; init; }
     public string? OwnerName { get; init; }

@@ -70,6 +70,27 @@ public sealed class SystemController : ManagementBaseController
         return Json(rows);
     }
 
+    [HttpPost("MigrateDocumentNoItemInstance")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> MigrateDocumentNoItemInstance(CancellationToken cancellationToken)
+    {
+        var sql = @"UPDATE ii
+                    SET ii.DocumentNo = d.DocumentNo
+                    FROM ItemInstances ii
+                    JOIN InboundDocumentLines l ON ii.Id = l.ItemInstanceId
+                    JOIN InboundDocuments d ON d.Id = l.InboundDocumentId
+                    WHERE l.ItemInstanceId IS NOT NULL";
+
+        var affected = await Db.Database.ExecuteSqlRawAsync(sql, cancellationToken);
+
+        return Ok(new
+        {
+            success = true,
+            itemInstance = affected,
+            message = $"Migration complete: {affected} ItemInstance"
+        });
+    }
+
     /// <summary>
     /// Migrate dữ liệu cũ từ BorrowDocumentLine và InboundDocumentLine vào BorrowDocumentLogs / InboundDocumentLogs.
     /// Idempotent — bỏ qua document đã có log.

@@ -319,6 +319,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
                     SerialNumber = snCode,
                     Barcode = snCode,
                     Status = line.Status,
+                    DocumentNo = documentNo,
                     TrackingType = ItemTrackingType.QuantityOnly,
                     OwnerName = string.IsNullOrWhiteSpace(request.OwnerName) ? null : request.OwnerName.Trim(),
                     IsActive = true,
@@ -465,7 +466,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         }
 
         var instances = await instancesQuery
-            .Select(x => new { x.Id, x.SerialNumber, x.Status, x.TrackingType, x.OwnerName, x.CreatedAt })
+            .Select(x => new { x.Id, x.SerialNumber, x.Status, x.TrackingType, x.OwnerName, x.CreatedAt, x.DocumentNo})
             .ToArrayAsync(cancellationToken);
 
         if (!instances.Any()) return Array.Empty<QuantityInstanceDto>();
@@ -507,6 +508,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             {
                 Id = inst.Id,
                 SnCode = sn,
+                DocumentNo = inst.DocumentNo,
                 Status = inst.Status.ToString(),
                 TrackingType = inst.TrackingType.ToString(),
                 WarehouseCode = bal?.WarehouseCode ?? string.Empty,

@@ -1,14 +1,14 @@
 //const { UI } = require("winjs");
 
 Router.register('import', async function(){
-  const types = await UI.api('/Import/Types');
+  //const types = await UI.api('/Import/Types');
   $('#app').html(UI.pageHeader('Import Excel','Home / Import Excel','') +
   `<div class="row g-3">
     <div class="col-xl-3"><div class="card"><div class="card-body">${['Upload','Validate','Review','Confirm'].map((s,i)=>`<div class="step ${i===0?'active':''}"><div class="step-no">${i+1}</div>${UI.t(s)}</div>`).join('')}</div></div></div>
     <div class="col-xl-9">
       <div class="card mb-3"><div class="card-body">
         <div class="row g-3 align-items-end">
-          <div class="col-md-3">${UI.select('Import Type','importType', types)}</div>
+          <div class="col-md-3">${UI.select('Import Type', 'importType', AppState.lookups.importType, AppState.lookups.importType[0].id)}</div>
           <div class="col-md-5"><label class="form-label w-100"><span class="fw-semibold small">${UI.t('Select File')}</span><input type="file" id="importFile" class="form-control" accept=".xlsx,.csv,.tsv" /></label></div>
           <div class="col-md-4 d-flex gap-2"><label class="form-label w-100 gap-2 d-inline-flex justify-content-between"><span class="fw-semibold small"></span><button class="btn btn-outline-secondary w-50" id="btnImportTemplate">${UI.t('Template')}</button><button class="btn btn-primary w-50" id="btnImportUpload">${UI.t('Upload File')}</button></label></div>
         </div>

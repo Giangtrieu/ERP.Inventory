@@ -47,6 +47,7 @@ public class ItemInstance : AuditableEntity
     public int ItemId { get; set; }
     public Item? Item { get; set; }
     public string? SerialNumber { get; set; }
+    public string? DocumentNo { get; set; }
     public string? MT { get; set; }
     public string? Barcode { get; set; }
     public ItemStatus Status { get; set; } = ItemStatus.InStock;

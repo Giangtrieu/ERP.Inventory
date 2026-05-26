@@ -3,7 +3,7 @@ Router.register('dashboard', async function(){
     `<div id="dashboardPrintable">
     <div class="card mb-3"><div class="card-body">
       <div class="row g-3 align-items-end">
-        <div class="col-md-3">${UI.select('Summary Warehouse','summaryWarehouseId', AppState.lookups.warehouses)}</div>
+        <div class="col-md-3">${UI.select('Summary Warehouse', 'summaryWarehouseId', AppState.lookups.warehouses, AppState.lookups.warehouses[0].id)}</div>
         <div class="col-md-1"><label class="form-label w-100"><span class="fw-semibold small"></span><button class="btn btn-primary w-100" id="btnLoadDashboard">${UI.t('Load')}</button></label></div>
       </div>
     </div></div>
@@ -22,7 +22,7 @@ Router.register('dashboard', async function(){
         <div class="card"><div class="card-body">
           <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
             <h5 class="fw-bold mb-0">${UI.t('Stock by Status')}</h5>
-            <div style="min-width:220px">${UI.select('Warehouse','stockStatusWarehouseId', AppState.lookups.warehouses)}</div>
+            <div style="min-width:220px">${UI.select('Warehouse', 'stockStatusWarehouseId', AppState.lookups.warehouses, AppState.lookups.warehouses[0].id)}</div>
           </div>
           <div id="stockStatusChart" class="chart-area">${UI.loading()}</div>
         </div></div>
@@ -32,7 +32,7 @@ Router.register('dashboard', async function(){
           <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
             <h5 class="fw-bold mb-0">${UI.t('Movement Trend')}</h5>
             <div class="d-flex gap-2" style="min-width:360px">
-              ${UI.select('Warehouse','trendWarehouseId', AppState.lookups.warehouses)}
+              ${UI.select('Warehouse', 'trendWarehouseId', AppState.lookups.warehouses, AppState.lookups.warehouses[0].id)}
               ${UI.select('Days','trendDays', dashboardDaysOptions(), '14')}
             </div>
           </div>
@@ -45,7 +45,7 @@ Router.register('dashboard', async function(){
           <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
             <h5 class="fw-bold mb-0">${UI.t('Movement by Operation')}</h5>
             <div class="d-flex gap-2" style="min-width:360px">
-              ${UI.select('Warehouse','actionWarehouseId', AppState.lookups.warehouses)}
+              ${UI.select('Warehouse', 'actionWarehouseId', AppState.lookups.warehouses, AppState.lookups.warehouses[0].id)}
               ${UI.select('Days','actionDays', dashboardDaysOptions(), '14')}
             </div>
           </div>
@@ -57,7 +57,7 @@ Router.register('dashboard', async function(){
           <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
             <h5 class="fw-bold mb-0">${UI.t('Stock by Category')}</h5>
             <div class="d-flex gap-2" style="min-width:360px">
-              ${UI.select('Warehouse','categoryWarehouseId', AppState.lookups.warehouses)}
+              ${UI.select('Warehouse', 'categoryWarehouseId', AppState.lookups.warehouses, AppState.lookups.warehouses[0].id)}
               ${UI.select('Status', 'categoryStatus', AppState.lookups.statuses, 'InStock')}
             </div>
           </div>
@@ -77,7 +77,7 @@ Router.register('dashboard', async function(){
         <div class="card"><div class="card-body">
           <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
             <h5 class="fw-bold mb-0">${UI.t('Borrow Overdue Aging')}</h5>
-            <div style="min-width:220px">${UI.select('Warehouse','overdueWarehouseId', AppState.lookups.warehouses)}</div>
+            <div style="min-width:220px">${UI.select('Warehouse', 'overdueWarehouseId', AppState.lookups.warehouses, AppState.lookups.warehouses[0].id)}</div>
           </div>
           <div id="borrowOverdueChart" class="chart-area">${UI.loading()}</div>
         </div></div>
@@ -88,7 +88,7 @@ Router.register('dashboard', async function(){
     <div class="card mt-3"><div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h5 class="fw-bold mb-0"><i class="bi bi-boxes me-2 text-primary"></i>${UI.t('Quantity Inventory Summary')}</h5>
-        <div style="min-width:220px">${UI.select('Warehouse','qtyWarehouseId', AppState.lookups.warehouses)}</div>
+        <div style="min-width:220px">${UI.select('Warehouse', 'qtyWarehouseId', AppState.lookups.warehouses, AppState.lookups.warehouses[0].id)}</div>
       </div>
       <div id="qtySummaryCards" class="mb-3">${UI.loading()}</div>
       <div class="row g-3">

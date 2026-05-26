@@ -532,7 +532,7 @@ button.card:hover {
 .quantity-line-table th,
 .quantity-line-table td {
   padding: 8px;
-  vertical-align: top;
+  /*vertical-align: top;*/
 }
 
 .quantity-line-table .form-label {

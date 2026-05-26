@@ -2,10 +2,10 @@ Router.register('reports', async function(){
   $('#app').html(UI.pageHeader('Reports / Audit','Home / Reports','') +
   `<div class="card mb-3"><div class="card-body">
     <div class="row g-3 text-start">
-      <div class="col-md-3">${UI.select('Warehouse','warehouseId', AppState.lookups.warehouses)}</div>
+      <div class="col-md-3">${UI.select('Warehouse', 'warehouseId', AppState.lookups.warehouses, AppState.lookups.warehouses[0].id)}</div>
       <div class="col-md-3">${UI.select('Category','categoryId', AppState.lookups.categories)}</div>
-      <div class="col-md-2">${UI.input('From Date','date','','fromDate')}</div>
-      <div class="col-md-2">${UI.input('To Date','date','','toDate')}</div>
+      <div class="col-md-2">${UI.input('From Date', 'date', firstDay(), 'fromDate')}</div>
+      <div class="col-md-2">${UI.input('To Date','date', today(),'toDate')}</div>
       <div class="col-md-2">${UI.select('Status','status', AppState.lookups.statuses)}</div>
       <div class="col-md-3">${UI.input('Keyword','text','','keyword')}</div>
       <div class="col-md-3">${UI.input('User','text','','userName')}</div>
@@ -26,6 +26,7 @@ Router.register('reports', async function(){
   $('#app input, #app select, #app .cbo-value').on('change input', UI.debounce(loadReportPreviews, 300));
   await loadReportPreviews();
 });
+
 
 function reportFilterQuery(){
   return {
@@ -95,12 +96,12 @@ async function loadReportsHistory(){
   const result = await UI.api('/Reports/HistoryPreview', { query: reportFilterQuery() });
   const rows = result.success && result.data ? (result.data.items || []) : [];
   if(!rows.length){ $('#reportsHistory').html(UI.empty('No data')); return; }
-  $('#reportsHistory').html(`<div class="table-wrap report-scroll-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Time')}</th><th>${UI.t('Item')}</th><th>${UI.t('Action')}</th><th>${UI.t('Status')}</th><th>${UI.t('Document No')}</th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3">${UI.formatDate(r.performedAt)}</td><td class="fw-semibold">${UI.esc(r.itemCode || '-')}<div class="small text-muted">${UI.esc(r.serialNumber || r.itemName || '-')}</div></td><td>${UI.esc(UI.enum('MovementActionType', r.actionType))}</td><td>${UI.badge(r.newStatus)}</td><td>${UI.esc(r.documentNo || '-')}</td></tr>`).join('')}</tbody></table><div class="server-footer"><span>${UI.endpoint('ReportsHistoryPreview')}</span><span>${result.data.totalCount} ${UI.t('rows')}</span></div></div>`);
+  $('#reportsHistory').html(`<div class="table-wrap report-scroll-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Time')}</th><th>${UI.t('PN/SN')}</th><th>${UI.t('Action')}</th><th>${UI.t('Status')}</th><th>${UI.t('Document No')}</th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3">${UI.formatDate(r.performedAt)}</td><td class="fw-semibold">${UI.esc(r.itemCode || '-')}<div class="small text-muted">${UI.esc(r.serialNumber || r.itemName || '-')}</div></td><td>${UI.esc(UI.enum('MovementActionType', r.actionType))}</td><td>${UI.badge(r.newStatus)}</td><td>${UI.esc(r.documentNo || '-')}</td></tr>`).join('')}</tbody></table><div class="server-footer"><span>${UI.endpoint('ReportsHistoryPreview')}</span><span>${result.data.totalCount} ${UI.t('rows')}</span></div></div>`);
 }
 
 async function loadReportsAudit(){
   const result = await UI.api('/Management/AuditLogs', { query: { page: 1, pageSize: 25, ...reportFilterQuery() } });
   const rows = result.items || [];
   if(!rows.length){ $('#reportsAudit').html(UI.empty('No data')); return; }
-  $('#reportsAudit').html(`<div class="table-wrap report-scroll-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Time')}</th><th>${UI.t('User')}</th><th>${UI.t('Action')}</th><th>${UI.t('Entity')}</th><th>${UI.t('Reference')}</th><th>${UI.t('Result')}</th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3">${UI.formatDate(r.createdAt)}</td><td>${UI.esc(r.userName)}</td><td>${UI.esc(UI.auditAction(r.action))}</td><td>${UI.esc(UI.auditEntity(r.entityName))}</td><td>${UI.esc(r.referenceNo || '-')}</td><td><span class="badge text-bg-success">${UI.esc(UI.msg(r.result))}</span></td></tr>`).join('')}</tbody></table><div class="server-footer"><span>${UI.endpoint('AuditLogs')}</span><span>${result.totalCount} ${UI.t('rows')}</span></div></div>`);
+    $('#reportsAudit').html(`<div class="table-wrap report-scroll-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Time')}</th><th>${UI.t('User')}</th><th>${UI.t('Action')}</th><th>${UI.t('Entity')}</th><th>${UI.t('Document No')}</th><th>${UI.t('Result')}</th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3">${UI.formatDate(r.createdAt)}</td><td>${UI.esc(r.userName)}</td><td>${UI.esc(UI.auditAction(r.action))}</td><td>${UI.esc(UI.auditEntity(r.entityName))}</td><td>${UI.esc(r.referenceNo || '-')}</td><td><span class="badge text-bg-success">${UI.esc(UI.msg(r.result))}</span></td></tr>`).join('')}</tbody></table><div class="server-footer"><span>${UI.endpoint('AuditLogs')}</span><span>${result.totalCount} ${UI.t('rows')}</span></div></div>`);
 }

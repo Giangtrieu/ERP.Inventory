@@ -108,6 +108,7 @@ public sealed class ManagementController : ManagementBaseController
                 ItemName = x.Item != null ? x.Item.DefaultName : string.Empty,
                 x.SerialNumber,
                 x.MT,
+                x.DocumentNo,
                 x.Barcode,
                 x.OwnerName,
                 Status = x.Status.ToString(),
@@ -157,6 +158,7 @@ public sealed class ManagementController : ManagementBaseController
         var serialNumber = NullIfWhiteSpace(request.SerialNumber);
         var barcode = NullIfWhiteSpace(request.Barcode);
         var mt = NullIfWhiteSpace(request.MT);
+        var documentNo = NullIfWhiteSpace(request.DocumentNo);
         var ownerName = NullIfWhiteSpace(request.OwnerName);
 
         if (serialNumber != null && await Db.ItemInstances.AnyAsync(x => x.Id != id && x.ItemId == itemId && x.SerialNumber == serialNumber, ct))
@@ -168,6 +170,7 @@ public sealed class ManagementController : ManagementBaseController
         entity.ItemId = itemId;
         entity.SerialNumber = serialNumber;
         entity.MT = mt;
+        entity.DocumentNo = documentNo;
         entity.Barcode = barcode;
         entity.OwnerName = ownerName;
 
@@ -296,6 +299,7 @@ public sealed class ManagementController : ManagementBaseController
         public int? ItemId { get; init; }
         public string? SerialNumber { get; init; }
         public string? MT { get; init; }
+        public string? DocumentNo { get; init; }
         public string? Barcode { get; init; }
         public string? OwnerName { get; init; }
     }

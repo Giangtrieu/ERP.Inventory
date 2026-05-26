@@ -73,11 +73,11 @@ async function loadInventoryList(page = 1, pageSize = AppState.pageSize || 25) {
   });
 
   $('#inventoryTable').html(`<div class="table-wrap">
-    <table class="data-table"><thead><tr><th style="min-width: 25px;text-align: center;">STT</th><th class="px-3">${UI.t('Document No')}</th><th class="px-3 td_max-width160">${UI.t('Item')}</th><th class="td_max-width160">${UI.t('Serial / MT')}</th><th>${UI.t('OwnerName')}</th><th>${UI.t('Status')}</th><th>${UI.t('Current Location')}</th><th>${UI.t('Holder')}</th>${canEdit ? `<th>${UI.t('Actions')}</th>` : ''}</tr></thead>
+    <table class="data-table"><thead><tr><th style="min-width: 25px;text-align: center;">STT</th><th class="px-3">${UI.t('Document No')}</th><th class="px-3 td_max-width160">${UI.t('Item')}</th><th class="td_max-width160">${UI.t('SN/ MT')}</th><th>${UI.t('OwnerName')}</th><th>${UI.t('Status')}</th><th>${UI.t('Current Location')}</th><th>${UI.t('Holder')}</th>${canEdit ? `<th>${UI.t('Actions')}</th>` : ''}</tr></thead>
       <tbody>${AppState.inventoryRows.map((r, i) => `<tr>
       <td style="min-width: 25px;text-align: center;">${UI.esc(i + 1)}</td>
-      <td style="min-width: 25px;">${UI.esc(r.documentNo)}</td>
-        <td class="px-3 fw-semibold td_max-width160">${UI.esc(r.itemCode)}<div class="small text-muted td_max-width160">${UI.esc(r.itemName || '')}</div></td>
+      <td class="px-3"style="min-width: 25px;">${UI.esc(r.documentNo)}</td>
+        <td class="px-3 fw-semibold td_max-width160">${UI.esc(r.itemCode)}</td>
         <td class="td_max-width160"><span class="link-item-tracking" data-key="${UI.esc(r.serialNumber || r.barcode || r.itemCode)}">${UI.esc(r.serialNumber || r.barcode || '-')}</span><div class="small text-muted td_max-width160">${UI.esc(r.mt || r.MT || '')}</div></td>
         <td class="px-3 fw-semibold">${UI.esc(r.ownerName)}</td>
         <td>${UI.badge(r.status)}</td>
@@ -107,6 +107,7 @@ $(document).on('click', '#btnSaveInventoryItem', async function () {
     itemId: parseInt($('#drawerBody [name="itemId"]').val(), 10),
     serialNumber: $('#drawerBody [name="serialNumber"]').val(),
     MT: $('#drawerBody [name="MT"]').val(),
+    documentNo: $('#drawerBody [name="documentNo"]').val(),
     barcode: $('#drawerBody [name="barcode"]').val(),
     ownerName: $('#drawerBody [name="ownerName"]').val()
   };
@@ -139,6 +140,7 @@ async function openInventoryItemForm(id) {
       ${UI.inputform('SN', 'text', data.serialNumber || '', 'serialNumber')}
       ${UI.inputform('MT', 'text', data.mt || data.MT || '', 'MT')}
       ${UI.inputform('Barcode', 'text', data.barcode || '', 'barcode')}
+      ${UI.inputform('Document No', 'text', data.documentNo || '', 'documentNo')}
       ${UI.inputform('OwnerName', 'text', data.ownerName || '', 'ownerName')}
     </div>
     <div class="col-md-12 d-flex justify-content-center"><button class="btn btn-primary w-25 mt-2" id="btnSaveInventoryItem" data-id="${UI.esc(id)}">${UI.t('Save')}</button></div>`);
