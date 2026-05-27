@@ -10,6 +10,42 @@ public sealed class PostedDocumentDto
     public DateTime PostedAt { get; init; }
 }
 
+public sealed class DocumentMutationResultDto
+{
+    public string DocumentType { get; init; } = string.Empty;
+    public int DocumentId { get; init; }
+    public string DocumentNo { get; init; } = string.Empty;
+    public string Action { get; init; } = string.Empty;
+    public DateTime ProcessedAt { get; init; }
+}
+
+public sealed class DocumentDependencyDto
+{
+    public string DocumentType { get; init; } = string.Empty;
+    public int DocumentId { get; init; }
+    public string DocumentNo { get; init; } = string.Empty;
+    public string Action { get; init; } = string.Empty;
+    public bool CanProceed { get; init; }
+    public IReadOnlyCollection<string> Reasons { get; init; } = Array.Empty<string>();
+}
+
+public sealed class DocumentAuditEventDto
+{
+    public DateTime Timestamp { get; init; }
+    public string Action { get; init; } = string.Empty;
+    public string Operator { get; init; } = string.Empty;
+    public string Reason { get; init; } = string.Empty;
+}
+
+public sealed class DocumentEditModelDto
+{
+    public string DocumentType { get; init; } = string.Empty;
+    public int DocumentId { get; init; }
+    public string DocumentNo { get; init; } = string.Empty;
+    public object Payload { get; init; } = new();
+    public IReadOnlyCollection<DocumentAuditEventDto> Audit { get; init; } = Array.Empty<DocumentAuditEventDto>();
+}
+
 // ─── Inbound ────────────────────────────────────────────────
 public sealed class InboundRequest
 {
@@ -53,6 +89,7 @@ public sealed class InboundLineRequest
 // ─── Move ───────────────────────────────────────────────────
 public sealed class MoveLocationRequest
 {
+    public string? DocumentNo { get; init; }
     public int WarehouseId { get; init; }
     public string WarehouseCode { get; init; } = string.Empty;
     public DateTime DocumentDate { get; init; } = DateTime.UtcNow;
@@ -187,6 +224,7 @@ public sealed class BorrowReturnLineRequest
 // ─── Adjustment ─────────────────────────────────────────────
 public sealed class AdjustmentRequest
 {
+    public string? DocumentNo { get; init; }
     public int WarehouseId { get; init; }
     public string WarehouseCode { get; init; } = string.Empty;
     public DateTime DocumentDate { get; init; } = DateTime.UtcNow;
@@ -267,7 +305,7 @@ public sealed class QuantityInventoryRequest
 public sealed class QuantityInventoryLineRequest
 {
     public string SnCode { get; init; } = string.Empty;
-    public ItemStatus Status { get; init; } = ItemStatus.Normal;
+    public string Status { get; init; } =string.Empty;
     public decimal Quantity { get; init; }
     public string? Note { get; init; }
 }

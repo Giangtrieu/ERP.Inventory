@@ -28,11 +28,11 @@ public sealed class AdjustmentService : InventoryOperationBase
 
 
 
-        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await BeginOperationTransactionAsync(cancellationToken);
         var now = _clock.UtcNow;
         var document = new AdjustmentDocument
         {
-            DocumentNo = _documentNumbers.Next("ADJ", request.DocumentDate),
+            DocumentNo = string.IsNullOrWhiteSpace(request.DocumentNo) ? _documentNumbers.Next("ADJ", request.DocumentDate) : request.DocumentNo.Trim(),
             DocumentDate = request.DocumentDate,
             WarehouseId = warehouse.Id,
             Reason = request.Reason,

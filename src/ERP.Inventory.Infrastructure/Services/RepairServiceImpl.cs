@@ -41,21 +41,16 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
             await _db.SaveChangesAsync(cancellationToken);
         }
 
-        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await BeginOperationTransactionAsync(cancellationToken);
         var now = _clock.UtcNow;
-
         // ── Find-or-Create document (append pattern, same as BorrowLend) ──
-        var normalizedDocNo = string.IsNullOrWhiteSpace(request.DocumentNo)
-            ? string.Empty
-            : request.DocumentNo.Trim().ToUpperInvariant();
-
+        var normalizedDocNo = string.IsNullOrWhiteSpace(request.DocumentNo)? string.Empty: request.DocumentNo.Trim().ToUpperInvariant();
         RepairDocument document;
         bool isNew;
 
         if (!string.IsNullOrEmpty(normalizedDocNo))
         {
-            document = await _db.RepairDocuments
-                .FirstOrDefaultAsync(x => x.DocumentNo == normalizedDocNo, cancellationToken)!;
+            document = await _db.RepairDocuments.FirstOrDefaultAsync(x => x.DocumentNo == normalizedDocNo, cancellationToken)!;
             isNew = document == null;
         }
         else
@@ -68,9 +63,7 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
         {
             document = new RepairDocument
             {
-                DocumentNo = string.IsNullOrEmpty(normalizedDocNo)
-                    ? _documentNumbers.Next("REP", request.SendDate)
-                    : normalizedDocNo,
+                DocumentNo = string.IsNullOrEmpty(normalizedDocNo)? _documentNumbers.Next("REP", request.SendDate): normalizedDocNo,
                 DocumentDate = request.SendDate,
                 RepairVendorId = vendor.Id,
                 ExpectedReturnDate = request.ExpectedReturnDate,
@@ -167,7 +160,7 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
                 Action = "RepairSend",
                 OldStatus = oldStatus.ToString(),
                 NewStatus = ItemStatus.Repairing.ToString(),
-                RepairVendorName = vendor.Name,
+                RepairVendorName = $"{vendor.PartyCode}-{vendor.Name}",
                 ExternalLocation = targetExternalLocation,
                 OldLocationText = fromDisplay,
                 NewLocationText = toDisplay,
@@ -211,7 +204,7 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
 
         if (!request.Lines.Any()) return ServiceResult<PostedDocumentDto>.Fail("At least one item is required.");
 
-        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await BeginOperationTransactionAsync(cancellationToken);
         var now = _clock.UtcNow;
         document.UpdatedAt = now; document.UpdatedBy = user.UserName;
 

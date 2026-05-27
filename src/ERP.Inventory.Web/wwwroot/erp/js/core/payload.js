@@ -43,6 +43,7 @@ window.OperationPayloadConfig = {
         }),
 
         payload: (h, rows, intOrNull) => ({
+            documentNo: h('documentNo'),
             warehouseId: intOrNull(h('warehouseId')),
             documentDate: h('documentDate'),
             note: h('note'),
@@ -63,6 +64,7 @@ window.OperationPayloadConfig = {
         }),
 
         payload: (h, rows, intOrNull) => ({
+            documentNo: h('documentNo'),
             warehouseId: intOrNull(h('warehouseId')),
             documentDate: h('documentDate'),
             reason: h('reason'),

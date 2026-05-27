@@ -2,7 +2,7 @@ Router.register('reports', async function(){
   $('#app').html(UI.pageHeader('Reports / Audit','Home / Reports','') +
   `<div class="card mb-3"><div class="card-body">
     <div class="row g-3 text-start">
-      <div class="col-md-3">${UI.select('Warehouse', 'warehouseId', AppState.lookups.warehouses, AppState.lookups.warehouses[0].id)}</div>
+      <div class="col-md-3">${UI.select('Warehouse', 'warehouseId', AppState.lookups.warehouses, AppState.lookups.warehouses?.[0]?.id || '')}</div>
       <div class="col-md-3">${UI.select('Category','categoryId', AppState.lookups.categories)}</div>
       <div class="col-md-2">${UI.input('From Date', 'date', firstDay(), 'fromDate')}</div>
       <div class="col-md-2">${UI.input('To Date','date', today(),'toDate')}</div>

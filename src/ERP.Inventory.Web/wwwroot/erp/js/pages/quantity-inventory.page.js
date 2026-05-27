@@ -109,8 +109,14 @@ Router.register('quantity-inventory', async function () {
       '.cbo-input, #qtyContent [name="histWarehouseId"], #qtyContent [name="histItemId"], #qtyContent [name="histKeyword"]',
       UI.debounce(loadQuantityTransactions, 250));
 
+  $(document).off('change.qtyDocFilter input.qtyDocFilter')
+    .on('change.qtyDocFilter input.qtyDocFilter',
+      '#qtyContent [name="qtyDocType"], #qtyContent [name="qtyDocKeyword"], #qtyContent [name="qtyDocFromDate"], #qtyContent [name="qtyDocToDate"]',
+      UI.debounce(loadQuantityDocuments, 250));
+
   // ── Initial render ───────────────────────────────────────────────────
-  await switchQtyView('inventory');
+  const editor = AppState.documentEditor;
+  await switchQtyView(editor && String(editor.type || '').startsWith('quantity-') ? editor.type.replace('quantity-', '') : 'inventory');
 });
 
 // ── View router ───────────────────────────────────────────────────────
@@ -301,6 +307,7 @@ function loadQtyFormPanel(operation) {
     </div></div>`);
     updateQuantityLineIndex();
     ScanQtySystem.init();
+    applyQuantityEditorState(operation);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -316,8 +323,22 @@ async function loadQtyHistoryPanel() {
         <div class="col-md-4">${UI.input('Keyword','text','','histKeyword')}</div>
       </div>
       <div id="quantityTransactionTable">${UI.loading()}</div>
+      <hr class="my-4">
+      <div class="form-section-title">${UI.t('Documents')}</div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-4">${UI.select('Document Type', 'qtyDocType', [
+          { id: 'quantity-receive', text: UI.t('Receive') },
+          { id: 'quantity-issue', text: UI.t('Issue') },
+          { id: 'quantity-adjust', text: UI.t('Adjust') }
+        ], 'quantity-receive')}</div>
+        <div class="col-md-4">${UI.input('Keyword','text','','qtyDocKeyword')}</div>
+        <div class="col-md-2">${UI.input('From Date','date','','qtyDocFromDate')}</div>
+        <div class="col-md-2">${UI.input('To Date','date','','qtyDocToDate')}</div>
+      </div>
+      <div id="quantityDocumentTable">${UI.loading()}</div>
     </div></div>`);
   await loadQuantityTransactions();
+  await loadQuantityDocuments();
 }
 
 async function loadQuantityTransactions() {
@@ -359,6 +380,21 @@ async function loadQuantityTransactions() {
     </div>`);
 }
 
+async function loadQuantityDocuments() {
+  if (!$('#quantityDocumentTable').length) return;
+  const type = $('#qtyContent [name="qtyDocType"]').val() || 'quantity-receive';
+  const rows = await UI.api('/Documents/List', {
+    query: {
+      type,
+      keyword: $('#qtyContent [name="qtyDocKeyword"]').val() || null,
+      fromDate: $('#qtyContent [name="qtyDocFromDate"]').val() || null,
+      toDate: $('#qtyContent [name="qtyDocToDate"]').val() || null
+    }
+  });
+  if (!rows.length) { $('#quantityDocumentTable').html(UI.empty('No data')); return; }
+  $('#quantityDocumentTable').html(`<div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Document No')}</th><th>${UI.t('Document Date')}</th><th>${UI.t('Warehouse')}</th><th>${UI.t('Status')}</th><th>${UI.t('Lines')}</th><th>${UI.t('Actions')}</th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3 fw-semibold">${UI.esc(r.documentNo)}</td><td>${UI.formatDate(r.documentDate)}</td><td>${UI.esc(r.warehouse || '-')}</td><td><span class="badge text-bg-light">${UI.esc(r.status || '-')}</span></td><td>${UI.esc(r.lines)}</td><td>${buildDocumentActionButtons(type, r.id)}</td></tr>`).join('')}</tbody></table></div>`);
+}
+
 // ═══════════════════════════════════════════════════════════════
 // POST OPERATION
 // ═══════════════════════════════════════════════════════════════
@@ -396,14 +432,57 @@ async function postQuantityInventory() {
     `${UI.t('Operation')}: <b>${opLabel}</b><br>${UI.t('Item')}: <b>${UI.esc(itemCode)}</b><br>${UI.t('Rows')}: <b>${lines.length}</b>`,
     async function () {
       const apiOp = operation.charAt(0).toUpperCase() + operation.slice(1);
-      const result = await UI.api(`/QuantityInventory/${apiOp}`, { method: 'POST', data: payload });
+      const editor = AppState.documentEditor;
+      const btn = $('#btnPostQuantity');
+      if (btn.prop('disabled')) return;
+      btn.prop('disabled', true).html(`<span class="spinner-border spinner-border-sm me-2"></span>${UI.t(editor && editor.type === `quantity-${operation}` ? 'Saving' : 'Save & Post')}`);
+      const result = editor && editor.type === `quantity-${operation}`
+        ? await UI.api('/Documents/Edit', { method: 'POST', query: { type: editor.type, id: editor.id }, data: payload })
+        : await UI.api(`/QuantityInventory/${apiOp}`, { method: 'POST', data: payload });
+      btn.prop('disabled', false).html(`<i class="bi bi-check2-circle me-2"></i>${UI.t(editor && editor.type === `quantity-${operation}` ? 'Save Changes' : 'Save & Post')}`);
       if (!result.success) { showQuantityValidation(quantityErrorsFromResult(result)); return; }
-      UI.toast(UI.msg(result.message || 'Quantity inventory posted.'));
+      UI.toast(UI.msg(result.message || (editor && editor.type === `quantity-${operation}` ? 'Document updated.' : 'Quantity inventory posted.')));
+      AppState.documentEditor = null;
       // Switch back to inventory view to show updated balances
       $('.qty-nav-item').removeClass('active');
       $('.qty-nav-item[data-view="inventory"]').addClass('active');
       await switchQtyView('inventory');
     });
+}
+
+function applyQuantityEditorState(operation) {
+  const editor = AppState.documentEditor;
+  if (!editor || editor.type !== `quantity-${operation}` || !editor.payload) return;
+  $('#btnPostQuantity').html(`<i class="bi bi-save me-2"></i>${UI.t('Save Changes')}`);
+  $('#quantityOperationValidation').before(`<div class="alert alert-warning py-2">${UI.t('Editing document')}: <b>${UI.esc(editor.documentNo || editor.payload.documentNo || '')}</b></div>`);
+  const payload = editor.payload;
+  const fieldMap = {
+    warehouseId: 'operationWarehouseId',
+    itemCode: 'quantityItemCode',
+    itemCategoryCode: 'itemCategoryCode',
+    documentDate: 'documentDate',
+    documentNo: 'documentNo',
+    approvedBy: 'approvedBy',
+    ownerName: 'ownerName',
+    note: 'note',
+  };
+  Object.entries(payload).forEach(([key, value]) => {
+      if (key === 'lines') return;
+      if (key === 'documentDate' && value) {
+          value = value.split('T')[0];
+      }
+    const el = $(`#qtyContent [name="${fieldMap[key] || key}"]`);
+    if (el.length) el.val(value == null ? '' : value);
+  });
+  const lines = Array.isArray(payload.lines) ? payload.lines : [];
+  if (!lines.length) return;
+  $('#quantityLineBody').html(lines.map(() => renderQuantityLine()).join(''));
+  $('#quantityLineBody tr').each(function (index) {
+    const line = lines[index] || {};
+    $(this).find('[name="snCode"]').val(line.snCode || '');
+    $(this).find('[name="lineStatus"]').val(line.status || 'Normal');
+  });
+  updateQuantityLineIndex();
 }
 
 // ═══════════════════════════════════════════════════════════════

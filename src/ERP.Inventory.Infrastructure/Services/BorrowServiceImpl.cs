@@ -37,7 +37,7 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
         var documentNo = request.DocumentNo.Trim();
         //if (borrower == null) return ServiceResult<PostedDocumentDto>.Fail($"Borrower {request.BorrowerCode} not found.");
 
-        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await BeginOperationTransactionAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(request.BorrowerCode)) return ServiceResult<PostedDocumentDto>.Fail($"Borrower {request.Borrower} not found.");
         var borrower = await FindPartyByCodeAsync(request.BorrowerCode, ExternalPartyType.Borrower, cancellationToken);
         if (borrower == null)
@@ -275,7 +275,7 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
             await _db.SaveChangesAsync(cancellationToken);
         }
 
-        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await BeginOperationTransactionAsync(cancellationToken);
         var now = _clock.UtcNow;
         var targetBinsInRequest = new HashSet<int>();
 

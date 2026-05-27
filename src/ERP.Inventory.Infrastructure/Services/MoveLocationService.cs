@@ -34,12 +34,13 @@ public sealed class MoveLocationService : InventoryOperationBase, IInventoryOper
         var lines = request.Lines.Where(x => !string.IsNullOrWhiteSpace(x.ItemCode) && !string.IsNullOrWhiteSpace(x.SerialNumber)).ToArray();
         if (!lines.Any()) return ServiceResult<PostedDocumentDto>.Fail("At least one item is required.");
 
-        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await BeginOperationTransactionAsync(cancellationToken);
         var now = _clock.UtcNow;
 
         var document = new MoveDocument
         {
-            DocumentNo = _documentNumbers.Next("MOV", request.DocumentDate), DocumentDate = request.DocumentDate,
+            DocumentNo = string.IsNullOrWhiteSpace(request.DocumentNo) ? _documentNumbers.Next("MOV", request.DocumentDate) : request.DocumentNo.Trim(),
+            DocumentDate = request.DocumentDate,
             WarehouseId = warehouse.Id, Note = request.Note,
             CreatedAt = now, CreatedBy = user.UserName, ApprovedBy = user.UserName, ApprovedAt = now, PostedAt = now
         };

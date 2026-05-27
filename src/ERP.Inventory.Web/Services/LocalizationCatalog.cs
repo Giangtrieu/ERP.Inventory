@@ -240,6 +240,8 @@ public static class LocalizationCatalog
 
         ["Enum.QuantityInventoryDocumentType.Adjust"] = "Điều chỉnh",
 
+        ["Audit Trail"] = "Lịch sử kiểm tra",
+
         ["AuditEntity.QuantityInventoryDocument"] = "Phiếu tồn số lượng",
 
         ["AuditAction.Receive"] = "Nhập tồn số lượng",
@@ -377,6 +379,8 @@ public static class LocalizationCatalog
         ["Enum.QuantityInventoryDocumentType.Issue"] = "Issue",
 
         ["Enum.QuantityInventoryDocumentType.Adjust"] = "Adjust",
+
+        ["Audit Trail"] = "审计追踪",
 
         ["AuditEntity.QuantityInventoryDocument"] = "Quantity inventory document",
 
@@ -1659,7 +1663,50 @@ public static class LocalizationCatalog
         ["LocationTracked"] = "Theo dõi vị trí",
 
         ["QuantityOnly"] = "Chỉ theo dõi số lượng",
+
         ["Repair Document No"] = "Số phiếu sửa chữa",
+
+        ["No blocking dependency found."] = "Không tìm thấy phụ thuộc chặn",
+        ["Document has blocking dependencies."] = "Chứng từ có phụ thuộc chặn",
+        ["Unsupported document type '{0}'."] = "Loại chứng từ '{0}' không được hỗ trợ",
+        ["Document not found."] = "Không tìm thấy chứng từ",
+        ["Rebuild"] = "Xây dựng lại",
+        ["Rebuild Effects"] = "Xây dựng lại ảnh hưởng",
+        ["Reverse"] = "Đảo ngược",
+        ["Delete"] = "Xóa",
+        ["Document effects reversed before delete."] = "Ảnh hưởng của chứng từ đã được đảo ngược trước khi xóa",
+        ["Document deleted."] = "Đã xóa chứng từ",
+        ["Invalid borrow return payload."] = "Dữ liệu trả mượn không hợp lệ",
+        ["Document edited and effects rebuilt."] = "Đã chỉnh sửa chứng từ và xây dựng lại ảnh hưởng",
+        ["Document updated."] = "Đã cập nhật chứng từ",
+        ["Borrow return updated."] = "Đã cập nhật phiếu trả mượn",
+        ["Repair receive updated."] = "Đã cập nhật phiếu nhận sửa chữa",
+        ["Dependency Warning"] = "Cảnh báo phụ thuộc",
+        ["Review dependency impact before continuing."] = "Xem xét ảnh hưởng phụ thuộc trước khi tiếp tục",
+        ["Close"] = "Đóng",
+        ["Blocked reason"] = "Lý do bị chặn",
+        ["Item instance {0} has downstream operations."] = "Cá thể vật tư {0} có nghiệp vụ phát sinh phía sau",
+        ["Item instance {0} has downstream operations after {1}."] = "Cá thể vật tư {0} có nghiệp vụ phát sinh phía sau sau bước {1}",
+        ["Quantity item {0}/{1} has later quantity transactions."] = "Mã số lượng {0}/{1} có giao dịch tồn phát sinh sau đó",
+        ["Current persisted payload will be replayed to rebuild effects."] = "Dữ liệu đã lưu hiện tại sẽ được phát lại để xây dựng lại ảnh hưởng",
+        ["This will reverse and replay the current document effects."] = "Thao tác này sẽ đảo ngược và phát lại ảnh hưởng của chứng từ hiện tại",
+        ["Document will be reversed and deleted transactionally."] = "Chứng từ sẽ được đảo ngược và xóa trong cùng giao dịch",
+        ["This document will be reversed and deleted."] = "Chứng từ này sẽ được đảo ngược và xóa",
+        ["Document Type"] = "Loại chứng từ",
+        ["Editing document"] = "Đang chỉnh sửa chứng từ",
+        ["Save Changes"] = "Lưu thay đổi",
+        ["Inbound document not found."] = "Không tìm thấy phiếu nhập kho",
+        ["Move document not found."] = "Không tìm thấy phiếu chuyển vị trí",
+        ["Adjustment document not found."] = "Không tìm thấy phiếu điều chỉnh",
+        ["Quantity inventory document not found."] = "Không tìm thấy phiếu tồn kho số lượng",
+        ["Borrow document has no return effects to delete."] = "Phiếu mượn không có ảnh hưởng trả mượn để xóa",
+        ["Repair document has no receive effects to delete."] = "Phiếu sửa chữa không có ảnh hưởng nhận sửa chữa để xóa",
+        ["Cannot delete borrow lend after return has been posted. Delete borrow return first."] = "Không thể xóa phiếu cho mượn sau khi đã ghi nhận trả mượn. Hãy xóa phiếu trả mượn trước",
+        ["Cannot delete repair send after repair receive has been posted. Delete repair receive first."] = "Không thể xóa phiếu gửi sửa chữa sau khi đã ghi nhận nhận sửa chữa. Hãy xóa phiếu nhận sửa chữa trước",
+        ["Cannot edit or delete borrow lend after return has been posted. Delete borrow return first."] = "Không thể sửa hoặc xóa phiếu cho mượn sau khi đã ghi nhận trả mượn. Hãy xóa phiếu trả mượn trước",
+        ["Cannot edit or delete repair send after repair receive has been posted. Delete repair receive first."] = "Không thể sửa hoặc xóa phiếu gửi sửa chữa sau khi đã ghi nhận nhận sửa chữa. Hãy xóa phiếu nhận sửa chữa trước",
+        ["Receive"] = "Nhận",
+        ["Success"] = "Thành công",
 
         ["Lines appended to existing repair document."] = "Các dòng đã được thêm vào phiếu sửa chữa hiện có.",
 
@@ -1708,6 +1755,14 @@ public static class LocalizationCatalog
         ["AuditAction.ImportOperation"] = "Import dữ liệu",
 
         ["AuditAction.Create"] = "Tạo mới",
+
+        ["AuditAction.Edit"] = "Chỉnh sửa",
+
+        ["AuditAction.Rebuild"] = "Xây dựng lại",
+
+        ["AuditAction.Reverse"] = "Đảo ngược",
+
+        ["AuditAction.Delete"] = "Xóa",
 
         ["AuditAction.Update"] = "Cập nhật",
 
@@ -2458,6 +2513,14 @@ public static class LocalizationCatalog
             ["AuditAction.ImportOperation"] = "Import Data",
 
             ["AuditAction.Create"] = "Create",
+
+            ["AuditAction.Edit"] = "Edit",
+
+            ["AuditAction.Rebuild"] = "Rebuild",
+
+            ["AuditAction.Reverse"] = "Reverse",
+
+            ["AuditAction.Delete"] = "Delete",
 
             ["AuditAction.Update"] = "Update",
 
@@ -4181,6 +4244,14 @@ public static class LocalizationCatalog
 
         ["AuditAction.Create"] = "新建",
 
+        ["AuditAction.Edit"] = "编辑",
+
+        ["AuditAction.Rebuild"] = "重建",
+
+        ["AuditAction.Reverse"] = "反转",
+
+        ["AuditAction.Delete"] = "删除",
+
         ["AuditAction.Update"] = "更新",
 
         ["AuditAction.SoftDelete"] = "停用",
@@ -4597,8 +4668,50 @@ public static class LocalizationCatalog
         ["At least one scan line is required."] = "至少需要一条扫描记录。",
 
         ["Inventory check finalized."] = "盘点已完成。",
+
         ["Repair Document No"] = "维修单号",
 
+        ["No blocking dependency found."] = "未找到阻塞依赖项",
+        ["Document has blocking dependencies."] = "单据存在阻塞依赖项",
+        ["Unsupported document type '{0}'."] = "不支持的单据类型 '{0}'",
+        ["Document not found."] = "未找到单据",
+        ["Rebuild"] = "重建",
+        ["Rebuild Effects"] = "重建影响",
+        ["Reverse"] = "反转",
+        ["Delete"] = "删除",
+        ["Document effects reversed before delete."] = "删除前已反转单据影响",
+        ["Document deleted."] = "单据已删除",
+        ["Invalid borrow return payload."] = "借还数据无效",
+        ["Document edited and effects rebuilt."] = "单据已编辑并重建影响",
+        ["Document updated."] = "单据已更新",
+        ["Borrow return updated."] = "借还单已更新",
+        ["Repair receive updated."] = "维修收回单已更新",
+        ["Dependency Warning"] = "依赖警告",
+        ["Review dependency impact before continuing."] = "继续之前请检查依赖影响",
+        ["Close"] = "关闭",
+        ["Blocked reason"] = "阻塞原因",
+        ["Item instance {0} has downstream operations."] = "物料实例 {0} 存在下游操作",
+        ["Item instance {0} has downstream operations after {1}."] = "物料实例 {0} 在步骤 {1} 之后存在下游操作",
+        ["Quantity item {0}/{1} has later quantity transactions."] = "数量物料 {0}/{1} 存在更晚的数量交易",
+        ["Current persisted payload will be replayed to rebuild effects."] = "当前已保存的数据将重新执行以重建影响",
+        ["This will reverse and replay the current document effects."] = "此操作将反转并重新执行当前单据影响",
+        ["Document will be reversed and deleted transactionally."] = "单据将在同一事务中反转并删除",
+        ["This document will be reversed and deleted."] = "此单据将被反转并删除",
+        ["Document Type"] = "单据类型",
+        ["Editing document"] = "正在编辑单据",
+        ["Save Changes"] = "保存更改",
+        ["Inbound document not found."] = "未找到入库单",
+        ["Move document not found."] = "未找到移库单",
+        ["Adjustment document not found."] = "未找到调整单",
+        ["Quantity inventory document not found."] = "未找到数量库存单",
+        ["Borrow document has no return effects to delete."] = "借用单没有可删除的归还影响",
+        ["Repair document has no receive effects to delete."] = "维修单没有可删除的收回影响",
+        ["Cannot delete borrow lend after return has been posted. Delete borrow return first."] = "归还已过账后不能删除借出单。请先删除借还单",
+        ["Cannot delete repair send after repair receive has been posted. Delete repair receive first."] = "维修收回已过账后不能删除送修单。请先删除维修收回单",
+        ["Cannot edit or delete borrow lend after return has been posted. Delete borrow return first."] = "归还已过账后不能编辑或删除借出单。请先删除借还单",
+        ["Cannot edit or delete repair send after repair receive has been posted. Delete repair receive first."] = "维修收回已过账后不能编辑或删除送修单。请先删除维修收回单",
+        ["Receive"] = "接收",
+        ["Success"] = "成功",
 
 
         // ─── Reconciliation Audit module ──────────────────────────────────────

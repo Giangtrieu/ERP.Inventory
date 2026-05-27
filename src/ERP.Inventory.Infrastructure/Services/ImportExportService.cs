@@ -999,7 +999,7 @@ public sealed class ImportExportService : IImportService, IExportService
                 {
                     SnCode   = Value(row, "SnCode").Trim().ToUpperInvariant(),
                     Quantity = qty,
-                    Status   = Enum.TryParse<ItemStatus>(Value(row, "Status"), true, out var st) ? st : ItemStatus.Normal,
+                    Status   = string.IsNullOrEmpty(Value(row, "Status")) ? Value(row, "Status") : ItemStatus.Normal.ToString(),
                     Note     = NullIfEmpty(Value(row, "Note"))
                 };
             }).ToList();

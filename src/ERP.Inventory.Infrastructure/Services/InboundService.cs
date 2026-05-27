@@ -27,7 +27,7 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
         var errors = await ValidateInboundAsync(request, warehouse, cancellationToken);
         if (errors.Count > 0) return ServiceResult<PostedDocumentDto>.Fail(errors);
 
-        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await BeginOperationTransactionAsync(cancellationToken);
 
         // ── Resolve optional Supplier ────────────────────────────────
         int? sourcePartyId = null;

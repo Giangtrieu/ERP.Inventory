@@ -35,6 +35,7 @@ public static class DependencyInjection
         services.AddScoped<IRepairService, RepairServiceImpl>();
         services.AddScoped<IBorrowService, BorrowServiceImpl>();
         services.AddScoped<IQuantityInventoryService, QuantityInventoryService>();
+        services.AddScoped<IDocumentLifecycleService, DocumentLifecycleService>();
         services.AddScoped<InventoryCheckService>();
         services.AddScoped<AdjustmentService>();
         services.AddScoped<ReconciliationService>();

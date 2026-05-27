@@ -85,6 +85,10 @@ window.UI = {
       [/^Serial (.+) already exists for item (.+)\.$/, `Serial {0} already exists for item {1}.`],
       [/^DocumentNo (.+) already exists\.$/, 'DocumentNo {0} already exists.'],
       [/^Insufficient quantity for item (.+) SN (.+)\.$/, 'Insufficient quantity for item {0} SN {1}.'],
+      [/^Item instance (.+) has downstream operations\.$/, 'Item instance {0} has downstream operations.'],
+      [/^Item instance (.+) has downstream operations after (.+)\.$/, 'Item instance {0} has downstream operations after {1}.'],
+      [/^Quantity item (.+)\/(.+) has later quantity transactions\.$/, 'Quantity item {0}/{1} has later quantity transactions.'],
+      [/^Unsupported document type \'(.+)\'\.$/, 'Unsupported document type \'{0}\'.'],
 
     ];
     for (const [pattern, key] of patterns) {
@@ -249,14 +253,21 @@ window.UI = {
 
   toast(msg) { $('#toastLite').text(msg).fadeIn(120).delay(2200).fadeOut(180); },
 
-  confirm(title, text, summary, onConfirm) {
+  confirm(title, text, summary, onConfirm, confirmLabel) {
     $('#swalTitle').text(this.t(title));
     $('#swalText').text(this.t(text));
     $('#swalSummary').html(summary);
     $('#swalCancel').text(this.t('Cancel'));
-    $('#swalConfirm').text(this.t('Confirm Save & Post'));
+    $('#swalConfirm').text(this.t(confirmLabel || 'Confirm Save & Post')).prop('disabled', false);
+    $('#swalConfirm').show();
     $('#swalLite').css('display', 'flex');
-    $('#swalConfirm').off('click').on('click', function () { $('#swalLite').hide(); onConfirm && onConfirm(); });
+    $('#swalConfirm').off('click').on('click', function () {
+      const btn = $(this);
+      if (btn.prop('disabled')) return;
+      btn.prop('disabled', true);
+      $('#swalLite').hide();
+      onConfirm && onConfirm();
+    });
   },
 
   debounce(fn, delay) {

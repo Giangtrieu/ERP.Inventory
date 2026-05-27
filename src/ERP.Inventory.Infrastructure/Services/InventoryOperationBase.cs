@@ -5,6 +5,7 @@ using ERP.Inventory.Domain.Entities;
 using ERP.Inventory.Domain.Enums;
 using ERP.Inventory.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using System.Globalization;
 
 namespace ERP.Inventory.Infrastructure.Services;
@@ -24,6 +25,17 @@ public abstract class InventoryOperationBase
         _db = db;
         _documentNumbers = documentNumbers;
         _clock = clock;
+    }
+
+    protected async Task<OperationTransactionScope> BeginOperationTransactionAsync(CancellationToken cancellationToken)
+    {
+        if (_db.Database.CurrentTransaction != null)
+        {
+            return new OperationTransactionScope(null, ownsTransaction: false);
+        }
+
+        var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        return new OperationTransactionScope(transaction, ownsTransaction: true);
     }
 
     // ─── Code → ID resolution helpers ────────────────────────
@@ -295,4 +307,32 @@ public abstract class InventoryOperationBase
             ["InventoryCheck.Guidance.Damaged"] = "损坏：隔离物料，创建维修单或状态调整。"
         }
     };
+
+    protected sealed class OperationTransactionScope : IAsyncDisposable
+    {
+        private readonly IDbContextTransaction? _transaction;
+
+        public OperationTransactionScope(IDbContextTransaction? transaction, bool ownsTransaction)
+        {
+            _transaction = transaction;
+            OwnsTransaction = ownsTransaction;
+        }
+
+        public bool OwnsTransaction { get; }
+
+        public Task CommitAsync(CancellationToken cancellationToken)
+            => OwnsTransaction && _transaction != null
+                ? _transaction.CommitAsync(cancellationToken)
+                : Task.CompletedTask;
+
+        public Task RollbackAsync(CancellationToken cancellationToken)
+            => OwnsTransaction && _transaction != null
+                ? _transaction.RollbackAsync(cancellationToken)
+                : Task.CompletedTask;
+
+        public ValueTask DisposeAsync()
+            => OwnsTransaction && _transaction != null
+                ? _transaction.DisposeAsync()
+                : ValueTask.CompletedTask;
+    }
 }

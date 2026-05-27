@@ -129,14 +129,7 @@ async function relatedDocumentsTable(itemInstanceId) {
                             <td>${UI.badge(r.newStatus)}</td>
                             <td>${UI.esc(r.toLocation || '-')}</td>
                             <td>${UI.formatDate(r.performedAt)}</td>
-                            <td>
-                                <button class="btn btn-light btn-sm btn-doc-detail"
-                                    data-id="${r.documentId}"
-                                    data-type="${UI.esc(mapDocumentType(r.documentType))}"
-                                    title="${UI.t('View Detail')}">
-                                    <i class="bi bi-eye"></i>
-                                </button>
-                            </td>
+                            <td>${buildDocumentActionButtons(mapDocumentType(r.documentType), r.documentId)}</td>
                         </tr>
                     `).join('')}
                 </tbody>

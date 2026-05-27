@@ -5,6 +5,7 @@ using ERP.Inventory.Web.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace ERP.Inventory.Web.Controllers;
 
@@ -14,11 +15,13 @@ public sealed class DocumentsController : Controller
 {
     private readonly InventoryDbContext _db;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IDocumentLifecycleService _documentLifecycleService;
 
-    public DocumentsController(InventoryDbContext db, ICurrentUserService currentUserService)
+    public DocumentsController(InventoryDbContext db, ICurrentUserService currentUserService, IDocumentLifecycleService documentLifecycleService)
     {
         _db = db;
         _currentUserService = currentUserService;
+        _documentLifecycleService = documentLifecycleService;
     }
 
     [HttpGet("List")]
@@ -30,6 +33,7 @@ public sealed class DocumentsController : Controller
             "inbound" => await InboundRows(keyword, fromDate, toDate, language, cancellationToken),
             "move" => await MoveRows(keyword, fromDate, toDate, language, cancellationToken),
             "adjustment" => await AdjustmentRows(keyword, fromDate, toDate, language, cancellationToken),
+            "quantity-receive" or "quantity-issue" or "quantity-adjust" => await QuantityRows(type, keyword, fromDate, toDate, language, cancellationToken),
             "inventory-check" => await InventoryCheckRows(keyword, fromDate, toDate, language, cancellationToken),
             "repair-send" or "repair-receive" => await RepairRows(keyword, fromDate, toDate, language, cancellationToken),
             "borrow-lend" or "borrow-return" => await BorrowRows(keyword, fromDate, toDate, language, cancellationToken),
@@ -48,6 +52,7 @@ public sealed class DocumentsController : Controller
             "inbound" => await InboundDetail(id, language, cancellationToken),
             "move" => await MoveDetail(id, language, cancellationToken),
             "adjustment" => await AdjustmentDetail(id, language, cancellationToken),
+            "quantity-receive" or "quantity-issue" or "quantity-adjust" => await QuantityDetail(id, language, cancellationToken),
             "inventory-check" => await InventoryCheckDetail(id, language, cancellationToken),
             "repair-send" or "repair-receive" => await RepairDetail(id, language, cancellationToken),
             "borrow-lend" or "borrow-return" => await BorrowDetail(id, language, cancellationToken),
@@ -55,6 +60,47 @@ public sealed class DocumentsController : Controller
         };
 
         return detail == null ? NotFound() : Json(detail);
+    }
+
+    [HttpPost("Delete")]
+    [Authorize(Roles = "Admin,Warehouse Manager")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete([FromQuery] string type, [FromQuery] int id, CancellationToken cancellationToken)
+    {
+        var result = await _documentLifecycleService.DeleteAsync(type, id, _currentUserService.GetCurrentUser(), cancellationToken);
+        return Json(result);
+    }
+
+    [HttpPost("Edit")]
+    [Authorize(Roles = "Admin,Warehouse Manager")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Edit([FromQuery] string type, [FromQuery] int id, [FromBody] JsonElement payload, CancellationToken cancellationToken)
+    {
+        var result = await _documentLifecycleService.EditAsync(type, id, payload, _currentUserService.GetCurrentUser(), cancellationToken);
+        return Json(result);
+    }
+
+    [HttpPost("Rebuild")]
+    [Authorize(Roles = "Admin,Warehouse Manager")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Rebuild([FromQuery] string type, [FromQuery] int id, CancellationToken cancellationToken)
+    {
+        var result = await _documentLifecycleService.RebuildAsync(type, id, _currentUserService.GetCurrentUser(), cancellationToken);
+        return Json(result);
+    }
+
+    [HttpGet("EditModel")]
+    public async Task<IActionResult> EditModel([FromQuery] string type, [FromQuery] int id, CancellationToken cancellationToken)
+    {
+        var result = await _documentLifecycleService.GetEditModelAsync(type, id, _currentUserService.GetCurrentUser(), cancellationToken);
+        return Json(result);
+    }
+
+    [HttpGet("Dependencies")]
+    public async Task<IActionResult> Dependencies([FromQuery] string type, [FromQuery] int id, [FromQuery] string action = "Delete", CancellationToken cancellationToken = default)
+    {
+        var result = await _documentLifecycleService.PreviewDependenciesAsync(type, id, action, _currentUserService.GetCurrentUser(), cancellationToken);
+        return Json(result);
     }
 
     // ─── List queries ────────────────────────────────────────
@@ -83,6 +129,47 @@ public sealed class DocumentsController : Controller
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
         return await query.OrderByDescending(x => x.DocumentDate).ThenByDescending(x => x.PostedAt).Take(100)
             .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.Reason, warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.EnumText(language, x.Status), lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
+            .ToArrayAsync(cancellationToken);
+    }
+
+    private async Task<object[]> QuantityRows(string type, string? keyword, DateTime? fromDate, DateTime? toDate, string language, CancellationToken cancellationToken)
+    {
+        var docType = type switch
+        {
+            "quantity-receive" => ERP.Inventory.Domain.Enums.QuantityInventoryDocumentType.Receive,
+            "quantity-issue" => ERP.Inventory.Domain.Enums.QuantityInventoryDocumentType.Issue,
+            _ => ERP.Inventory.Domain.Enums.QuantityInventoryDocumentType.Adjust
+        };
+
+        var query = Scope(_db.QuantityInventoryDocuments.AsNoTracking().Include(x => x.Warehouse).Include(x => x.Lines).AsQueryable(), x => x.WarehouseId)
+            .Where(x => x.DocumentType == docType);
+
+        if (fromDate.HasValue) query = query.Where(x => x.DocumentDate >= fromDate.Value);
+        if (toDate.HasValue)
+        {
+            var to = toDate.Value.Date.AddDays(1);
+            query = query.Where(x => x.DocumentDate < to);
+        }
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var key = keyword.Trim();
+            query = query.Where(x => x.DocumentNo.Contains(key) || (x.Note != null && x.Note.Contains(key)) || x.CreatedBy.Contains(key) || x.ApprovedBy.Contains(key));
+        }
+
+        return await query.OrderByDescending(x => x.DocumentDate).ThenByDescending(x => x.PostedAt).Take(100)
+            .Select(x => new
+            {
+                id = x.Id,
+                documentNo = x.DocumentNo,
+                documentDate = x.DocumentDate,
+                party = x.DocumentType.ToString(),
+                warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "",
+                status = LocalizationCatalog.Text(language, $"Enum.QuantityInventoryDocumentType.{x.DocumentType}"),
+                lines = x.Lines.Count,
+                createdBy = x.CreatedBy,
+                approvedBy = x.ApprovedBy,
+                postedAt = x.PostedAt
+            })
             .ToArrayAsync(cancellationToken);
     }
 
@@ -306,6 +393,55 @@ public sealed class DocumentsController : Controller
                 note = x.Note,
                 bin = x.ActualBinLocationId.HasValue && binMap.TryGetValue(x.ActualBinLocationId.Value, out var path) ? path : unknownText
             })
+        };
+    }
+
+    private async Task<object?> QuantityDetail(int id, string language, CancellationToken cancellationToken)
+    {
+        var doc = await Scope(_db.QuantityInventoryDocuments.AsNoTracking()
+            .Include(x => x.Warehouse)
+            .Include(x => x.Lines).ThenInclude(x => x.Item)
+            .AsQueryable(), x => x.WarehouseId)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+        if (doc == null) return null;
+
+        var history = await _db.QuantityInventoryTransactions.AsNoTracking()
+            .Where(x => x.DocumentId == id)
+            .OrderByDescending(x => x.PostedAt)
+            .Select(x => new
+            {
+                timestamp = x.PostedAt,
+                actionType = x.TransactionType.ToString(),
+                actionTypeText = LocalizationCatalog.Text(language, $"Enum.QuantityInventoryDocumentType.{x.TransactionType}"),
+                itemCode = x.Item != null ? x.Item.ItemCode : null,
+                snCode = x.SnCode,
+                status = x.StatusAfter.ToString(),
+                statusText = LocalizationCatalog.Text(language, x.StatusAfter.ToString()),
+                quantityDelta = x.QuantityDelta,
+                performedBy = x.PostedBy
+            })
+            .ToListAsync(cancellationToken);
+
+        return new
+        {
+            header = new
+            {
+                doc.Id,
+                EntityName = nameof(QuantityInventoryDocument),
+                doc.DocumentNo,
+                doc.DocumentDate,
+                warehouse = doc.Warehouse?.WarehouseCode,
+                party = doc.DocumentType.ToString(),
+                status = LocalizationCatalog.Text(language, $"Enum.QuantityInventoryDocumentType.{doc.DocumentType}"),
+                doc.CreatedBy,
+                doc.ApprovedBy,
+                approvedAt = doc.CreatedAt,
+                doc.PostedAt,
+                doc.Note
+            },
+            lines = doc.Lines.Select(x => new { item = x.Item?.ItemCode, snCode = x.SnCode, status = x.Status, quantity = x.Quantity, note = x.Note }),
+            history
         };
     }
 

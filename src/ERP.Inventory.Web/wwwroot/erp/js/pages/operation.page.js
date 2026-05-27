@@ -68,6 +68,7 @@ Router.register('operation', async function (type) {
     </div></div></div>`);
     $('#btnExportInventory').on('click', () => exportFile('/Export/Inventory'));
     wireOperationEvents(type, vm);
+    applyOperationEditorState(type);
     await loadOperationDocuments(type);
     setTimeout(() => initScanSystem(), 100);
     loadReportsInventory()
@@ -304,7 +305,16 @@ async function postOperation(type) {
         'borrow-lend': '/Borrow/Lend',
         'borrow-return': '/Borrow/Return'
     };
-    const result = await UI.api(endpoints[type], { method: 'POST', data: payload });
+    const editor = AppState.documentEditor;
+    const btn = $('#btnOperationPost');
+    if (btn.prop('disabled')) return;
+    btn.prop('disabled', true);
+    btn.html(`<span class="spinner-border spinner-border-sm me-2"></span>${UI.t(editor && editor.type === type ? 'Saving' : 'Save & Post')}`);
+    const result = editor && editor.type === type
+        ? await UI.api('/Documents/Edit', { method: 'POST', query: { type, id: editor.id }, data: payload })
+        : await UI.api(endpoints[type], { method: 'POST', data: payload });
+    btn.prop('disabled', false);
+    btn.html(`<i class="bi bi-check2-circle me-2"></i>${UI.t(editor && editor.type === type ? 'Save Changes' : 'Save & Post')}`);
     if (!result.success) {
         showOperationValidation(operationErrorsFromResult(result));
         return;
@@ -315,7 +325,8 @@ async function postOperation(type) {
         showOperationValidation([{ label: 'Attachments', message: err.message || 'Attachment upload failed.' }]);
         return;
     }
-    UI.toast(`${UI.msg(result.message || 'Posted')} ${result.data ? result.data.documentNo : ''}`);
+    UI.toast(`${UI.msg(result.message || (editor && editor.type === type ? 'Document updated.' : 'Posted'))} ${result.data ? result.data.documentNo : ''}`);
+    AppState.documentEditor = null;
     AppState.currentTrackingKeyword = '';
     await loadLookups();
     Router.go(type);
@@ -558,15 +569,21 @@ async function loadOperationDocuments(type) {
         $('#operationDocuments').html(UI.empty('No data'));
         return;
     }
-    $('#operationDocuments').html(`<div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Document No')}</th><th>${UI.t('Document Date')}</th><th>${UI.t('Party')}</th><th>${UI.t('Warehouse')}</th><th style="min-width:120px;">${UI.t('Status')}</th><th>${UI.t('Lines')}</th><th>${UI.t('ApprovedBy')}</th><th></th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3 fw-semibold">${UI.esc(r.documentNo)}</td><td>${UI.formatDate(r.documentDate)}</td><td>${UI.esc(r.party || '-')}</td><td>${UI.esc(r.warehouse || '-')}</td><td><span class="badge text-bg-light">${UI.badgeTheadDocument(r.status || '-')}</span></td><td>${UI.esc(r.lines)}</td><td>${UI.esc(r.approvedBy || '-')}</td><td>${type === 'inventory-check' && r.sessionStatus === 'InProgress' ? `<button class="btn btn-warning btn-sm btn-doc-finalize me-1" data-id="${r.id}" title="${UI.t('Finalize Session')}"><i class="bi bi-check2-circle"></i></button>` : ''}<button class="btn btn-light btn-sm btn-doc-detail" data-id="${r.id}" data-type="${UI.esc(type)}" title="${UI.t('View Detail')}"><i class="bi bi-eye"></i></button></td></tr>`).join('')}</tbody></table><div class="server-footer"><span>${UI.endpoint('DocumentsList')}</span><span>${rows.length} ${UI.t('rows')}</span></div></div>`);
+    $('#operationDocuments').html(`<div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Document No')}</th><th>${UI.t('Document Date')}</th><th>${UI.t('Party')}</th><th>${UI.t('Warehouse')}</th><th style="min-width:120px;">${UI.t('Status')}</th><th>${UI.t('Lines')}</th><th>${UI.t('ApprovedBy')}</th><th>${UI.t('Actions')}</th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3 fw-semibold">${UI.esc(r.documentNo)}</td><td>${UI.formatDate(r.documentDate)}</td><td>${UI.esc(r.party || '-')}</td><td>${UI.esc(r.warehouse || '-')}</td><td><span class="badge text-bg-light">${UI.badgeTheadDocument(r.status || '-')}</span></td><td>${UI.esc(r.lines)}</td><td>${UI.esc(r.approvedBy || '-')}</td><td>${type === 'inventory-check' && r.sessionStatus === 'InProgress' ? `<button class="btn btn-warning btn-sm btn-doc-finalize me-1" data-id="${r.id}" title="${UI.t('Finalize Session')}"><i class="bi bi-check2-circle"></i></button>` : ''}${buildDocumentActionButtons(type, r.id)}</td></tr>`).join('')}</tbody></table><div class="server-footer"><span>${UI.endpoint('DocumentsList')}</span><span>${rows.length} ${UI.t('rows')}</span></div></div>`);
     //$('#operationDocuments').html(`<div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Document No')}</th><th>${UI.t('Document Date')}</th><th>${UI.t('Party')}</th><th>${UI.t('Warehouse')}</th><th>${UI.t('Status')}</th><th>${UI.t('Lines')}</th><th>${UI.t('ApprovedBy')}</th><th></th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3 fw-semibold">${UI.esc(r.documentNo)}</td><td>${UI.formatDate(r.documentDate)}</td><td>${UI.esc(r.party || '-')}</td><td>${UI.esc(r.warehouse || '-')}</td><td><span class="badge text-bg-light">${UI.esc(UI.t(r.status || '-'))}</span></td><td>${UI.esc(r.lines)}</td><td>${UI.esc(r.approvedBy || '-')}</td><td><button class="btn btn-light btn-sm btn-doc-detail" data-id="${r.id}" data-type="${UI.esc(type)}" title="${UI.t('View Detail')}"><i class="bi bi-eye"></i></button></td></tr>`).join('')}</tbody></table><div class="server-footer"><span>${UI.endpoint('DocumentsList')}</span><span>${rows.length} ${UI.t('rows')}</span></div></div>`);
 }
 
 $(document).on('click', '.btn-doc-detail', async function () {
     const docType = $(this).data('type');
+    const docId = $(this).data('id');
     const detail = await UI.api('/Documents/Detail', { query: { type: docType, id: $(this).data('id') } });
+    const editModel = await UI.api('/Documents/EditModel', { query: { type: docType, id: docId } });
+    if (editModel && editModel.success && editModel.data) {
+        detail.audit = editModel.data.audit || [];
+    }
     window._currentDocDetail = detail;
     window._currentDocType = docType;
+    window._currentDocId = docId;
     $('#drawer .fw-bold').first().text(UI.t('View Detail'));
     $('#drawerBody').html(renderDocumentDetail(detail, docType));
     await loadDocumentAttachments(detail.header ? detail.header.entityName : '', detail.header ? detail.header.id : 0);
@@ -602,13 +619,19 @@ $(document).on('click', '.link-item-tracking', function () {
 function renderDocumentDetail(detail, docType) {
     const h = detail.header || {};
     const extra = h.extra || {};
+    const actionBar = `<div class="d-flex justify-content-end gap-2 mb-3">${buildDocumentActionButtons(docType, h.id || window._currentDocId, true)}</div>`;
     const extraRows = Object.keys(extra).length ? `<div class="audit-footer mt-2"><div class="row g-3 mb-3">${Object.entries(extra).map(([k, v]) => { let value = v || '-'; if (k.toLowerCase().includes('date')) { value = v ? UI.formatDate(v) : '-'; } return `<div class="col-md-6">${UI.t(detailLabel(k))}: <b>${UI.esc(UI.t(value))}</b></div>`; }).join('')}</div></div>` : '';
     const lines = detail.lines || [];
+    const auditHtml = detail.audit && detail.audit.length ? `
+      <div class="form-section-title mt-3">${UI.t('Audit Trail')}</div>
+      <div class="table-wrap report-scroll-wrap"><table class="data-table-detail-history"><thead><tr><th>${UI.t('Time')}</th><th>${UI.t('Action')}</th><th>${UI.t('By')}</th><th>${UI.t('Reason')}</th></tr></thead>
+        <tbody>${detail.audit.map(x => `<tr><td class="text-muted small">${UI.formatDate(x.timestamp)}</td><td><span class="badge text-bg-light">${UI.esc(UI.auditAction(x.action))}</span></td><td>${UI.esc(x.operator || '-')}</td><td class="small text-muted">${UI.esc(UI.t(x.reason || '-'))}</td></tr>`).join('')}</tbody>
+      </table></div>` : '';
     const historyHtml = detail.history && detail.history.length ? `
       <div class="form-section-title mt-3">${UI.t('History & Timeline')}</div>
       <div class="table-wrap report-scroll-wrap"><table class="data-table-detail-history"><thead><tr><th>${UI.t('Time')}</th><th>${UI.t('Action')}</th><th>${UI.t('PN/SN')}</th><th>${UI.t('Party')}</th><th>${UI.t('Status')}</th><th>${UI.t('Location')}</th><th>${UI.t('By')}</th></tr></thead>
         <tbody>${detail.history.map(x => {
-          const party = x.borrower || x.receiver || '-';
+          const party = x.borrower || x.receiver || x.repairVendor || x.performedBy || '-';
           const dept = x.borrowDepartment || x.receiverDepartment || '';
           const phone = x.borrowerPhone || x.receiverPhone || '';
           const owner = x.departmentOwner || '';
@@ -616,9 +639,9 @@ function renderDocumentDetail(detail, docType) {
           return `<tr>
           <td class="text-muted small">${UI.formatDate(x.timestamp)}</td>
           <td><span class="badge text-bg-secondary">${UI.esc(x.actionTypeText || UI.t(x.actionType || '-'))}</span></td>
-          <td><span class="link-item-tracking fw-semibold" data-key="${UI.esc(x.serialNumber)}">${UI.esc(x.itemCode || '-')}</span><br/><small class="text-muted">${UI.esc(x.serialNumber || '')}</small></td>
+          <td><span class="link-item-tracking fw-semibold" data-key="${UI.esc(x.serialNumber)}">${UI.esc(x.itemCode || '-')}</span><br/><small class="text-muted">${UI.esc(x.serialNumber || x.snCode || '')}</small></td>
           <td class="small"><span class="fw-semibold">${UI.esc(party)}</span>${partyDetail ? `<br/><small class="text-muted">${UI.esc(partyDetail)}</small>` : ''}</td>
-          <td class="small">${UI.badge(x.oldStatus, x.oldStatusText)} <i class="bi bi-arrow-right text-muted"></i> ${UI.badge(x.newStatus, x.newStatusText)}</td>
+          <td class="small">${UI.badge(x.oldStatus || x.status, x.oldStatusText)} <i class="bi bi-arrow-right text-muted"></i> ${UI.badge(x.status || x.newStatus, x.newStatusText)}</td>
           <td class="small text-muted">${UI.esc(x.oldLocation || '\u2014')} <i class="bi bi-arrow-right"></i> ${UI.esc(x.newLocation || '\u2014')}</td>
           <td class="text-muted small">${UI.esc(x.performedBy || '-')}</td>
         </tr>`;}).join('')}</tbody>
@@ -626,6 +649,7 @@ function renderDocumentDetail(detail, docType) {
     ` : '';
 
     return `
+  ${actionBar}
   <div class="audit-footer">
    <div class="row g-3 mb-3">
     <div class="col-md-6">${UI.t('Document No')}: <b>${UI.esc(h.documentNo || '-')}</b></div>
@@ -639,13 +663,147 @@ function renderDocumentDetail(detail, docType) {
   <div class="form-section-title mt-3">${UI.t('Line Items')}</div>
   <div class="table-wrap report-scroll-wrap"><table class="data-table-detail"><thead><tr><th class="px-3">${UI.t('Item')}</th><th>${UI.t('SN')}</th><th style="min-width: 120px;">${UI.t('Status')}</th><th>${UI.t('Location')}</th></tr></thead>
     <tbody>${lines.map(l =>
-        `<tr><td class="px-3"><span class="link-item-tracking" data-key="${UI.esc(l.serial)}">${UI.esc(l.item || '-')}</span></td><td><span class="link-item-tracking" data-key="${UI.esc(l.serial)}">${UI.esc(l.serial || l.barcode || '-')}</span></td><td>${UI.badge(l.condition || l.result || l.newStatus || l.status || '', l.conditionText || l.resultText || '')}${l.returned ? ' <span class="badge text-bg-success ms-1"><i class="bi bi-check-circle"></i></span>' : ''}</td><td>${UI.esc(l.targetBin || l.to || l.bin || l.fromBin || '-')}</td></tr>`).join('')}
+        `<tr><td class="px-3"><span class="link-item-tracking" data-key="${UI.esc(l.serial)}">${UI.esc(l.item || '-')}</span></td><td><span class="link-item-tracking" data-key="${UI.esc(l.serial)}">${UI.esc(l.serial || l.barcode || l.snCode || '-')}</span></td><td>${UI.badge(l.condition || l.result || l.newStatus || l.status || '', l.conditionText || l.resultText || '')}${l.returned ? ' <span class="badge text-bg-success ms-1"><i class="bi bi-check-circle"></i></span>' : ''}</td><td>${UI.esc(l.targetBin || l.to || l.bin || l.fromBin || '-')}</td></tr>`).join('')}
     </tbody>
   </table></div>
+  ${auditHtml}
   ${historyHtml}
   <div class="form-section-title mt-3">${UI.t('Attachments')}</div>
   <div id="documentAttachments">${UI.loading()}</div>`;
 }
+
+function buildDocumentActionButtons(type, id, compact = false) {
+    const size = compact ? '' : ' btn-sm';
+    return `<div class="btn-group${compact ? '' : ' flex-wrap'}" role="group">
+      <button class="btn btn-light${size} btn-doc-detail" data-id="${id}" data-type="${UI.esc(type)}" title="${UI.t('View Detail')}"><i class="bi bi-eye"></i></button>
+      <button class="btn btn-light${size} btn-doc-edit" data-id="${id}" data-type="${UI.esc(type)}" title="${UI.t('Edit')}"><i class="bi bi-pencil"></i></button>
+      <button class="btn btn-light${size} btn-doc-rebuild" data-id="${id}" data-type="${UI.esc(type)}" title="${UI.t('Rebuild Effects')}"><i class="bi bi-arrow-repeat"></i></button>
+      <button class="btn btn-light${size} btn-doc-deps" data-id="${id}" data-type="${UI.esc(type)}" title="${UI.t('Dependency Warning')}"><i class="bi bi-exclamation-triangle"></i></button>
+      <button class="btn btn-outline-danger${size} btn-doc-delete" data-id="${id}" data-type="${UI.esc(type)}" title="${UI.t('Delete')}"><i class="bi bi-trash"></i></button>
+    </div>`;
+}
+
+function applyOperationEditorState(type) {
+    const editor = AppState.documentEditor;
+    if (!editor || editor.type !== type || !editor.payload) return;
+    $('#btnOperationPost').html(`<i class="bi bi-save me-2"></i>${UI.t('Save Changes')}`);
+    $('.form-section-title').first().after(`<div class="alert alert-warning py-2 mt-2 mb-0">${UI.t('Editing document')}: <b>${UI.esc(editor.documentNo || editor.payload.documentNo || '')}</b></div>`);
+    populateOperationEditor(type, editor.payload);
+}
+
+function populateOperationEditor(type, payload) {
+    Object.entries(payload || {}).forEach(([key, value]) => {
+        if (key === 'lines') return;
+        const el = $(`#app [name="${key}"]`);
+        if (!el.length) return;
+        el.val(value == null ? '' : value);
+    });
+    const lines = Array.isArray(payload.lines) ? payload.lines : [];
+    if (!lines.length) return;
+    $('#operationLineBody').html(lines.map((line, index) => renderLineRow(type, window.currentVM || {}, index + 1)).join(''));
+    $('#operationLineBody tr').each(function (index) {
+        const row = $(this);
+        const line = lines[index] || {};
+        Object.entries(line).forEach(([key, value]) => {
+            const mappedKey = key === 'note' ? 'lineNote' : key;
+            const input = row.find(`[name="${mappedKey}"]`);
+            if (input.length) input.val(value == null ? '' : value);
+        });
+    });
+}
+
+async function openDocumentEditor(type, id) {
+    const result = await UI.api('/Documents/EditModel', { query: { type, id } });
+    if (!result.success || !result.data) { UI.toast(UI.resultError(result)); return; }
+    AppState.documentEditor = {
+        id,
+        type,
+        documentNo: result.data.documentNo,
+        payload: result.data.payload,
+        audit: result.data.audit || []
+    };
+    $('#drawer').removeClass('open right-drawer-detail');
+    if (type.startsWith('quantity-')) {
+        Router.go('quantity-inventory');
+    } else {
+        Router.go(type);
+    }
+}
+
+async function showDocumentDependencies(type, id, action) {
+    const result = await UI.api('/Documents/Dependencies', { query: { type, id, action: action || 'Delete' } });
+    if (!result.success || !result.data) { UI.toast(UI.resultError(result)); return null; }
+    const d = result.data;
+    const html = d.reasons && d.reasons.length
+        ? `<div class="alert alert-warning small mb-0"><div class="fw-semibold mb-2">${UI.t('Blocked reason')}</div><ul class="mb-0 ps-3">${d.reasons.map(x => `<li>${UI.esc(UI.msg(x))}</li>`).join('')}</ul></div>`
+        : `<div class="alert alert-success small mb-0">${UI.t('No blocking dependency found.')}</div>`;
+    UI.confirm(UI.t('Dependency Warning'), UI.t('Review dependency impact before continuing.'), html, null, 'Close');
+    $('#swalConfirm').hide();
+    $('#swalCancel').text(UI.t('Close'));
+    return d;
+}
+
+async function performDocumentDelete(type, id) {
+    const dep = await UI.api('/Documents/Dependencies', { query: { type, id, action: 'Delete' } });
+    if (!dep.success || !dep.data) { UI.toast(UI.resultError(dep)); return; }
+    const summary = dep.data.reasons && dep.data.reasons.length
+        ? `<div class="alert alert-warning small"><div class="fw-semibold mb-2">${UI.t('Blocked reason')}</div><ul class="mb-0 ps-3">${dep.data.reasons.map(x => `<li>${UI.esc(UI.msg(x))}</li>`).join('')}</ul></div>`
+        : `<div>${UI.t('Document will be reversed and deleted transactionally.')}</div>`;
+    if (!dep.data.canProceed) {
+        UI.confirm('Dependency Warning', 'Delete is blocked by downstream dependency.', summary, null, 'Close');
+        $('#swalConfirm').hide();
+        $('#swalCancel').text(UI.t('Close'));
+        return;
+    }
+    UI.confirm('Delete', 'This document will be reversed and deleted.', summary, async function () {
+        const result = await UI.api('/Documents/Delete', { method: 'POST', query: { type, id }, data: {} });
+        UI.toast(result.success ? UI.msg(result.message || 'Document deleted.') : UI.resultError(result));
+        if (result.success) {
+            AppState.documentEditor = null;
+            $('#drawer').removeClass('open right-drawer-detail');
+            if (window.currentOperationType) loadOperationDocuments(window.currentOperationType);
+            if (typeof loadQuantityDocuments === 'function') loadQuantityDocuments();
+        }
+    }, 'Delete');
+}
+
+async function performDocumentRebuild(type, id) {
+    const dep = await UI.api('/Documents/Dependencies', { query: { type, id, action: 'Rebuild' } });
+    if (!dep.success || !dep.data) { UI.toast(UI.resultError(dep)); return; }
+    const summary = dep.data.reasons && dep.data.reasons.length
+        ? `<div class="alert alert-warning small"><div class="fw-semibold mb-2">${UI.t('Blocked reason')}</div><ul class="mb-0 ps-3">${dep.data.reasons.map(x => `<li>${UI.esc(UI.msg(x))}</li>`).join('')}</ul></div>`
+        : `<div>${UI.t('Current persisted payload will be replayed to rebuild effects.')}</div>`;
+    if (!dep.data.canProceed) {
+        UI.confirm('Dependency Warning', 'Rebuild is blocked by downstream dependency.', summary, null, 'Close');
+        $('#swalConfirm').hide();
+        $('#swalCancel').text(UI.t('Close'));
+        return;
+    }
+    UI.confirm('Rebuild Effects', 'This will reverse and replay the current document effects.', summary, async function () {
+        const result = await UI.api('/Documents/Rebuild', { method: 'POST', query: { type, id }, data: {} });
+        UI.toast(result.success ? UI.msg(result.message || 'Effects rebuilt.') : UI.resultError(result));
+        if (result.success) {
+            if (window.currentOperationType) loadOperationDocuments(window.currentOperationType);
+            if (typeof loadQuantityDocuments === 'function') loadQuantityDocuments();
+        }
+    }, 'Rebuild Effects');
+}
+
+$(document).on('click', '.btn-doc-edit', function () {
+    openDocumentEditor($(this).data('type'), $(this).data('id'));
+});
+
+$(document).on('click', '.btn-doc-deps', function () {
+    showDocumentDependencies($(this).data('type'), $(this).data('id'), 'Preview');
+});
+
+$(document).on('click', '.btn-doc-delete', function () {
+    performDocumentDelete($(this).data('type'), $(this).data('id'));
+});
+
+$(document).on('click', '.btn-doc-rebuild', function () {
+    performDocumentRebuild($(this).data('type'), $(this).data('id'));
+});
 
 
 async function loadDocumentAttachments(entityName, entityId) {
