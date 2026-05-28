@@ -88,7 +88,11 @@ window.UI = {
       [/^Item instance (.+) has downstream operations\.$/, 'Item instance {0} has downstream operations.'],
       [/^Item instance (.+) has downstream operations after (.+)\.$/, 'Item instance {0} has downstream operations after {1}.'],
       [/^Quantity item (.+)\/(.+) has later quantity transactions\.$/, 'Quantity item {0}/{1} has later quantity transactions.'],
-      [/^Unsupported document type \'(.+)\'\.$/, 'Unsupported document type \'{0}\'.'],
+        [/^Unsupported document type \'(.+)\'\.$/, 'Unsupported document type \'{0}\'.'],
+        [/^BinCode (.+) does not belong to selected warehouse\.$/, 'BinCode {0} does not belong to selected warehouse.'],
+        [/^Item (.+)\/(.+) is duplicated in this adjustment document\.$/, 'Item {0}/{1} is duplicated in this adjustment document.'],
+        [/^Current location for item instance (.+) does not exist\.$/, 'Current location for item instance {0} does not exist.'],
+        [/^Item instance (.+)\/(.+) cannot be moved\.$/, 'Item instance {0}/{1} cannot be moved.'],
 
     ];
     for (const [pattern, key] of patterns) {

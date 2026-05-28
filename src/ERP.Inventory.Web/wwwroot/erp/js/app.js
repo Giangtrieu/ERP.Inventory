@@ -148,113 +148,117 @@ async function refreshUI() {
     $('#btnPrintVoucherText').text(UI.t('Export PDF'));
 }
 
-//const CACHE_VERSION = 'v1';
-//const CACHE_HOURS = 12;
+const CACHE_VERSION = 'v1';
+const CACHE_HOURS = 1;
 
-//function cleanupOldVersions() {
-//    Object.keys(localStorage)
-//        .filter(x => x.startsWith('cache_') && !x.startsWith(`cache_${CACHE_VERSION}_`))
-//        .forEach(x => localStorage.removeItem(x));
-//}
+function cleanupOldVersions() {
+    Object.keys(localStorage)
+        .filter(x => x.startsWith('cache_') && !x.startsWith(`cache_${CACHE_VERSION}_`))
+        .forEach(x => localStorage.removeItem(x));
+}
 
-//function cleanupExpiredCache() {
-//    const expireMs = CACHE_HOURS * 3600000;
+function cleanupExpiredCache() {
+    const expireMs = CACHE_HOURS * 3600000;
 
-//    Object.keys(localStorage)
-//        .filter(x => x.startsWith(`cache_${CACHE_VERSION}_`) && x.endsWith('_time'))
-//        .forEach(timeKey => {
-//            const time = Number(localStorage.getItem(timeKey));
+    Object.keys(localStorage)
+        .filter(x => x.startsWith(`cache_${CACHE_VERSION}_`) && x.endsWith('_time'))
+        .forEach(timeKey => {
+            const time = Number(localStorage.getItem(timeKey));
 
-//            if (Date.now() - time > expireMs) {
-//                localStorage.removeItem(timeKey.replace('_time', ''));
-//                localStorage.removeItem(timeKey);
-//            }
-//        });
-//}
+            if (Date.now() - time > expireMs) {
+                localStorage.removeItem(timeKey.replace('_time', ''));
+                localStorage.removeItem(timeKey);
+            }
+        });
+}
 
-//async function cachedApi(url, options = {}) {
-//    const lang = AppState.lang || localStorage.getItem('lang') || 'vi';
-//    const key = `cache_${CACHE_VERSION}_${lang}_${url}_${JSON.stringify(options)}`;
-//    const timeKey = `${key}_time`;
-//    const cache = localStorage.getItem(key);
-//    const time = localStorage.getItem(timeKey);
+async function cachedApi(url, options = {}) {
+    //const lang = AppState.lang || localStorage.getItem('lang') || 'vi';
+    const key = `cache_${CACHE_VERSION}_${url}_${JSON.stringify(options)}`;
+    const timeKey = `${key}_time`;
+    const cache = localStorage.getItem(key);
+    const time = localStorage.getItem(timeKey);
 
-//    if (cache && time && Date.now() - Number(time) < CACHE_HOURS * 3600000)
-//        return JSON.parse(cache);
+    if (cache && time && Date.now() - Number(time) < CACHE_HOURS * 3600000)
+        return JSON.parse(cache);
 
-//    const data = await UI.api(url, options);
+    const data = await UI.api(url, options);
 
-//    localStorage.setItem(key, JSON.stringify(data));
-//    localStorage.setItem(timeKey, Date.now());
+    localStorage.setItem(key, JSON.stringify(data));
+    localStorage.setItem(timeKey, Date.now());
 
-//    return data;
-//}
+    return data;
+}
 
-//function clearLookupCache() {
-//    Object.keys(localStorage)
-//        .filter(x => x.startsWith(`cache_${CACHE_VERSION}_`))
-//        .forEach(x => localStorage.removeItem(x));
-//}
-
-//async function loadLookups() {
-
-//    cleanupOldVersions();
-//    cleanupExpiredCache();
-
-//    const [warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType] = await Promise.all([
-//        cachedApi('/Lookup/Warehouses'),
-//        cachedApi('/Lookup/Categories'),
-//         cachedApi('/Lookup/Statuses'),
-//        cachedApi('/Lookup/ItemStatusView'),
-//        cachedApi('/Lookup/InventoryStatuses'),
-//        cachedApi('/Lookup/ExternalParties', { query: { type: 'Supplier' } }),
-//        cachedApi('/Lookup/ExternalParties', { query: { type: 'RepairVendor' } }),
-//        cachedApi('/Lookup/ExternalParties', { query: { type: 'Borrower' } }),
-//        cachedApi('/Lookup/Items'),
-//        cachedApi('/Lookup/RepairResults'),
-//        cachedApi('/Lookup/BorrowReturnConditions'),
-//        cachedApi('/Lookup/InventoryCheckResults'),
-//        cachedApi('/Lookup/ExternalPartyTypes'),
-//        cachedApi('/Lookup/DocumentPeriodType'),
-//    ]);
-
-//    const inboundConditions = [
-//        { id: 'Normal', text: UI.t('Enum.ItemStatus.Normal') || 'Normal' },
-//        { id: 'Damaged', text: UI.t('Enum.ItemStatus.Damaged') || 'Damaged' },
-//        { id: 'Scrapped', text: UI.t('Enum.ItemStatus.Scrapped') || 'Scrapped' },
-//    ];
-
-//    AppState.lookups = { warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, inboundConditions, documentPeriodType };
-//}
+function clearLookupCache() {
+    Object.keys(localStorage)
+        .filter(x => x.startsWith(`cache_${CACHE_VERSION}_`))
+        .forEach(x => localStorage.removeItem(x));
+}
 
 async function loadLookups() {
-    const [warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType] = await Promise.all([
-    UI.api('/Lookup/Warehouses'),
-    UI.api('/Lookup/Categories'),
-    //UI.api('/Lookup/Statuses'),
-    UI.api('/Lookup/ItemStatusView'),
-    UI.api('/Lookup/InventoryStatuses'),
-    UI.api('/Lookup/ExternalParties', { query: { type: 'Supplier' } }),
-    UI.api('/Lookup/ExternalParties', { query: { type: 'RepairVendor' } }),
-    UI.api('/Lookup/ExternalParties', { query: { type: 'Borrower' } }),
-    UI.api('/Lookup/Items'),
-    UI.api('/Lookup/RepairResults'),
-    UI.api('/Lookup/BorrowReturnConditions'),
-    UI.api('/Lookup/InventoryCheckResults'),
-    UI.api('/Lookup/ExternalPartyTypes'),
-    UI.api('/Lookup/DocumentPeriodType'),
-    UI.api('/Import/Types'),
-  ]);
+
+    cleanupOldVersions();
+    cleanupExpiredCache();
+
+    const [warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes] = await Promise.all([
+
+        cachedApi('/Lookup/Warehouses'),
+        cachedApi('/Lookup/Categories'),
+/*        UI.api('/Lookup/Statuses'),*/
+        UI.api('/Lookup/ItemStatusView'),
+        UI.api('/Lookup/InventoryStatuses'),
+        UI.api('/Lookup/ExternalParties', { query: { type: 'Supplier' } }),
+        UI.api('/Lookup/ExternalParties', { query: { type: 'RepairVendor' } }),
+        UI.api('/Lookup/ExternalParties', { query: { type: 'Borrower' } }),
+        cachedApi('/Lookup/Items'),
+        UI.api('/Lookup/RepairResults'),
+        UI.api('/Lookup/BorrowReturnConditions'),
+        UI.api('/Lookup/InventoryCheckResults'),
+        UI.api('/Lookup/ExternalPartyTypes'),
+        UI.api('/Lookup/DocumentPeriodType'),
+        UI.api('/Import/Types'),
+        cachedApi('/Lookup/BinCodes'), ,
+    ]);
+
+    const inboundConditions = [
+        { id: 'Normal', text: UI.t('Enum.ItemStatus.Normal') || 'Normal' },
+        { id: 'Damaged', text: UI.t('Enum.ItemStatus.Damaged') || 'Damaged' },
+        { id: 'Scrapped', text: UI.t('Enum.ItemStatus.Scrapped') || 'Scrapped' },
+    ];
+
+    AppState.lookups = { warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes };
+}
+
+//async function loadLookups() {
+//    const [warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes] = await Promise.all([
+//    UI.api('/Lookup/Warehouses'),
+//    UI.api('/Lookup/Categories'),
+//    //UI.api('/Lookup/Statuses'),
+//    UI.api('/Lookup/ItemStatusView'),
+//    UI.api('/Lookup/InventoryStatuses'),
+//    UI.api('/Lookup/ExternalParties', { query: { type: 'Supplier' } }),
+//    UI.api('/Lookup/ExternalParties', { query: { type: 'RepairVendor' } }),
+//    UI.api('/Lookup/ExternalParties', { query: { type: 'Borrower' } }),
+//    UI.api('/Lookup/Items'),
+//    UI.api('/Lookup/RepairResults'),
+//    UI.api('/Lookup/BorrowReturnConditions'),
+//    UI.api('/Lookup/InventoryCheckResults'),
+//    UI.api('/Lookup/ExternalPartyTypes'),
+//    UI.api('/Lookup/DocumentPeriodType'),
+//    UI.api('/Import/Types'),
+//    UI.api('/Lookup/BinCodes'),
+//  ]);
 
   // Inbound condition = only in-warehouse sub-statuses: Normal / Damaged / Scrapped
-  const inboundConditions = [
-    { id: 'Normal',  text: UI.t('Enum.ItemStatus.Normal')  || 'Normal'  },
-    { id: 'Damaged', text: UI.t('Enum.ItemStatus.Damaged') || 'Damaged' },
-    { id: 'Scrapped',text: UI.t('Enum.ItemStatus.Scrapped')|| 'Scrapped'},
-  ];
+//  const inboundConditions = [
+//    { id: 'Normal',  text: UI.t('Enum.ItemStatus.Normal')  || 'Normal'  },
+//    { id: 'Damaged', text: UI.t('Enum.ItemStatus.Damaged') || 'Damaged' },
+//    { id: 'Scrapped',text: UI.t('Enum.ItemStatus.Scrapped')|| 'Scrapped'},
+//  ];
 
-    AppState.lookups = { warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, inboundConditions, documentPeriodType, importType };
-}
+//    AppState.lookups = { warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, inboundConditions, documentPeriodType, importType, binCodes };
+//}
 
 // ═════════════════════════════════════════════════════════════
 // Menu & Permissions

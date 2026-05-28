@@ -50,7 +50,7 @@ public class ItemInstance : AuditableEntity
     public string? DocumentNo { get; set; }
     public string? MT { get; set; }
     public string? Barcode { get; set; }
-    public ItemStatus Status { get; set; } = ItemStatus.InStock;
+    public ItemStatus Status { get; set; } = ItemStatus.Normal;
     /// <summary>
     /// Phân biệt loại tracking: LocationTracked (serial/bin) hoặc QuantityOnly.
     /// Default = LocationTracked để backward compatible với dữ liệu cũ.

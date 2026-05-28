@@ -22,40 +22,123 @@ Router.register('tracking', function(){
   if(keyword) trackingSearch(true);
 });
 
-let lastTrackingKeyword = null;
+let lastTrackingKeyword = '';
+let currentTrackingPage = 1;
+let currentTrackingPageSize = 25;
 
-async function trackingSearch(explicit=true){
-  const keyword = $('#trackingKeyword').val().trim();
-  if(!keyword){ UI.toast(UI.t('Keyword is required.')); return; }
-  if(keyword === lastTrackingKeyword && !explicit) return;
-  lastTrackingKeyword = keyword;
-  AppState.currentTrackingKeyword = keyword;
-  $('#trackingEmpty').addClass('d-none');
-  $('#trackingResult').removeClass('d-none').html(UI.loading());
+async function trackingSearch(explicit = true) {
+    const keyword = $('#trackingKeyword').val().trim();
+    if (!keyword) {
+        UI.toast(UI.t('Keyword is required.'));
+        return;
+    }
 
-  const result = await UI.api('/Tracking/Search', { query: { keyword } });
-  if(!result.success){
-    $('#trackingResult').html(UI.empty(UI.resultError(result)));
-    return;
-  }
-  const rows = result.data || [];
-  if(!rows.length){
-    $('#trackingResult').html(UI.empty('No data'));
-    return;
-  }
-  if(rows.length > 1) renderTrackingList(rows);
-  renderTrackingDetail(rows[0]);
+    if (keyword === lastTrackingKeyword && !explicit) return;
+
+    lastTrackingKeyword = keyword;
+    AppState.currentTrackingKeyword = keyword;
+    currentTrackingPage = 1; 
+
+    $('#trackingEmpty').addClass('d-none');
+    $('#trackingResult').removeClass('d-none').html(UI.loading());
+
+    await loadTrackingPage(1);
 }
 
-function renderTrackingList(rows){
-  $('#trackingResult').html(`<div class="card mt-3"><div class="card-body">
-    <div class="form-section-title">${UI.t('Search results')}</div>
-    <div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Item')}</th><th>${UI.t('Serial / Barcode')}</th><th>${UI.t('Status')}</th><th>${UI.t('Location')}</th><th></th></tr></thead>
-      <tbody>${rows.map((r,i)=>`<tr><td class="px-3 fw-semibold">${UI.esc(r.itemCode)}<div class="small text-muted">${UI.esc(r.itemName)}</div></td><td>${UI.esc(r.serialNumber || r.barcode || '-')}</td><td>${UI.badge(r.status)}</td><td>${UI.esc(r.locationPath)}</td><td><button class="btn btn-light btn-sm btn-open-tracking-row" data-index="${i}"><i class="bi bi-eye"></i></button></td></tr>`).join('')}</tbody>
-    </table></div></div></div>
-    <div id="trackingDetail"></div>`);
-  $(document).off('click.trackingRow').on('click.trackingRow', '.btn-open-tracking-row', function(){ renderTrackingDetail(rows[$(this).data('index')]); });
+async function loadTrackingPage(page = 1, pageSize = currentTrackingPageSize) {
+    currentTrackingPage = page;
+    currentTrackingPageSize = pageSize;
+
+    const result = await UI.api('/Tracking/Search', {
+        query: {
+            keyword: AppState.currentTrackingKeyword,
+            page: page,
+            pageSize: pageSize
+        }
+    });
+
+    if (!result.success) {
+        $('#trackingResult').html(UI.empty(UI.resultError(result)));
+        return;
+    }
+
+    const data = result.data || { items: [], totalCount: 0, page: 1 };
+
+    if (!data.items.length) {
+        $('#trackingResult').html(UI.empty('No data found'));
+        return;
+    }
+
+    if (data.items.length >1) renderTrackingList(data.items, data);
+    renderTrackingDetail(data.items[0])
 }
+
+function renderTrackingList(rows, pagingData) {
+    const isAll = pagingData.pageSize === 0;
+    const totalPages = Math.ceil(pagingData.totalCount / pagingData.pageSize);
+    const from = isAll ? (pagingData.totalCount ? 1 : 0) : (pagingData.page - 1) * pagingData.pageSize + 1;
+    const to = isAll ? pagingData.totalCount : Math.min(pagingData.page * pagingData.pageSize, pagingData.totalCount);
+    const totalPage = (to - from) + 1;
+
+    const pagination = Pagination.render({
+        page: pagingData.page,
+        pageSize: pagingData.pageSize,
+        total: pagingData.totalCount,
+        totalPages: totalPages,
+        isAll,
+        selectId: 'trackingPageSizeSelect',
+        onChange: 'loadTrackingPage'
+    });
+    let html = `
+    <div class="card mt-3">
+        <div class="card-body">
+            <div class="form-section-title">${UI.t('Search results')} (${pagingData.totalCount})</div>
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th class="px-3">${UI.t('Item')}</th>
+                            <th>${UI.t('Serial / Barcode')}</th>
+                            <th>${UI.t('Status')}</th>
+                            <th>${UI.t('Location')}</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.map((r, i) => `
+                            <tr>
+                                <td class="px-3 fw-semibold">${UI.esc(r.itemCode)}</td>
+                                <td>${UI.esc(r.serialNumber || r.barcode || '-')}</td>
+                                <td>${UI.badge(r.status)}</td>
+                                <td>${UI.esc(r.locationPath)}</td>
+                                <td>
+                                    <button class="btn btn-light btn-sm btn-open-tracking-row" 
+                                            data-index="${i}">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <div class="server-footer"><span>${UI.t('Item Instance')} : ${pagingData.totalCount} ${UI.t('rows')}</span><span>${UI.t('Page')} ${pagingData.page} &middot; ${totalPage} ${UI.t('rows')}</span>
+            </div>${pagination}</div>
+    </div>
+    <div id="trackingDetail"></div>`;
+
+    $('#trackingResult').html(html);
+
+    $(document).off('click.trackingRow').on('click.trackingRow', '.btn-open-tracking-row', function () {
+        const index = $(this).data('index');
+        renderTrackingDetail(rows[index]);
+    });
+}
+
+$(document).on('change', '#trackingPageSizeSelect', function () {
+    const newSize = parseInt($(this).val(), 10);
+    loadTrackingPage(1, newSize);
+});
 
 async function renderTrackingDetail(item){
   const target = $('#trackingDetail').length ? $('#trackingDetail') : $('#trackingResult');

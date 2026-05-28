@@ -5,6 +5,7 @@ using ERP.Inventory.Domain.Entities;
 using ERP.Inventory.Domain.Enums;
 using ERP.Inventory.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 
 namespace ERP.Inventory.Infrastructure.Services;
 
@@ -17,56 +18,88 @@ public sealed class TrackingService : ITrackingService
         _db = db;
     }
 
-    public async Task<ServiceResult<IReadOnlyCollection<TrackingSearchResultDto>>> SearchAsync(string keyword, CurrentUserContext user, CancellationToken cancellationToken = default)
+    public async Task<ServiceResult<PagedResult<TrackingSearchResultDto>>> SearchAsync(string keyword, int page, int pageSize, CurrentUserContext user, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(keyword))
         {
-            return ServiceResult<IReadOnlyCollection<TrackingSearchResultDto>>.Fail("Keyword is required.");
+            return ServiceResult<PagedResult<TrackingSearchResultDto>>.Fail("Keyword is required.");
         }
+
+        page = Math.Max(1, page);
+        if (!(pageSize == 0)) pageSize = Math.Clamp(pageSize, 1, 500);
 
         var normalized = keyword.Trim();
 
-        var rows = await _db.CurrentItemLocations
-            .AsNoTracking()
-            .Include(x => x.ItemInstance)!.ThenInclude(x => x!.Item)
-            .Include(x => x.Warehouse)
-            .Include(x => x.BinLocation)
-            .Include(x => x.ExternalParty)
-            .Where(x => x.ItemInstance != null && x.ItemInstance.Item != null &&
-                (x.ItemInstance.Item.ItemCode.Contains(normalized) ||
-                (x.ItemInstance != null && x.ItemInstance.DocumentNo.Contains(normalized))||
-                (x.ItemInstance.SerialNumber != null && x.ItemInstance.SerialNumber.Contains(normalized))))
-            .Take(25)
-            .ToListAsync(cancellationToken);
+        IQueryable<CurrentItemLocation> query = _db.CurrentItemLocations.AsNoTracking()
+            .Where(x =>
+                x.ItemInstance != null &&
+                x.ItemInstance.Item != null &&
+                (
+                    x.ItemInstance.Item.ItemCode.Contains(normalized) ||
+                    (x.ItemInstance.SerialNumber != null &&
+                     x.ItemInstance.SerialNumber.Contains(normalized)) ||
+                    (x.ItemInstance.DocumentNo != null &&
+                     x.ItemInstance.DocumentNo.Contains(normalized))
+                ));
+
+        // Permission filter
+        if (!user.IsAdmin)
+        {
+            query = query.Where(x =>x.WarehouseId == null || user.WarehouseIds.Contains(x.WarehouseId.Value));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        if (pageSize == 0) pageSize = total == 0 ? 1 : total;
+        var rows = await query.OrderByDescending(x => x.UpdatedLocationAt)
+            .Skip((page - 1) * pageSize) .Take(pageSize)
+            .Select(x => new
+            {
+                x.ItemInstanceId,
+                ReferenceDocumentNo = x.ItemInstance!.DocumentNo,
+                ItemCode = x.ItemInstance.Item!.ItemCode,
+                x.ItemInstance.SerialNumber,
+                x.ItemInstance.Barcode,
+                Status = x.ItemInstance.Status,
+                HolderName = x.ExternalParty != null ? x.ExternalParty.Name
+                             : x.Warehouse != null  ? x.Warehouse.Name : "Warehouse",
+                WarehouseName = x.Warehouse != null ? x.Warehouse.Name  : null,
+                BinCode = x.BinLocation != null  ? x.BinLocation.BinCode : null,
+                ExternalPartyName = x.ExternalParty != null ? x.ExternalParty.Name: null,
+                x.UpdatedLocationAt,
+                x.UpdatedLocationBy,
+                x.ReferenceDocumentId,
+                x.ReferenceDocumentType
+            }) .ToArrayAsync(cancellationToken);
 
         var result = rows
-     .Where(x => x.WarehouseId == null || user.CanAccessWarehouse(x.WarehouseId.Value))
-     .Select(x =>
-     {
-         var status = x.ItemInstance!.Status;
-         return new TrackingSearchResultDto
-         {
-             ReferenceDocumentNo = x.ItemInstance.DocumentNo,
-             ItemInstanceId = x.ItemInstanceId,
-             ItemCode = x.ItemInstance.Item!.ItemCode,
-             //ItemName = GetItemName(x.ItemInstance.Item, user.LanguageCode),
-             SerialNumber = x.ItemInstance.SerialNumber,
-             Barcode = x.ItemInstance.Barcode,
-             Status = status,
-             HolderName = x.ExternalParty?.Name ?? x.Warehouse?.Name ?? "Warehouse",
-             LocationPath = CurrentLocationDisplay(x),
-             UpdatedAt = x.UpdatedLocationAt,
-             UpdatedBy = x.UpdatedLocationBy,
-             CanMove = status is ItemStatus.Normal or ItemStatus.Damaged or ItemStatus.Scrapped or ItemStatus.InStock,
-             CanSendRepair = status is ItemStatus.Normal or ItemStatus.InStock or ItemStatus.Damaged,
-             CanLend = status is ItemStatus.Normal or ItemStatus.InStock,
-             ReferenceDocumentId = x.ReferenceDocumentId,
-             ReferenceDocumentType = x.ReferenceDocumentType,
-         };
-     })
-     .ToArray();
+            .Select(x => new TrackingSearchResultDto
+            {
+                ReferenceDocumentNo = x.ReferenceDocumentNo,
+                ItemInstanceId = x.ItemInstanceId,
+                ItemCode =  x.ItemCode,
+                SerialNumber = x.SerialNumber,
+                Barcode =  x.Barcode,
+                Status = x.Status,
+                HolderName = x.HolderName,
+                LocationPath = x.WarehouseName != null ? x.BinCode != null  ? $"{x.WarehouseName} / {x.BinCode}"
+                                : x.WarehouseName  : x.ExternalPartyName ?? "Unknown",
+                UpdatedAt = x.UpdatedLocationAt,
+                UpdatedBy = x.UpdatedLocationBy,
+                CanMove = x.Status == ItemStatus.Normal ||  x.Status == ItemStatus.Damaged ||  
+                          x.Status == ItemStatus.Scrapped || x.Status == ItemStatus.InStock,
+                CanSendRepair =  x.Status == ItemStatus.Normal ||  x.Status == ItemStatus.InStock || x.Status == ItemStatus.Damaged,
+                CanLend =  x.Status == ItemStatus.Normal ||  x.Status == ItemStatus.InStock,
+                ReferenceDocumentId = x.ReferenceDocumentId,
+                ReferenceDocumentType = x.ReferenceDocumentType
+            }) .ToArray();
 
-        return ServiceResult<IReadOnlyCollection<TrackingSearchResultDto>>.Ok(result);
+        var pagedResult = new PagedResult<TrackingSearchResultDto>
+        {
+            Items = result, Page = page,
+            PageSize = pageSize, TotalCount = total
+        };
+
+        return ServiceResult<PagedResult<TrackingSearchResultDto>>.Ok(pagedResult);
     }
 
     public async Task<ServiceResult<PagedResult<MovementHistoryDto>>> GetHistoryAsync(int itemInstanceId, int page, int pageSize, CurrentUserContext user, CancellationToken cancellationToken = default)
@@ -84,7 +117,7 @@ public sealed class TrackingService : ITrackingService
 
         var query = _db.ItemMovementHistories.AsNoTracking()
             .Where(x => x.ItemInstanceId == itemInstanceId)
-            .OrderByDescending(x => x.PerformedAt);
+            .OrderByDescending(x => x.Id);
 
         var total = await query.CountAsync(cancellationToken);
         var rows = await query.Skip((page - 1) * pageSize).Take(pageSize)

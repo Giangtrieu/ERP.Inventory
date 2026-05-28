@@ -151,7 +151,7 @@ public sealed class InventoryCheckService : InventoryOperationBase
                     UpdatedLocationAt = now, UpdatedLocationBy = user.UserName,
                     CreatedAt = now, CreatedBy = user.UserName
                 });
-                await ApplyStockDeltaAsync(warehouse.Id, actualBin.Id, item.Id, ItemStatus.InStock, 1, user, cancellationToken);
+                await ApplyStockDeltaAsync(warehouse.Id, actualBin.Id, item.Id, ItemStatus.Normal, 1, user, cancellationToken);
 
                 _db.InventoryCheckLines.Add(new InventoryCheckLine
                 {

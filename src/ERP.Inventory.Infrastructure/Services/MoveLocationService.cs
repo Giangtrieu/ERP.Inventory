@@ -92,6 +92,8 @@ public sealed class MoveLocationService : InventoryOperationBase, IInventoryOper
             }
         }
 
+        var stockDeltas = new Dictionary<(int WarehouseId, int? BinId, int ItemId, ItemStatus Status), decimal>();
+
         foreach (var prepared in preparedLines)
         {
             var line = prepared.Line; var instance = prepared.Instance; var current = prepared.Current;
@@ -109,12 +111,27 @@ public sealed class MoveLocationService : InventoryOperationBase, IInventoryOper
 
             if (prepared.FromBin.HasValue && prepared.FromBin.Value != prepared.TargetBin.Id)
             {
-                await ApplyStockDeltaAsync(warehouse.Id, prepared.FromBin, instance.ItemId, instance.Status, -1, user, cancellationToken);
-                await ApplyStockDeltaAsync(warehouse.Id, prepared.TargetBin.Id, instance.ItemId, instance.Status, 1, user, cancellationToken);
+                var keyFrom = (warehouse.Id, prepared.FromBin.Value, prepared.Instance.ItemId, prepared.Instance.Status);
+                var keyTo = (warehouse.Id, prepared.TargetBin.Id, prepared.Instance.ItemId, prepared.Instance.Status);
+
+                stockDeltas[keyFrom] = stockDeltas.GetValueOrDefault(keyFrom) - 1;
+                stockDeltas[keyTo] = stockDeltas.GetValueOrDefault(keyTo) + 1;
             }
+
+            //if (prepared.FromBin.HasValue && prepared.FromBin.Value != prepared.TargetBin.Id)
+            //{
+            //    await ApplyStockDeltaAsync(warehouse.Id, prepared.FromBin, instance.ItemId, instance.Status, -1, user, cancellationToken);
+            //    await ApplyStockDeltaAsync(warehouse.Id, prepared.TargetBin.Id, instance.ItemId, instance.Status, 1, user, cancellationToken);
+            //}
 
             AddHistory(instance.Id, MovementActionType.MoveLocation, LocationType.BinLocation, prepared.FromBin, prepared.FromDisplay, LocationType.BinLocation, prepared.TargetBin.Id, prepared.TargetBin.FullPath, instance.Status, instance.Status, nameof(MoveDocument), document.Id, document.DocumentNo, line.Note, user);
             AddInventoryTransaction(InventoryTransactionType.Move, instance.ItemId, instance.Id, warehouse.Id, prepared.TargetBin.Id, 0, instance.Status, nameof(MoveDocument), document.Id, document.DocumentNo, user);
+        }
+
+        foreach (var kvp in stockDeltas)
+        {
+            var (wId, bId, iId, st) = kvp.Key;
+            await ApplyStockDeltaAsync(wId, bId, iId, st, kvp.Value, user, cancellationToken);
         }
 
         AddPostSideEffects("MoveLocation", nameof(MoveDocument), document.Id, document.DocumentNo, user, "Move posted.");

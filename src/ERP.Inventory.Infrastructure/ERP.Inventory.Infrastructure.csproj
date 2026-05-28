@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ERP.Inventory.Application\ERP.Inventory.Application.csproj" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\ERP.Inventory.Domain\ERP.Inventory.Domain.csproj" />
   </ItemGroup>
 
   <ItemGroup>

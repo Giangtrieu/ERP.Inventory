@@ -180,9 +180,17 @@ public abstract class InventoryOperationBase
 
     protected async Task ApplyStockDeltaAsync(int warehouseId, int? binLocationId, int itemId, ItemStatus status, decimal delta, CurrentUserContext user, CancellationToken cancellationToken)
     {
+        if (delta == 0) return;
         var now = _clock.UtcNow;
-        var balance = await _db.StockBalances.FirstOrDefaultAsync(x =>
-            x.WarehouseId == warehouseId && x.BinLocationId == binLocationId && x.ItemId == itemId && x.Status == status, cancellationToken);
+
+        var balance = _db.StockBalances.Local.FirstOrDefault(x =>x.WarehouseId == warehouseId &&
+        x.BinLocationId == binLocationId && x.ItemId == itemId && x.Status == status);
+
+        if (balance == null)
+        {
+            balance = await _db.StockBalances.FirstOrDefaultAsync(x => x.WarehouseId == warehouseId && 
+            x.BinLocationId == binLocationId && x.ItemId == itemId && x.Status == status, cancellationToken);
+        }
 
         if (balance == null)
         {

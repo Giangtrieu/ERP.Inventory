@@ -81,6 +81,22 @@ public sealed class LookupController : Controller
         return Json(rows);
     }
 
+    [HttpGet("BinCodes")]
+    public async Task<IActionResult> BinCodes([FromQuery] string? keyword, CancellationToken cancellationToken)
+    {
+        var query = _db.BinLocations.AsNoTracking().Where(x => x.IsActive);
+
+        var rows = await query
+            .Select(x => new
+            {
+                id = x.Id,
+                text = x.BinCode,
+            })
+            .ToArrayAsync(cancellationToken);
+
+        return Json(rows);
+    }
+
     [HttpGet("ItemInstances")]
     public async Task<IActionResult> ItemInstances([FromQuery] ItemStatus? status, [FromQuery] string? statuses, [FromQuery] int? warehouseId, [FromQuery] string? keyword, CancellationToken cancellationToken)
     {

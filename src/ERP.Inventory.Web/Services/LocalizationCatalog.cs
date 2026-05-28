@@ -1330,6 +1330,23 @@ public static class LocalizationCatalog
         ["Item {0} is not included in borrow document {1}."] = "Hàng hóa {0} không có trong phiếu mượn {1}.",
 
 
+        ["Inbound document selectively edited."] = "Chứng từ nhập kho đã được chỉnh sửa chọn lọc",
+        ["Changing warehouse requires line-level selective mutation support."] = "Thay đổi kho yêu cầu hỗ trợ cập nhật chọn lọc ở cấp dòng",
+        ["BinCode {0} does not belong to selected warehouse."] = "BinCode {0} không thuộc kho đã chọn",
+        ["Replacement adjustment line edit requires explicit rebuild/recovery flow."] = "Chỉnh sửa dòng điều chỉnh thay thế yêu cầu luồng rebuild/recovery tường minh",
+        ["Item {0}/{1} is duplicated in this adjustment document."] = "Vật tư {0}/{1} bị trùng trong chứng từ điều chỉnh này",
+        ["Adjustment document selectively edited."] = "Chứng từ điều chỉnh đã được chỉnh sửa chọn lọc",
+        ["Current location for item instance {0} does not exist."] = "Vị trí hiện tại của cá thể vật tư {0} không tồn tại",
+        ["Item instance {0}/{1} cannot be moved."] = "Cá thể vật tư {0}/{1} không thể di chuyển",
+        ["Item instance {0}/{1} does not belong to selected warehouse."] = "Cá thể vật tư {0}/{1} không thuộc kho đã chọn",
+        ["Borrow return edited and effects rebuilt."] = "Phiếu trả mượn đã được chỉnh sửa và xây dựng lại ảnh hưởng",
+        ["Invalid repair send payload."] = "Dữ liệu gửi sửa chữa không hợp lệ",
+        ["Invalid quantity inventory payload."] = "Dữ liệu kiểm kê số lượng không hợp lệ",
+        ["Invalid borrow lend payload."] = "Dữ liệu mượn cấp phát không hợp lệ",
+        ["Invalid adjustment payload."] = "Dữ liệu điều chỉnh không hợp lệ",
+        ["Invalid move payload."] = "Dữ liệu chuyển kho không hợp lệ",
+        ["Invalid inbound payload."] = "Dữ liệu nhập kho không hợp lệ",
+        ["Move document selectively edited."] = "Chứng từ chuyển kho đã được chỉnh sửa chọn lọc",
 
         ["Permission denied for borrow warehouse."] = "Không có quyền thao tác với kho cho mượn.",
 
@@ -1366,8 +1383,6 @@ public static class LocalizationCatalog
         ["Item instance {0}/{1} is already used in another line."] = "Con hàng {0}/{1} đã được chọn ở dòng khác.",
 
         ["Item instance {0}/{1} is not part of this repair document."] = "Con hàng {0}/{1} không thuộc phiếu sửa chữa này.",
-
-        ["Item instance {0}/{1} does not belong to selected warehouse."] = "Hàng hóa {0}/{1} không thể chuyển đi sửa chữa (trạng thái: {2}).",
 
         ["Item {0}/{1} cannot be sent to repair."] = "Con hàng {0}/{1} không đủ điều kiện gửi sửa chữa.",
 
@@ -1666,6 +1681,9 @@ public static class LocalizationCatalog
 
         ["Repair Document No"] = "Số phiếu sửa chữa",
 
+        ["Exited edit mode"] = "Đã thoát chế độ chỉnh sửa",
+        ["info"] = "Thông tin",
+        ["Cancel Edit"] = "Hủy",
         ["No blocking dependency found."] = "Không tìm thấy phụ thuộc chặn",
         ["Document has blocking dependencies."] = "Chứng từ có phụ thuộc chặn",
         ["Unsupported document type '{0}'."] = "Loại chứng từ '{0}' không được hỗ trợ",
@@ -1694,7 +1712,7 @@ public static class LocalizationCatalog
         ["This document will be reversed and deleted."] = "Chứng từ này sẽ được đảo ngược và xóa",
         ["Document Type"] = "Loại chứng từ",
         ["Editing document"] = "Đang chỉnh sửa chứng từ",
-        ["Save Changes"] = "Lưu thay đổi",
+        ["Save Changes"] = "Lưu",
         ["Inbound document not found."] = "Không tìm thấy phiếu nhập kho",
         ["Move document not found."] = "Không tìm thấy phiếu chuyển vị trí",
         ["Adjustment document not found."] = "Không tìm thấy phiếu điều chỉnh",
@@ -1707,6 +1725,9 @@ public static class LocalizationCatalog
         ["Cannot edit or delete repair send after repair receive has been posted. Delete repair receive first."] = "Không thể sửa hoặc xóa phiếu gửi sửa chữa sau khi đã ghi nhận nhận sửa chữa. Hãy xóa phiếu nhận sửa chữa trước",
         ["Receive"] = "Nhận",
         ["Success"] = "Thành công",
+        ["Quantity document edited: old document deleted and effects rebuilt from new payload."] = "Chứng từ kiểm kê số lượng đã được chỉnh sửa: chứng từ cũ đã bị xóa và ảnh hưởng được xây dựng lại từ dữ liệu mới",
+        ["Normal edit no longer performs full delete/repost rebuild. Line-level changes for this document type require selective mutation support; use explicit Rebuild only for recovery/full replay."] = "Chỉnh sửa thông thường không còn thực hiện rebuild bằng cách xóa và ghi lại toàn bộ. Thay đổi ở cấp dòng cho loại chứng từ này yêu cầu hỗ trợ cập nhật chọn lọc; chỉ sử dụng Rebuild tường minh cho mục đích khôi phục hoặc phát lại toàn bộ",
+        ["Document header edited without rebuilding effects."] = "Phần đầu chứng từ đã được chỉnh sửa mà không xây dựng lại ảnh hưởng",
 
         ["Lines appended to existing repair document."] = "Các dòng đã được thêm vào phiếu sửa chữa hiện có.",
 
@@ -3807,6 +3828,24 @@ public static class LocalizationCatalog
 
         ["Warehouse {0} not found."] = "未找到仓库 {0}。",
 
+
+        ["Inbound document selectively edited."] = "入库单已进行选择性编辑",
+        ["Changing warehouse requires line-level selective mutation support."] = "更改仓库需要支持行级选择性变更",
+        ["BinCode {0} does not belong to selected warehouse."] = "BinCode {0} 不属于所选仓库",
+        ["Replacement adjustment line edit requires explicit rebuild/recovery flow."] = "替换调整行编辑需要显式 rebuild/recovery 流程",
+        ["Item {0}/{1} is duplicated in this adjustment document."] = "物料 {0}/{1} 在此调整单中重复",
+        ["Adjustment document selectively edited."] = "调整单已进行选择性编辑",
+        ["Current location for item instance {0} does not exist."] = "物料实例 {0} 的当前位置不存在",
+        ["Item instance {0}/{1} cannot be moved."] = "物料实例 {0}/{1} 无法移动",
+        ["Borrow return edited and effects rebuilt."] = "借还单已编辑并重建影响",
+        ["Invalid repair send payload."] = "维修送修数据无效",
+        ["Invalid quantity inventory payload."] = "数量盘点数据无效",
+        ["Invalid borrow lend payload."] = "借用发放数据无效",
+        ["Invalid adjustment payload."] = "调整数据无效",
+        ["Invalid move payload."] = "移库数据无效",
+        ["Invalid inbound payload."] = "入库数据无效",
+        ["Move document selectively edited."] = "移库单已进行选择性编辑",
+
         ["Permission denied for borrow warehouse."] = "无权操作借出仓库。",
 
         ["Borrowed item must belong to the selected warehouse."] = "借出物料必须属于所选仓库。",
@@ -4671,6 +4710,9 @@ public static class LocalizationCatalog
 
         ["Repair Document No"] = "维修单号",
 
+        ["Exited edit mode"] = "已退出编辑模式",
+        ["info"] = "信息",
+        ["Cancel Edit"] = "取消",
         ["No blocking dependency found."] = "未找到阻塞依赖项",
         ["Document has blocking dependencies."] = "单据存在阻塞依赖项",
         ["Unsupported document type '{0}'."] = "不支持的单据类型 '{0}'",
@@ -4699,7 +4741,7 @@ public static class LocalizationCatalog
         ["This document will be reversed and deleted."] = "此单据将被反转并删除",
         ["Document Type"] = "单据类型",
         ["Editing document"] = "正在编辑单据",
-        ["Save Changes"] = "保存更改",
+        ["Save Changes"] = "保存",
         ["Inbound document not found."] = "未找到入库单",
         ["Move document not found."] = "未找到移库单",
         ["Adjustment document not found."] = "未找到调整单",
@@ -4712,7 +4754,9 @@ public static class LocalizationCatalog
         ["Cannot edit or delete repair send after repair receive has been posted. Delete repair receive first."] = "维修收回已过账后不能编辑或删除送修单。请先删除维修收回单",
         ["Receive"] = "接收",
         ["Success"] = "成功",
-
+        ["Quantity document edited: old document deleted and effects rebuilt from new payload."] = "数量盘点单已编辑：旧单据已删除，并根据新数据重建影响",
+        ["Normal edit no longer performs full delete/repost rebuild. Line-level changes for this document type require selective mutation support; use explicit Rebuild only for recovery/full replay."] = "普通编辑不再执行完整删除/重建。此类单据的行级变更需要支持选择性变更；仅在恢复或完整重放时使用显式 Rebuild",
+        ["Document header edited without rebuilding effects."] = "单据头已编辑且未重建影响",
 
         // ─── Reconciliation Audit module ──────────────────────────────────────
 

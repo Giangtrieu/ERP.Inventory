@@ -144,7 +144,8 @@ async function openInventoryItemForm(id) {
       ${UI.inputform('OwnerName', 'text', data.ownerName || '', 'ownerName')}
     </div>
     <div class="col-md-12 d-flex justify-content-center"><button class="btn btn-primary w-25 mt-2" id="btnSaveInventoryItem" data-id="${UI.esc(id)}">${UI.t('Save')}</button></div>`);
-  $('#drawer').removeClass('right-drawer-detail').addClass('open');
+    $('#drawer').removeClass('right-drawer-detail').addClass('open');
+    $('#btnPrintVoucher').toggleClass('d-none', true);
 }
 
 async function afterInventoryItemSave(result) {

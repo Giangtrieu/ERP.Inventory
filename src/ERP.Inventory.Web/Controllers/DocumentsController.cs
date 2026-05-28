@@ -109,7 +109,7 @@ public sealed class DocumentsController : Controller
     {
         var query = Scope(_db.InboundDocuments.AsNoTracking().Include(x => x.Warehouse).Include(x => x.SourceExternalParty).Include(x => x.Lines).AsQueryable(), x => x.WarehouseId);
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
-        return await query.OrderByDescending(x => x.DocumentDate).ThenByDescending(x => x.PostedAt).Take(100)
+        return await query.OrderByDescending(x => x.Id).Take(100)
             .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.SourceExternalParty != null ? x.SourceExternalParty.Name : "", warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.EnumText(language, x.Status), lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
@@ -118,7 +118,7 @@ public sealed class DocumentsController : Controller
     {
         var query = Scope(_db.MoveDocuments.AsNoTracking().Include(x => x.Warehouse).Include(x => x.Lines).AsQueryable(), x => x.WarehouseId);
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
-        return await query.OrderByDescending(x => x.DocumentDate).ThenByDescending(x => x.PostedAt).Take(100)
+        return await query.OrderByDescending(x => x.Id).Take(100)
             .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = "", warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.EnumText(language, x.Status), lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
@@ -127,7 +127,7 @@ public sealed class DocumentsController : Controller
     {
         var query = Scope(_db.AdjustmentDocuments.AsNoTracking().Include(x => x.Warehouse).Include(x => x.Lines).AsQueryable(), x => x.WarehouseId);
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
-        return await query.OrderByDescending(x => x.DocumentDate).ThenByDescending(x => x.PostedAt).Take(100)
+        return await query.OrderByDescending(x => x.Id).Take(100)
             .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.Reason, warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.EnumText(language, x.Status), lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
@@ -156,7 +156,7 @@ public sealed class DocumentsController : Controller
             query = query.Where(x => x.DocumentNo.Contains(key) || (x.Note != null && x.Note.Contains(key)) || x.CreatedBy.Contains(key) || x.ApprovedBy.Contains(key));
         }
 
-        return await query.OrderByDescending(x => x.DocumentDate).ThenByDescending(x => x.PostedAt).Take(100)
+        return await query.OrderByDescending(x => x.Id).Take(100)
             .Select(x => new
             {
                 id = x.Id,
@@ -177,7 +177,7 @@ public sealed class DocumentsController : Controller
     {
         var query = Scope(_db.InventoryCheckDocuments.AsNoTracking().Include(x => x.Warehouse).Include(x => x.Lines).AsQueryable(), x => x.WarehouseId);
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
-        return await query.OrderByDescending(x => x.DocumentDate).ThenByDescending(x => x.PostedAt).Take(100)
+        return await query.OrderByDescending(x =>  x.Id).Take(100)
             .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.ResponsibleStaff, warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.Text(language, x.SessionStatus), sessionStatus = x.SessionStatus, lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
@@ -194,7 +194,7 @@ public sealed class DocumentsController : Controller
         }
 
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
-        return await query.OrderByDescending(x => x.DocumentDate).Take(100)
+        return await query.OrderByDescending(x => x.Id).Take(100)
             .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.RepairVendor != null ? x.RepairVendor.Name : "", warehouse = "", status = x.Lines.Any(l => !l.IsReturned) ? "Repairing" : "Finalized", lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
@@ -211,7 +211,7 @@ public sealed class DocumentsController : Controller
         }
 
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
-        return await query.OrderByDescending(x => x.DocumentDate).Take(100)
+        return await query.OrderByDescending(x => x.Id).Take(100)
             .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.Borrower != null ? x.Borrower.Name : "", warehouse = "", status = x.Lines.Any(l => !l.IsReturned) ? "Borrow" : "Returned", lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
@@ -231,7 +231,7 @@ public sealed class DocumentsController : Controller
 
         var logs = await _db.InboundDocumentLogs.AsNoTracking()
             .Where(x => x.InboundDocumentId == id)
-            .OrderBy(x => x.Timestamp)
+            .OrderByDescending(x => x.Id)
             .Select(x => new {
                 x.ItemInstanceId,
                 x.Timestamp,
@@ -314,7 +314,7 @@ public sealed class DocumentsController : Controller
 
         var logs = await _db.AdjustmentDocumentLogs.AsNoTracking()
             .Where(x => x.AdjustmentDocumentId == id)
-            .OrderBy(x => x.Timestamp)
+            .OrderByDescending(x => x.Id)
             .Select(x => new {
                 x.ItemInstanceId,
                 x.Timestamp,
@@ -408,7 +408,7 @@ public sealed class DocumentsController : Controller
 
         var history = await _db.QuantityInventoryTransactions.AsNoTracking()
             .Where(x => x.DocumentId == id)
-            .OrderByDescending(x => x.PostedAt)
+            .OrderByDescending(x => x.Id)
             .Select(x => new
             {
                 timestamp = x.PostedAt,
@@ -461,7 +461,7 @@ public sealed class DocumentsController : Controller
 
         var logs = await _db.RepairDocumentLogs.AsNoTracking()
             .Where(x => x.RepairDocumentId == id)
-            .OrderBy(x => x.Timestamp)
+            .OrderByDescending(x => x.Id)
             .Select(x => new {
                 x.ItemInstanceId,
                 x.Timestamp,
@@ -522,7 +522,7 @@ public sealed class DocumentsController : Controller
 
         var logs = await _db.BorrowDocumentLogs.AsNoTracking()
             .Where(x => x.BorrowDocumentId == id)
-            .OrderBy(x => x.Timestamp)
+            .OrderByDescending(x => x.Id)
             .Select(x => new {
                 x.ItemInstanceId,
                 x.Timestamp,

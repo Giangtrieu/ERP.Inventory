@@ -18,9 +18,9 @@ public sealed class TrackingController : Controller
     }
 
     [HttpGet("Search")]
-    public async Task<IActionResult> Search([FromQuery] string keyword, CancellationToken cancellationToken)
+    public async Task<IActionResult> Search([FromQuery] string keyword, [FromQuery] int page = 1,[FromQuery] int pageSize = 25, CancellationToken cancellationToken = default)
     {
-        var result = await _trackingService.SearchAsync(keyword, _currentUserService.GetCurrentUser(), cancellationToken);
+        var result = await _trackingService.SearchAsync(keyword, page, pageSize, _currentUserService.GetCurrentUser(), cancellationToken);
         return Json(result);
     }
 

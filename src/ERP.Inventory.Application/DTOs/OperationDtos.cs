@@ -237,7 +237,7 @@ public sealed class AdjustmentLineRequest
     public string ItemCode { get; init; } = string.Empty;
     public string SerialNumber { get; init; } = string.Empty;
     public string NewSerialNumber { get; init; } = string.Empty;
-    public ItemStatus NewStatus { get; init; }
+    public string NewStatus { get; init; }
     public string? TargetBinCode { get; init; }
     public string? TargetExternalPartyCode { get; init; }
     public string Reason { get; init; } = string.Empty;

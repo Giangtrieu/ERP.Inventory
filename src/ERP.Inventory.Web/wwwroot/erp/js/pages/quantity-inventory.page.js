@@ -64,11 +64,21 @@ Router.register('quantity-inventory', async function () {
     if ($('#quantityLineBody tr').length > 1) $(this).closest('tr').remove();
     clearQuantityValidation();
   });
-  $(document).off('click.qtyPost').on('click.qtyPost', '#btnPostQuantity', postQuantityInventory);
+    $(document).off('click.qtyPost').on('click.qtyPost', '#btnPostQuantity', postQuantityInventory);
+    $(document).off('click.cancelQuantityEdit').on('click.cancelQuantityEdit', '#btnCancelQuantityEdit', () => {
+        const viewType = AppState.documentEditor && String(AppState.documentEditor.type || '').startsWith('quantity-') ? AppState.documentEditor.type.replace('quantity-', '') : 'inventory';
+        AppState.documentEditor = null;
+        UI.toast(UI.t('Exited edit mode'), 'info');
+        Router.go(`quantity-inventory`);
+        $('.qty-nav-item').removeClass('active');
+        $(`.qty-nav-item[data-view="${viewType}"]`).addClass('active');
+        switchQtyView(viewType);
+        
+    });
 
     $(document).on('keydown.qtyRemoveLine', function (e) {
         // Ctrl + X
-        if (e.ctrlKey && e.key.toLowerCase() === 'x') {
+        if (e.altKey && e.key.toLowerCase() === 'x') {
             e.preventDefault();
             const $targetRow = $('#quantityLineBody tr.selected').length ? $('#quantityLineBody tr.selected') : $('#quantityLineBody tr:last');
             if ($targetRow.length) $targetRow.find('.btn-remove-quantity-line').trigger('click')
@@ -76,7 +86,7 @@ Router.register('quantity-inventory', async function () {
     });
 
     $(document).on('keydown.quantityLineBody', function (e) {
-        if (e.ctrlKey && e.key.toLowerCase() === 'm') {
+        if (e.altKey && e.key.toLowerCase() === 'a') {
             e.preventDefault();
             $('#btnAddQuantityLine').trigger('click');
         }
@@ -115,8 +125,11 @@ Router.register('quantity-inventory', async function () {
       UI.debounce(loadQuantityDocuments, 250));
 
   // ── Initial render ───────────────────────────────────────────────────
-  const editor = AppState.documentEditor;
-  await switchQtyView(editor && String(editor.type || '').startsWith('quantity-') ? editor.type.replace('quantity-', '') : 'inventory');
+    const editor = AppState.documentEditor;
+    const viewType = editor && String(editor.type || '').startsWith('quantity-') ? editor.type.replace('quantity-', '') : 'inventory';
+    $('.qty-nav-item').removeClass('active');
+    $(`.qty-nav-item[data-view="${viewType}"]`).addClass('active');
+    await switchQtyView(viewType);
 });
 
 // ── View router ───────────────────────────────────────────────────────
@@ -300,9 +313,8 @@ function loadQtyFormPanel(operation) {
       </div>
 
       <div class="d-flex justify-content-end gap-2 mt-3">
-        <button class="btn btn-primary" id="btnPostQuantity" data-operation="${operation}">
-          <i class="bi bi-check2-circle me-2"></i>${UI.t('Save & Post')}
-        </button>
+        <button class="btn btn-primary" id="btnPostQuantity" data-operation="${operation}"><i class="bi bi-check2-circle me-2"></i>${UI.t('Save & Post')}</button>
+        <button class="btn btn-outline-secondary d-none" id="btnCancelQuantityEdit"><i class="bi bi-x-circle me-2"></i>${UI.t('Cancel Edit')}</button>
       </div>
     </div></div>`);
     updateQuantityLineIndex();
@@ -330,15 +342,22 @@ async function loadQtyHistoryPanel() {
           { id: 'quantity-receive', text: UI.t('Receive') },
           { id: 'quantity-issue', text: UI.t('Issue') },
           { id: 'quantity-adjust', text: UI.t('Adjust') }
-        ], 'quantity-receive')}</div>
+        ], '')}</div>
         <div class="col-md-4">${UI.input('Keyword','text','','qtyDocKeyword')}</div>
-        <div class="col-md-2">${UI.input('From Date','date','','qtyDocFromDate')}</div>
-        <div class="col-md-2">${UI.input('To Date','date','','qtyDocToDate')}</div>
+        <div class="col-md-2">${UI.input('From Date', 'date', firstDay(), 'qtyDocFromDate')}</div>
+        <div class="col-md-2">${UI.input('To Date', 'date', today(), 'qtyDocToDate')}</div>
       </div>
       <div id="quantityDocumentTable">${UI.loading()}</div>
     </div></div>`);
   await loadQuantityTransactions();
   await loadQuantityDocuments();
+}
+
+function today() {
+    return new Date().toISOString().slice(0, 10);
+}
+function firstDay() {
+    return new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
 }
 
 async function loadQuantityTransactions() {
@@ -453,7 +472,8 @@ async function postQuantityInventory() {
 function applyQuantityEditorState(operation) {
   const editor = AppState.documentEditor;
   if (!editor || editor.type !== `quantity-${operation}` || !editor.payload) return;
-  $('#btnPostQuantity').html(`<i class="bi bi-save me-2"></i>${UI.t('Save Changes')}`);
+    $('#btnPostQuantity').html(`<i class="bi bi-save me-2"></i>${UI.t('Save Changes')}`);
+    $('#btnCancelQuantityEdit').removeClass('d-none');
   $('#quantityOperationValidation').before(`<div class="alert alert-warning py-2">${UI.t('Editing document')}: <b>${UI.esc(editor.documentNo || editor.payload.documentNo || '')}</b></div>`);
   const payload = editor.payload;
   const fieldMap = {
@@ -621,9 +641,7 @@ function handleEnterFlow(e) {
     }
 
     const skipNames = ['condition', 'newStatus', 'lineStatus', 'lineNote', 'result'];
-
     const row = input.closest('tr');
-
     const inputs = Array.from(
         row.querySelectorAll('input, select')
     ).filter(el => {
@@ -648,9 +666,7 @@ function handleEnterFlow(e) {
         nextRow = row.nextElementSibling;
     }
 
-    if (nextRow) {
-        focusRowFirstInput(nextRow);
-    }
+    if (nextRow) { focusRowFirstInput(nextRow); }
 }
 
 function addNewQutyRow() {
@@ -659,18 +675,15 @@ function addNewQutyRow() {
     const html = renderQuantityLine();
     updateQuantityLineIndex();
     tbody.insertAdjacentHTML('beforeend', html);
-
     checkDuplicateSerialRealtime();
 }
 
 function focusFirstInput() {
-    const el = document.querySelector('#quantityLineBody tr:first-child input');
-    if (el) el.focus();
+    const el = document.querySelector('#quantityLineBody tr:first-child input'); if (el) el.focus();
 }
 
 function focusRowFirstInput(row) {
-    const el = row.querySelector('input, select');
-    if (el) el.focus();
+    const el = row.querySelector('input, select'); if (el) el.focus();
 }
 
 function checkDuplicateSerialRealtime() {
@@ -691,12 +704,9 @@ function checkDuplicateSerialRealtime() {
         if (map.has(serial)) {
 
             const firstIndex = map.get(serial);
-
             row.addClass('row-duplicate');
             row.find('[name="snCode"]').addClass('input-duplicate');
-
             const firstRow = rows.eq(firstIndex);
-
             firstRow.addClass('row-duplicate');
             firstRow.find('[name="snCode"]').addClass('input-duplicate');
 
@@ -711,23 +721,14 @@ function checkDuplicateSerialRealtime() {
 
 function beep() {
     try {
-        const ctx = new (
-            window.AudioContext ||
-            window.webkitAudioContext
+        const ctx = new ( window.AudioContext || window.webkitAudioContext
         )();
-
         const osc = ctx.createOscillator();
-
         osc.type = 'square';
-
         osc.frequency.setValueAtTime(800, ctx.currentTime);
-
         osc.connect(ctx.destination);
-
         osc.start();
-
         osc.stop(ctx.currentTime + 0.1);
-
     } catch { }
 }
 

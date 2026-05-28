@@ -287,8 +287,7 @@ public sealed class ImportExportService : IImportService, IExportService
 
         if (status.HasValue)
         {
-            if (status == ItemStatus.Normal) query = query.Where(x => x.ItemInstance != null && x.ItemInstance.Status == ItemStatus.InStock);
-            else if (status == ItemStatus.InStock) query = query.Where(x => x.ItemInstance != null && (x.ItemInstance.Status == ItemStatus.InStock || x.ItemInstance.Status == ItemStatus.Normal || x.ItemInstance.Status == ItemStatus.Scrapped || x.ItemInstance.Status == ItemStatus.Damaged));
+            if (status == ItemStatus.InStock) query = query.Where(x => x.ItemInstance != null && (x.ItemInstance.Status == ItemStatus.InStock || x.ItemInstance.Status == ItemStatus.Normal || x.ItemInstance.Status == ItemStatus.Scrapped || x.ItemInstance.Status == ItemStatus.Damaged));
             else query = query.Where(x => x.ItemInstance != null && x.ItemInstance.Status == status.Value);
         }
 
@@ -795,7 +794,7 @@ public sealed class ImportExportService : IImportService, IExportService
         {
             errors.Add("SerialNumber does not exist.");
         }
-        else if (instance.Status != ItemStatus.InStock)
+        else if (instance.Status != ItemStatus.InStock && instance.Status != ItemStatus.Normal)
         {
             errors.Add("Only InStock items can be lent.");
         }
@@ -832,7 +831,7 @@ public sealed class ImportExportService : IImportService, IExportService
         {
             errors.Add("SerialNumber or Barcode does not exist.");
         }
-        else if (instance.Status != ItemStatus.InStock && instance.Status != ItemStatus.Damaged)
+        else if (instance.Status != ItemStatus.InStock && instance.Status != ItemStatus.Damaged && instance.Status != ItemStatus.Normal)
         {
             errors.Add("Only InStock or Damaged item can be sent to repair.");
         }
@@ -1098,7 +1097,7 @@ public sealed class ImportExportService : IImportService, IExportService
             {
                 var instance = await FindInstanceAsync(row, cancellationToken) ?? throw new InvalidOperationException("Item instance not found.");
                 Enum.TryParse<ItemStatus>(Value(row, "NewStatus"), true, out var newStatus);
-                if (newStatus == default) newStatus = ItemStatus.InStock;
+                if (newStatus == default) newStatus = ItemStatus.Normal;
                 var repairResult = Enum.TryParse<RepairResult>(Value(row, "NewStatus"), true, out var parsedRepairResult)
                     ? parsedRepairResult
                     : newStatus is ItemStatus.Damaged or ItemStatus.Scrapped or ItemStatus.Lost ? RepairResult.Failed : RepairResult.Success;
@@ -1424,7 +1423,7 @@ public sealed class ImportExportService : IImportService, IExportService
                     ToLocationType = LocationType.BinLocation,
                     ToLocationDisplay = bin.FullPath,
                     OldStatus = ItemStatus.Reserved,
-                    NewStatus = ItemStatus.InStock,
+                    NewStatus = ItemStatus.Normal,
                     DocumentType = nameof(InboundDocument),
                     DocumentId = document.Id,
                     DocumentNo = document.DocumentNo,
@@ -1440,7 +1439,7 @@ public sealed class ImportExportService : IImportService, IExportService
                     WarehouseId = document.WarehouseId,
                     BinLocationId = line.BinLocationId,
                     QuantityDelta = 1,
-                    StatusAfter = ItemStatus.InStock,
+                    StatusAfter = ItemStatus.Normal,
                     DocumentType = nameof(InboundDocument),
                     DocumentId = document.Id,
                     DocumentNo = document.DocumentNo,

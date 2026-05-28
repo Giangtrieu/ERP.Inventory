@@ -49,7 +49,7 @@ public sealed class AdjustmentService : InventoryOperationBase
         foreach (var line in request.Lines)
         {
             if (string.IsNullOrWhiteSpace(line.Reason)) return ServiceResult<PostedDocumentDto>.Fail("Line adjustment reason is required.");
-            if (line.NewStatus == ItemStatus.Replacement)
+            if (line.NewStatus == ItemStatus.Replacement.ToString())
             {
                 var result = await HandleReplacement(line, warehouse, document, user, now, cancellationToken);
                 if (!result.Success) return result;
@@ -101,7 +101,8 @@ public sealed class AdjustmentService : InventoryOperationBase
         var oldStatus = instance.Status;
         var fromLocationType = current.LocationType; var fromWarehouseId = current.WarehouseId; var fromBinLocationId = current.BinLocationId;
         var fromDisplay = LocationDisplay(current);
-        instance.Status = line.NewStatus;
+        var nowStatus = ResolveAdjustStatus(line.NewStatus);
+        instance.Status = nowStatus;
         current.LocationType = targetExternalPartyId.HasValue ? LocationType.Borrower : (targetBin != null ? LocationType.BinLocation : LocationType.Unknown);
         current.WarehouseId = targetBin != null ? warehouse.Id : null;
         current.BinLocationId = targetBin?.Id; current.ExternalPartyId = targetExternalPartyId;
@@ -114,7 +115,7 @@ public sealed class AdjustmentService : InventoryOperationBase
             AdjustmentDocumentId = document.Id,
             ItemInstanceId = instance.Id,
             OldStatus = oldStatus,
-            NewStatus = line.NewStatus,
+            NewStatus = nowStatus,
             FromBinLocationId = fromBinLocationId,
             TargetBinLocationId = targetBin?.Id,
             TargetExternalPartyId = targetExternalPartyId,
@@ -126,10 +127,10 @@ public sealed class AdjustmentService : InventoryOperationBase
         if (fromWarehouseId.HasValue && fromBinLocationId.HasValue)
             await ApplyStockDeltaAsync(fromWarehouseId.Value, fromBinLocationId, instance.ItemId, oldStatus, -1, user, cancellationToken);
         if (targetBin != null)
-            await ApplyStockDeltaAsync(targetBin.WarehouseId, targetBin.Id, instance.ItemId, line.NewStatus, 1, user, cancellationToken);
+            await ApplyStockDeltaAsync(targetBin.WarehouseId, targetBin.Id, instance.ItemId, nowStatus, 1, user, cancellationToken);
 
-        AddHistory(instance.Id, MovementActionType.Adjustment, fromLocationType, fromBinLocationId, fromDisplay, current.LocationType, current.BinLocationId ?? current.ExternalPartyId, targetBin?.FullPath ?? "Adjusted location", oldStatus, line.NewStatus, nameof(AdjustmentDocument), document.Id, document.DocumentNo, line.Reason, user);
-        AddInventoryTransaction(InventoryTransactionType.Adjustment, instance.ItemId, instance.Id, warehouse.Id, targetBin?.Id, 0, line.NewStatus, nameof(AdjustmentDocument), document.Id, document.DocumentNo, user);
+        AddHistory(instance.Id, MovementActionType.Adjustment, fromLocationType, fromBinLocationId, fromDisplay, current.LocationType, current.BinLocationId ?? current.ExternalPartyId, targetBin?.FullPath ?? "Adjusted location", oldStatus, nowStatus, nameof(AdjustmentDocument), document.Id, document.DocumentNo, line.Reason, user);
+        AddInventoryTransaction(InventoryTransactionType.Adjustment, instance.ItemId, instance.Id, warehouse.Id, targetBin?.Id, 0, nowStatus, nameof(AdjustmentDocument), document.Id, document.DocumentNo, user);
 
         _db.AdjustmentDocumentLogs.Add(new AdjustmentDocumentLog
         {
@@ -223,7 +224,7 @@ public sealed class AdjustmentService : InventoryOperationBase
         }
         else
         {
-            await ApplyStockDeltaAsync(actualBin.WarehouseId, actualBin.Id, newInstance.ItemId, ItemStatus.InStock, +1, user, ct);
+            await ApplyStockDeltaAsync(actualBin.WarehouseId, actualBin.Id, newInstance.ItemId, ItemStatus.Normal, +1, user, ct);
         }
 
 
@@ -263,8 +264,12 @@ public sealed class AdjustmentService : InventoryOperationBase
         AddHistory(oldInstance.Id, MovementActionType.Adjustment, LocationType.BinLocation, oldLocation.BinLocationId, fromOldDisplay, oldLocation.LocationType, null, "", oldStatus, ItemStatus.Replacement, nameof(AdjustmentDocument), document.Id, document.DocumentNo, line.Reason, user);
         AddHistory(newInstance.Id, MovementActionType.Adjustment, LocationType.Unknown, null, "Unknown", newLocation.LocationType, newLocation.BinLocationId, actualBin?.FullPath ?? "Adjusted location", newInstance.Status, ItemStatus.InStock, nameof(AdjustmentDocument), document.Id, document.DocumentNo, line.Reason, user);
 
-        AddInventoryTransaction(InventoryTransactionType.Adjustment, oldInstance.ItemId, oldInstance.Id, warehouse.Id, oldLocation?.Id, 0, ItemStatus.Replacement, nameof(AdjustmentDocument), document.Id, document.DocumentNo, user);
-        AddInventoryTransaction(InventoryTransactionType.Adjustment, newInstance.ItemId, newInstance.Id, warehouse.Id, newLocation?.Id, 0, ItemStatus.InStock, nameof(AdjustmentDocument), document.Id, document.DocumentNo, user);
+        // FIX E: Pass BinLocationId (FK to BinLocations table), not .Id (PK of CurrentItemLocation).
+        // oldLocation/newLocation are CurrentItemLocation entities — their .Id is a surrogate key
+        // for that table, unrelated to BinLocation. Passing it as binLocationId corrupted
+        // InventoryTransaction.BinLocationId for all Replacement adjustments.
+        AddInventoryTransaction(InventoryTransactionType.Adjustment, oldInstance.ItemId, oldInstance.Id, warehouse.Id, oldLocation?.BinLocationId, 0, ItemStatus.Replacement, nameof(AdjustmentDocument), document.Id, document.DocumentNo, user);
+        AddInventoryTransaction(InventoryTransactionType.Adjustment, newInstance.ItemId, newInstance.Id, warehouse.Id, newLocation?.BinLocationId, 0, ItemStatus.Normal, nameof(AdjustmentDocument), document.Id, document.DocumentNo, user);
 
         _db.AdjustmentDocumentLogs.Add(new AdjustmentDocumentLog
         {
@@ -285,7 +290,7 @@ public sealed class AdjustmentService : InventoryOperationBase
             ItemInstanceId = newInstance.Id,
             Action = "Replace-In",
             OldStatus = ItemStatus.Replacement.ToString(),
-            NewStatus = ItemStatus.InStock.ToString(),
+            NewStatus = ItemStatus.Normal.ToString(),
             OldLocationText = "Unknown",
             NewLocationText = actualBin?.FullPath ?? "Unknown",
             Reason = line.Reason,
@@ -328,6 +333,17 @@ public sealed class AdjustmentService : InventoryOperationBase
             }
         }
         return errors;
+    }
+
+    private static ItemStatus ResolveAdjustStatus(string? condition)
+    {
+        if (string.IsNullOrWhiteSpace(condition)) return ItemStatus.Normal;
+        if (Enum.TryParse<ItemStatus>(condition.Trim(), true, out var parsed))
+        {
+            // Legacy InStock maps to Normal
+            return parsed == ItemStatus.InStock ? ItemStatus.Normal : parsed;
+        }
+        return ItemStatus.Normal;
     }
 }
 

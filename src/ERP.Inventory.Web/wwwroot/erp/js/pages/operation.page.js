@@ -40,7 +40,8 @@ Router.register('operation', async function (type) {
             <div>${UI.t('Posted')}: <b>${UI.t('Immediately')}</b></div>
             <div>${UI.t('History')}: <b>${UI.t('Append only')}</b></div>
           </div>
-          <button class="btn btn-primary w-100" id="btnOperationPost"><i class="bi bi-check2-circle me-2"></i>${UI.t('Save & Post')}</button>
+         <div class="d-flex justify-content-between align-items-center mb-3 g-3"> <button class="btn btn-primary w-100" id="btnOperationPost"><i class="bi bi-check2-circle me-2"></i>${UI.t('Save & Post')}</button>
+          <button class="btn btn-outline-secondary w-100 d-none" id="btnCancelOperationEdit"><i class="bi bi-x-circle me-2"></i>${UI.t('Cancel Edit')}</button></div>
         </div></div>
       </div>
     </div>
@@ -166,6 +167,11 @@ function wireOperationEvents(type, vm) {
             await postOperation(type);
         });
     });
+    $('#btnCancelOperationEdit').on('click', () => {
+        AppState.documentEditor = null;
+        UI.toast(UI.t('Exited edit mode'), 'info');   
+        Router.go(`${type}`);
+    });
     $('#btnLoadDocuments, #btnSearchDocuments').on('click', () => loadOperationDocuments(type));
     $('#app input[name="docKeyword"], #app input[name="docFromDate"], #app input[name="docToDate"]').on('change input', UI.debounce(() => loadOperationDocuments(type), 300));
     $('#app [name="approvedBy"]').on('input', function () {
@@ -174,7 +180,7 @@ function wireOperationEvents(type, vm) {
 
     $(document).on('keydown.removeOperationLine', function (e) {
         // Ctrl + X
-        if (e.ctrlKey && e.key.toLowerCase() === 'x') {
+        if (e.altKey && e.key.toLowerCase() === 'x') {
             e.preventDefault();
             const $targetRow = $('#operationLineBody tr.selected').length ? $('#operationLineBody tr.selected') : $('#operationLineBody tr:last');
             if ($targetRow.length) $targetRow.find('.btn-remove-line').trigger('click')
@@ -182,7 +188,7 @@ function wireOperationEvents(type, vm) {
     });
 
     $(document).on('keydown.addOperationLine', function (e) {
-        if (e.ctrlKey && e.key.toLowerCase() === 'm') {
+        if (e.altKey && e.key.toLowerCase() === 'a') {
             e.preventDefault();
             $('#btnAddOperationLine').trigger('click');
         }
@@ -687,6 +693,7 @@ function applyOperationEditorState(type) {
     const editor = AppState.documentEditor;
     if (!editor || editor.type !== type || !editor.payload) return;
     $('#btnOperationPost').html(`<i class="bi bi-save me-2"></i>${UI.t('Save Changes')}`);
+    $('#btnCancelOperationEdit').removeClass('d-none');
     $('.form-section-title').first().after(`<div class="alert alert-warning py-2 mt-2 mb-0">${UI.t('Editing document')}: <b>${UI.esc(editor.documentNo || editor.payload.documentNo || '')}</b></div>`);
     populateOperationEditor(type, editor.payload);
 }
@@ -694,6 +701,9 @@ function applyOperationEditorState(type) {
 function populateOperationEditor(type, payload) {
     Object.entries(payload || {}).forEach(([key, value]) => {
         if (key === 'lines') return;
+        if (key === 'documentDate' && value) {
+            value = value.split('T')[0];
+        }
         const el = $(`#app [name="${key}"]`);
         if (!el.length) return;
         el.val(value == null ? '' : value);

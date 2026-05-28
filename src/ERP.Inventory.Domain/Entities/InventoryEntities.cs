@@ -11,7 +11,7 @@ public class StockBalance : AuditableEntity
     public BinLocation? BinLocation { get; set; }
     public int ItemId { get; set; }
     public Item? Item { get; set; }
-    public ItemStatus Status { get; set; } = ItemStatus.InStock;
+    public ItemStatus Status { get; set; } = ItemStatus.Normal;
     public decimal Quantity { get; set; }
 }
 
