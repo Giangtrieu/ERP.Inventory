@@ -304,7 +304,7 @@ function loadQtyFormPanel(operation) {
         <table class="data-table quantity-line-table">
           <thead><tr>
             <th class="col-stt">#</th>
-            <th>${UI.t('SN')}</th>
+            <th>${UI.t('Quantity')}</th>
             <th>${UI.t('Status')}</th>
             <th class="quantity-col-action"></th>
           </tr></thead>
@@ -430,11 +430,11 @@ async function postQuantityInventory() {
   const lines = $('#quantityLineBody tr').map(function () {
     const row = $(this);
     return {
-      snCode:   row.find('[name="snCode"]').val().trim(),
-      quantity: 1,
+      snCode: '',
+      quantity: parseFloat(row.find('[name="quantity"]').val() || '0'),
       status:   row.find('[name="lineStatus"]').val() || 'Normal'
     };
-  }).get().filter(l => l.snCode);
+  }).get().filter(l => l.quantity > 0);
 
   const payload = {
     warehouseId, itemCode, itemCategoryCode,
@@ -499,7 +499,7 @@ function applyQuantityEditorState(operation) {
   $('#quantityLineBody').html(lines.map(() => renderQuantityLine()).join(''));
   $('#quantityLineBody tr').each(function (index) {
     const line = lines[index] || {};
-    $(this).find('[name="snCode"]').val(line.snCode || '');
+    $(this).find('[name="quantity"]').val(line.quantity || 0);
     $(this).find('[name="lineStatus"]').val(line.status || 'Normal');
   });
   updateQuantityLineIndex();
@@ -550,10 +550,8 @@ function validateQuantityBeforePost() {
 
   $('#quantityLineBody tr').each(function (index) {
     const row = $(this);
-    const snCode = row.find('[name="snCode"]').val().trim();
-/*    const qty    = parseFloat(row.find('[name="quantity"]').val() || '0');*/
-    if (!snCode)  errors.push({ row: index + 1, field: 'snCode',    label: 'SN',  message: 'SN is required.' });
-    //if (qty <= 0) errors.push({ row: index + 1, field: 'quantity',  label: 'Qty', message: 'Quantity must be greater than zero.' });
+    const qty = parseFloat(row.find('[name="quantity"]').val() || '0');
+    if (qty <= 0) errors.push({ row: index + 1, field: 'quantity', label: 'Qty', message: 'Quantity must be greater than zero.' });
   });
   return errors;
 }
@@ -564,7 +562,7 @@ function validateQuantityBeforePost() {
 function renderQuantityLine() {
     return `<tr class="quantity-line">
     <td class="col-stt"></td>
-    <td>${UI.input('SN', 'text', '', 'snCode')}</td>
+    <td>${UI.input('Quantity', 'number', '1', 'quantity')}</td>
     <td class="col-select">${selectInline('lineStatus', AppState.lookups.inboundConditions, false, 'Normal') }</td>
     <td><button class="btn btn-light btn-sm btn-remove-quantity-line" type="button"><i class="bi bi-x-lg"></i></button></td>
   </tr>`;

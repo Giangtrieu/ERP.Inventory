@@ -19,13 +19,13 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
     }
 
     public Task<ServiceResult<PostedDocumentDto>> ReceiveAsync(QuantityInventoryRequest request, CurrentUserContext user, CancellationToken cancellationToken = default, bool isEdit = false)
-        => PostAsync(request, QuantityInventoryDocumentType.Receive, user, cancellationToken, isEdit);
+        => PostAsync(request, QuantityInventoryDocumentType.Receive, user, cancellationToken, isEdit: true);
 
     public Task<ServiceResult<PostedDocumentDto>> IssueAsync(QuantityInventoryRequest request, CurrentUserContext user, CancellationToken cancellationToken = default, bool isEdit = false)
-        => PostAsync(request, QuantityInventoryDocumentType.Issue, user, cancellationToken, isEdit);
+        => PostAsync(request, QuantityInventoryDocumentType.Issue, user, cancellationToken, isEdit: true);
 
     public Task<ServiceResult<PostedDocumentDto>> AdjustAsync(QuantityInventoryRequest request, CurrentUserContext user, CancellationToken cancellationToken = default, bool isEdit = false)
-        => PostAsync(request, QuantityInventoryDocumentType.Adjust, user, cancellationToken, isEdit);
+        => PostAsync(request, QuantityInventoryDocumentType.Adjust, user, cancellationToken, isEdit: true);
 
     public async Task<PagedResult<QuantityStockBalanceDto>> GetBalancesAsync(string? keyword, int? warehouseId, int? itemId, string? status, string? ownerName, int page, int pageSize, CurrentUserContext user, CancellationToken cancellationToken = default)
     {
@@ -181,12 +181,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
 
         foreach (var line in lines)
         {
-            var snCode = NormalizeSn(line.SnCode);
-            if (string.IsNullOrWhiteSpace(snCode))
-            {
-                errors.Add("SN is required.");
-                continue;
-            }
+            var snCode = NormalizeQuantityCode(line.SnCode, item.ItemCode);
 
             var lineKey = QuantityLineKey(item.Id, snCode);
             if (!incomingKeys.Add(lineKey))
@@ -509,42 +504,9 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         if (line.Quantity <= 0)
             return "Quantity must be greater than zero.";
 
-        var snCode = NormalizeSn(line.SnCode);
-        if (string.IsNullOrWhiteSpace(snCode))
-            return "SN is required.";
+        var snCode = NormalizeQuantityCode(line.SnCode, item.ItemCode);
 
         var status = ResolveInboundStatus(line.Status);
-        var instance = await _db.ItemInstances.FirstOrDefaultAsync(x =>
-            x.ItemId == item.Id &&
-            x.SerialNumber == snCode &&
-            x.TrackingType == ItemTrackingType.QuantityOnly, ct);
-
-        if (instance == null)
-        {
-            instance = new ItemInstance
-            {
-                ItemId = item.Id,
-                SerialNumber = snCode,
-                Barcode = snCode,
-                Status = status,
-                DocumentNo = document.DocumentNo,
-                TrackingType = ItemTrackingType.QuantityOnly,
-                OwnerName = string.IsNullOrWhiteSpace(request.OwnerName) ? null : request.OwnerName.Trim(),
-                IsActive = true,
-                CreatedAt = request.DocumentDate,
-                CreatedBy = user.UserName
-            };
-            _db.ItemInstances.Add(instance);
-        }
-        else
-        {
-            instance.Status = status;
-            instance.DocumentNo = document.DocumentNo;
-            instance.OwnerName = string.IsNullOrWhiteSpace(request.OwnerName) ? null : request.OwnerName.Trim();
-            instance.IsActive = true;
-            instance.UpdatedAt = now;
-            instance.UpdatedBy = user.UserName;
-        }
 
         if (type == QuantityInventoryDocumentType.Adjust)
         {
@@ -760,23 +722,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
 
     private async Task CleanupQuantityInstanceIfOrphanAsync(int documentId, int itemId, string snCode, CancellationToken ct)
     {
-        var normalizedSn = NormalizeSn(snCode);
-        var hasOtherTransactions = await _db.QuantityInventoryTransactions
-            .AnyAsync(x => x.DocumentId != documentId && x.ItemId == itemId && x.SnCode == normalizedSn, ct);
-        if (hasOtherTransactions)
-        {
-            return;
-        }
-
-        var instance = await _db.ItemInstances.FirstOrDefaultAsync(x =>
-            x.ItemId == itemId &&
-            x.SerialNumber == normalizedSn &&
-            x.TrackingType == ItemTrackingType.QuantityOnly, ct);
-
-        if (instance != null)
-        {
-            _db.ItemInstances.Remove(instance);
-        }
+        await Task.CompletedTask;
     }
 
     private async Task CleanupZeroQuantityBalancesAsync(CancellationToken ct)
@@ -1137,6 +1083,9 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
     }
 
     private static string NormalizeSn(string value) => value.Trim().ToUpperInvariant();
+
+    private static string NormalizeQuantityCode(string? snCode, string itemCode)
+        => string.IsNullOrWhiteSpace(snCode) ? itemCode.Trim().ToUpperInvariant() : snCode.Trim().ToUpperInvariant();
 
     private static string QuantityLineKey(int itemId, string snCode)
         => $"{itemId}:{NormalizeSn(snCode)}";

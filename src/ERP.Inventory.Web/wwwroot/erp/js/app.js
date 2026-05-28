@@ -227,8 +227,83 @@ async function loadLookups() {
         { id: 'Scrapped', text: UI.t('Enum.ItemStatus.Scrapped') || 'Scrapped' },
     ];
 
-    AppState.lookups = { warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes };
+    AppState.lookups = { warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes, inboundConditions };
+    AppAutocomplete.refresh();
 }
+
+window.AppAutocomplete = (() => {
+    const serialCacheKey = `cache_${CACHE_VERSION}_created_serials`;
+    const lists = {
+        bin: 'autocomplete-bin-codes',
+        tag: 'autocomplete-tag-codes',
+        item: 'autocomplete-item-codes',
+        serial: 'autocomplete-serial-codes'
+    };
+
+    function values(rows, keys) {
+        const out = new Set();
+        (rows || []).forEach(row => {
+            keys.forEach(key => {
+                const value = row && row[key];
+                if (value !== undefined && value !== null && String(value).trim()) out.add(String(value).trim());
+            });
+        });
+        return Array.from(out).sort((a, b) => a.localeCompare(b));
+    }
+
+    function createdSerials() {
+        try { return JSON.parse(localStorage.getItem(serialCacheKey) || '[]'); }
+        catch { return []; }
+    }
+
+    function rememberSerial(value) {
+        const serial = String(value || '').trim();
+        if (!serial) return;
+        const current = createdSerials().filter(x => String(x).toLowerCase() !== serial.toLowerCase());
+        current.unshift(serial);
+        localStorage.setItem(serialCacheKey, JSON.stringify(current.slice(0, 500)));
+        refresh();
+    }
+
+    function ensureList(id, items) {
+        let el = document.getElementById(id);
+        if (!el) {
+            el = document.createElement('datalist');
+            el.id = id;
+            document.body.appendChild(el);
+        }
+        el.innerHTML = (items || []).map(x => `<option value="${UI.esc(x)}"></option>`).join('');
+    }
+
+    function refresh() {
+        const lookups = AppState.lookups || {};
+        ensureList(lists.bin, values(lookups.binCodes, ['binCode', 'code', 'text', 'id']));
+        ensureList(lists.tag, values(lookups.tags || lookups.tagCodes, ['tagCode', 'code', 'text', 'id']));
+        ensureList(lists.item, values(lookups.items, ['itemCode', 'code', 'text']));
+        ensureList(lists.serial, createdSerials());
+        bind(document);
+    }
+
+    function bind(root) {
+        const scope = root || document;
+        $(scope).find('input[name="binCode"], input[name="targetBinCode"]').attr('list', lists.bin);
+        $(scope).find('input[name="tagCode"], input[name="TagCode"]').attr('list', lists.tag);
+        $(scope).find('input[name="itemCode"], input[name="quantityItemCode"]').attr('list', lists.item);
+        $(scope).find('input[name="serialNumber"], input[name="snCode"], input[name="newSerialNumber"]').attr('list', lists.serial);
+    }
+
+    $(document).on('change', 'input[name="serialNumber"], input[name="snCode"], input[name="newSerialNumber"]', function () {
+        rememberSerial($(this).val());
+    });
+
+    return { refresh, bind, rememberSerial };
+})();
+
+document.addEventListener('DOMContentLoaded', () => {
+    const app = document.getElementById('app');
+    if (!app) return;
+    new MutationObserver(() => AppAutocomplete.bind(app)).observe(app, { childList: true, subtree: true });
+});
 
 //async function loadLookups() {
 //    const [warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes] = await Promise.all([

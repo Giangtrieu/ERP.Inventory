@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ERP.Inventory.Web.Controllers;
 
-[Authorize(Roles = "Admin,Warehouse Manager,Warehouse Staff")]
+[Authorize(Roles = "Admin,Warehouse Manager,Warehouse Staff, Viewer")]
 [Route("[controller]")]
 public sealed class ImportController : Controller
 {

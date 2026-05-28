@@ -178,25 +178,24 @@ function wireOperationEvents(type, vm) {
         $('#operationApprovedBy').text($(this).val() || '-');
     });
 
-    $(document).on('keydown.removeOperationLine', function (e) {
-        // Ctrl + X
-        if (e.altKey && e.key.toLowerCase() === 'x') {
-            e.preventDefault();
-            const $targetRow = $('#operationLineBody tr.selected').length ? $('#operationLineBody tr.selected') : $('#operationLineBody tr:last');
-            if ($targetRow.length) $targetRow.find('.btn-remove-line').trigger('click')
-        }
-    });
-
-    $(document).on('keydown.addOperationLine', function (e) {
-        if (e.altKey && e.key.toLowerCase() === 'a') {
-            e.preventDefault();
-            $('#btnAddOperationLine').trigger('click');
-        }
-    });
     refreshOperationRowAvailability(type);
     checkDuplicateSerialRealtime();
 }
 
+$(document).on('keydown.removeOperationLine', function (e) {
+    // Ctrl + X
+    if (e.altKey && e.key.toLowerCase() === 'x') {
+        e.preventDefault();
+        const $targetRow = $('#operationLineBody tr.selected').length ? $('#operationLineBody tr.selected') : $('#operationLineBody tr:last');
+        if ($targetRow.length) $targetRow.find('.btn-remove-line').trigger('click')
+    }
+});
+$(document).on('keydown.addOperationLine', function (e) {
+    if (e.altKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        $('#btnAddOperationLine').trigger('click');
+    }
+});
 function getBorrowDocumentId() {
     const borrowDocumentReturnId = $('#app [name="borrowDocumentId"]').val();
     return borrowDocumentReturnId ? parseInt(borrowDocumentReturnId, 10) : null;

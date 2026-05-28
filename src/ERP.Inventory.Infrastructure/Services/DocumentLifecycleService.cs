@@ -7,6 +7,7 @@ using ERP.Inventory.Domain.Enums;
 using ERP.Inventory.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using NetTopologySuite.Index.HPRtree;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -1499,6 +1500,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x => x.DocumentType == nameof(AdjustmentDocument) && x.DocumentId == id));
         _db.AdjustmentDocumentLines.RemoveRange(document.Lines);
         _db.AdjustmentDocuments.Remove(document);
+        await _db.SaveChangesAsync(cancellationToken);
         await RebuildLocationTrackedInstancesAsync(instanceIds, cancellationToken);
         await RestoreAdjustmentFallbacksAsync(fallbackLines, user, cancellationToken);
         await CleanupPostSideEffectsAsync(nameof(AdjustmentDocument), id, document.DocumentNo, cancellationToken);
@@ -1514,24 +1516,52 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             return ServiceResult<DocumentMutationResultDto>.Fail("Borrow document not found.");
         }
 
-        if (document.Lines.Any(x => x.IsReturned))
+        var latestLog = await _db.BorrowDocumentLogs
+            .Where(x => x.BorrowDocumentId == id)
+            .OrderByDescending(x => x.Timestamp)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (latestLog == null)
         {
-            return ServiceResult<DocumentMutationResultDto>.Fail("Cannot delete borrow lend after return has been posted. Delete borrow return first.");
+            return ServiceResult<DocumentMutationResultDto>.Fail("Borrow document has no lend effects to delete.");
+        }
+        if (latestLog.Action != "BorrowIssue")
+        {
+            return ServiceResult<DocumentMutationResultDto>.Fail("Latest borrow lifecycle action is a return. Delete borrow return first.");
         }
 
-        var instanceIds = document.Lines.Select(x => x.ItemInstanceId).Distinct().ToArray();
-        var laterDeps = await FindLaterHistoryDependenciesAsync(nameof(BorrowDocument), id, instanceIds, cancellationToken);
+        var logsToRevert = await _db.BorrowDocumentLogs
+            .Where(x => x.BorrowDocumentId == id &&
+                        x.Action == "BorrowIssue" &&
+                        x.Timestamp == latestLog.Timestamp &&
+                        x.PerformedBy == latestLog.PerformedBy)
+            .ToArrayAsync(cancellationToken);
+        var instanceIds = logsToRevert.Select(x => x.ItemInstanceId).Distinct().ToArray();
+        var laterDeps = await FindLaterPhaseDependenciesAsync(nameof(BorrowDocument), id, MovementActionType.Lend, instanceIds, cancellationToken);
         if (laterDeps.Count > 0)
         {
             return ServiceResult<DocumentMutationResultDto>.Fail(laterDeps);
         }
 
         var itemIds = await _db.ItemInstances.Where(x => instanceIds.Contains(x.Id)).Select(x => x.ItemId).Distinct().ToArrayAsync(cancellationToken);
-        _db.BorrowDocumentLogs.RemoveRange(_db.BorrowDocumentLogs.Where(x => x.BorrowDocumentId == id));
-        _db.InventoryTransactions.RemoveRange(_db.InventoryTransactions.Where(x => x.DocumentType == nameof(BorrowDocument) && x.DocumentId == id));
-        _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x => x.DocumentType == nameof(BorrowDocument) && x.DocumentId == id));
-        _db.BorrowDocumentLines.RemoveRange(document.Lines);
-        _db.BorrowDocuments.Remove(document);
+        _db.BorrowDocumentLogs.RemoveRange(logsToRevert);
+        _db.InventoryTransactions.RemoveRange(_db.InventoryTransactions.Where(x =>
+            x.DocumentType == nameof(BorrowDocument) &&
+            x.DocumentId == id &&
+            x.TransactionType == InventoryTransactionType.BorrowLend &&
+            x.PostedAt == latestLog.Timestamp &&
+            x.ItemInstanceId.HasValue &&
+            instanceIds.Contains(x.ItemInstanceId.Value)));
+        _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x =>
+            x.DocumentType == nameof(BorrowDocument) &&
+            x.DocumentId == id &&
+            x.ActionType == MovementActionType.Lend &&
+            x.PerformedAt == latestLog.Timestamp &&
+            instanceIds.Contains(x.ItemInstanceId)));
+        await _db.SaveChangesAsync(cancellationToken);
+        await ReplayBorrowDocumentLinesAsync(document, user, cancellationToken);
+        await RemoveBorrowDocumentIfEmptyAsync(document, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
         await RebuildLocationTrackedInstancesAsync(instanceIds, cancellationToken);
         await CleanupPostSideEffectsAsync(nameof(BorrowDocument), id, document.DocumentNo, cancellationToken);
         await RecalculateLocationTrackedStockAsync(itemIds, cancellationToken);
@@ -1540,26 +1570,110 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
 
     private async Task<ServiceResult<DocumentMutationResultDto>> DeleteBorrowReturnAsync(int id, CurrentUserContext user, CancellationToken cancellationToken)
     {
-        var document = await _db.BorrowDocuments.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var document = await _db.BorrowDocuments
+            .Include(x => x.Lines)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (document == null)
         {
             return ServiceResult<DocumentMutationResultDto>.Fail("Borrow document not found.");
         }
 
-        var returnedLines = document.Lines.Where(x => x.IsReturned).ToArray();
-        if (returnedLines.Length == 0)
+        var latestLog = await _db.BorrowDocumentLogs
+            .Where(x => x.BorrowDocumentId == id)
+            .OrderByDescending(x => x.Timestamp)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (latestLog == null || latestLog.Action != "BorrowReturn")
         {
-            return ServiceResult<DocumentMutationResultDto>.Fail("Borrow document has no return effects to delete.");
+            return ServiceResult<DocumentMutationResultDto>.Fail("Borrow document has no latest return effects to delete.");
         }
 
-        var instanceIds = returnedLines.Select(x => x.ItemInstanceId).Distinct().ToArray();
+        var logsToRevert = await _db.BorrowDocumentLogs
+            .Where(x => x.BorrowDocumentId == id &&
+                        x.Action == "BorrowReturn" &&
+                        x.Timestamp == latestLog.Timestamp &&
+                        x.PerformedBy == latestLog.PerformedBy)
+            .ToArrayAsync(cancellationToken);
+        var instanceIds = logsToRevert.Select(x => x.ItemInstanceId).Distinct().ToArray();
         var laterDeps = await FindLaterPhaseDependenciesAsync(nameof(BorrowDocument), id, MovementActionType.ReturnBorrowed, instanceIds, cancellationToken);
         if (laterDeps.Count > 0)
         {
             return ServiceResult<DocumentMutationResultDto>.Fail(laterDeps);
         }
 
-        foreach (var line in returnedLines)
+        var itemIds = await _db.ItemInstances.Where(x => instanceIds.Contains(x.Id)).Select(x => x.ItemId).Distinct().ToArrayAsync(cancellationToken);
+        _db.BorrowDocumentLogs.RemoveRange(logsToRevert);
+        _db.InventoryTransactions.RemoveRange(_db.InventoryTransactions.Where(x =>
+            x.DocumentType == nameof(BorrowDocument) &&
+            x.DocumentId == id &&
+            x.TransactionType == InventoryTransactionType.BorrowReturn &&
+            x.PostedAt == latestLog.Timestamp &&
+            x.ItemInstanceId.HasValue &&
+            instanceIds.Contains(x.ItemInstanceId.Value)));
+        _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x =>
+            x.DocumentType == nameof(BorrowDocument) &&
+            x.DocumentId == id &&
+            x.ActionType == MovementActionType.ReturnBorrowed &&
+            x.PerformedAt == latestLog.Timestamp &&
+            instanceIds.Contains(x.ItemInstanceId)));
+
+        await _db.SaveChangesAsync(cancellationToken);
+        await ReplayBorrowDocumentLinesAsync(document, user, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
+        await RebuildLocationTrackedInstancesAsync(instanceIds, cancellationToken);
+        await CleanupPostSideEffectsAsync(nameof(BorrowDocument), id, document.DocumentNo, cancellationToken);
+        await RecalculateLocationTrackedStockAsync(itemIds, cancellationToken);
+        return Deleted("borrow-return", document.Id, document.DocumentNo);
+    }
+
+    private async Task<ServiceResult<DocumentMutationResultDto>> DeleteBorrowReturnLegacyAsync(int id, CurrentUserContext user, CancellationToken cancellationToken)
+    {
+        var document = await _db.BorrowDocuments
+        .Include(x => x.Lines)
+        .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+        if (document == null)
+            return ServiceResult<DocumentMutationResultDto>.Fail("Không tìm thấy phiếu mượn.");
+
+        var latestLog = await _db.BorrowDocumentLogs
+            .Where(x => x.BorrowDocumentId == id)
+            .OrderByDescending(x => x.Timestamp)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var returnedLines = document.Lines
+            .Where(x => x.IsReturned && x.ReturnedAt.HasValue)
+            .OrderByDescending(x => x.ReturnedAt)
+            .ToList();
+
+        if (latestLog == null || latestLog.Action != "BorrowReturn")
+            return ServiceResult<DocumentMutationResultDto>.Fail("Phiếu này chưa có lần trả nào.");
+
+        // ====================== XÁC ĐỊNH LẦN TRẢ GẦN NHẤT CHÍNH XÁC HƠN ======================
+
+        // Lấy thời gian trả muộn nhất
+        var latestReturnTime = latestLog.Timestamp;
+
+        // Nhóm các dòng thuộc cùng một lần trả (dùng nhiều điều kiện)
+        var linesToRevert = returnedLines
+            .Where(x =>
+                x.ReturnedAt.HasValue &&
+                Math.Abs((x.ReturnedAt.Value - latestReturnTime).TotalSeconds) <= 30 && // dung sai 30 giây
+                x.UpdatedBy == returnedLines.First().UpdatedBy                     // cùng người thực hiện
+            )
+            .ToArray();
+
+        var instanceIds = linesToRevert.Select(x => x.ItemInstanceId).Distinct().ToArray();
+
+        // Kiểm tra dependency
+        var laterDeps = await FindLaterPhaseDependenciesAsync(
+            nameof(BorrowDocument), id, MovementActionType.ReturnBorrowed, instanceIds, cancellationToken);
+
+        if (laterDeps.Count > 0)
+            return ServiceResult<DocumentMutationResultDto>.Fail(laterDeps);
+
+        // ====================== HOÀN TÁC ======================
+        foreach (var line in linesToRevert)
         {
             line.IsReturned = false;
             line.ReturnCondition = null;
@@ -1569,19 +1683,109 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             line.UpdatedBy = user.UserName;
         }
 
-        var itemIds = await _db.ItemInstances.Where(x => instanceIds.Contains(x.Id)).Select(x => x.ItemId).Distinct().ToArrayAsync(cancellationToken);
-        _db.BorrowDocumentLogs.RemoveRange(_db.BorrowDocumentLogs.Where(x => x.BorrowDocumentId == id && x.Action == "BorrowReturn"));
-        _db.InventoryTransactions.RemoveRange(_db.InventoryTransactions.Where(x => x.DocumentType == nameof(BorrowDocument) && x.DocumentId == id && x.TransactionType == InventoryTransactionType.BorrowReturn));
-        _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x => x.DocumentType == nameof(BorrowDocument) && x.DocumentId == id && x.ActionType == MovementActionType.ReturnBorrowed));
+        // ====================== XÓA SIDE-EFFECTS ======================
+        var fromTime = latestReturnTime.AddSeconds(-30);
+        var toTime = latestReturnTime.AddSeconds(30);
+
+        _db.BorrowDocumentLogs.RemoveRange(
+            _db.BorrowDocumentLogs.Where(x =>
+                x.BorrowDocumentId == id &&
+                x.Action == "BorrowReturn" &&
+                x.Timestamp >= fromTime && x.Timestamp <= toTime &&
+                x.PerformedBy == user.UserName));   // thêm điều kiện người tạo
+
+        _db.InventoryTransactions.RemoveRange(
+            _db.InventoryTransactions.Where(x =>
+                x.DocumentType == nameof(BorrowDocument) &&
+                x.DocumentId == id &&
+                x.TransactionType == InventoryTransactionType.BorrowReturn &&
+                x.PostedAt >= fromTime && x.PostedAt <= toTime));
+
+        _db.ItemMovementHistories.RemoveRange(
+            _db.ItemMovementHistories.Where(x =>
+                x.DocumentType == nameof(BorrowDocument) &&
+                x.DocumentId == id &&
+                x.ActionType == MovementActionType.ReturnBorrowed &&
+                x.PerformedAt >= fromTime && x.PerformedAt <= toTime));
+
+        await _db.SaveChangesAsync(cancellationToken);
+        // Các bước sau giữ nguyên
         await RebuildLocationTrackedInstancesAsync(instanceIds, cancellationToken);
-        // FIX C: Remove Notification records tied to the BorrowReturn action.
-        // Previously missing — caused orphan notifications pointing to a deleted return phase.
         await CleanupPostSideEffectsAsync(nameof(BorrowDocument), id, document.DocumentNo, cancellationToken);
+
+        var itemIds = await _db.ItemInstances
+            .Where(x => instanceIds.Contains(x.Id))
+            .Select(x => x.ItemId)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+
         await RecalculateLocationTrackedStockAsync(itemIds, cancellationToken);
+
         return Deleted("borrow-return", document.Id, document.DocumentNo);
     }
 
     private async Task<ServiceResult<DocumentMutationResultDto>> DeleteRepairSendAsync(int id, CurrentUserContext user, CancellationToken cancellationToken)
+    {
+        var document = await _db.RepairDocuments.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (document == null)
+        {
+            return ServiceResult<DocumentMutationResultDto>.Fail("Repair document not found.");
+        }
+
+        var latestLog = await _db.RepairDocumentLogs
+            .Where(x => x.RepairDocumentId == id)
+            .OrderByDescending(x => x.Timestamp)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (latestLog == null)
+        {
+            return ServiceResult<DocumentMutationResultDto>.Fail("Repair document has no send effects to delete.");
+        }
+        if (latestLog.Action != "RepairSend")
+        {
+            return ServiceResult<DocumentMutationResultDto>.Fail("Latest repair lifecycle action is a receive. Delete repair receive first.");
+        }
+
+        var logsToRevert = await _db.RepairDocumentLogs
+            .Where(x => x.RepairDocumentId == id &&
+                        x.Action == "RepairSend" &&
+                        x.Timestamp == latestLog.Timestamp &&
+                        x.PerformedBy == latestLog.PerformedBy)
+            .ToArrayAsync(cancellationToken);
+        var instanceIds = logsToRevert.Select(x => x.ItemInstanceId).Distinct().ToArray();
+        var laterDeps = await FindLaterPhaseDependenciesAsync(nameof(RepairDocument), id, MovementActionType.SendToRepair, instanceIds, cancellationToken);
+        if (laterDeps.Count > 0)
+        {
+            return ServiceResult<DocumentMutationResultDto>.Fail(laterDeps);
+        }
+
+        var itemIds = await _db.ItemInstances.Where(x => instanceIds.Contains(x.Id)).Select(x => x.ItemId).Distinct().ToArrayAsync(cancellationToken);
+        _db.RepairDocumentLogs.RemoveRange(logsToRevert);
+        _db.InventoryTransactions.RemoveRange(_db.InventoryTransactions.Where(x =>
+            x.DocumentType == nameof(RepairDocument) &&
+            x.DocumentId == id &&
+            x.TransactionType == InventoryTransactionType.RepairSend &&
+            x.PostedAt == latestLog.Timestamp &&
+            x.ItemInstanceId.HasValue &&
+            instanceIds.Contains(x.ItemInstanceId.Value)));
+        _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x =>
+            x.DocumentType == nameof(RepairDocument) &&
+            x.DocumentId == id &&
+            x.ActionType == MovementActionType.SendToRepair &&
+            x.PerformedAt == latestLog.Timestamp &&
+            instanceIds.Contains(x.ItemInstanceId)));
+
+        await _db.SaveChangesAsync(cancellationToken);
+        await ReplayRepairDocumentLinesAsync(document, user, cancellationToken);
+        await RemoveRepairDocumentIfEmptyAsync(document, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
+        await RebuildLocationTrackedInstancesAsync(instanceIds, cancellationToken);
+        await CleanupPostSideEffectsAsync(nameof(RepairDocument), id, document.DocumentNo, cancellationToken);
+        await RecalculateLocationTrackedStockAsync(itemIds, cancellationToken);
+        return Deleted("repair-send", document.Id, document.DocumentNo);
+    }
+
+    private async Task<ServiceResult<DocumentMutationResultDto>> DeleteRepairSendLegacyAsync(int id, CurrentUserContext user, CancellationToken cancellationToken)
     {
         var document = await _db.RepairDocuments.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (document == null)
@@ -1607,6 +1811,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x => x.DocumentType == nameof(RepairDocument) && x.DocumentId == id));
         _db.RepairDocumentLines.RemoveRange(document.Lines);
         _db.RepairDocuments.Remove(document);
+        await _db.SaveChangesAsync(cancellationToken);
         await RebuildLocationTrackedInstancesAsync(instanceIds, cancellationToken);
         await CleanupPostSideEffectsAsync(nameof(RepairDocument), id, document.DocumentNo, cancellationToken);
         await RecalculateLocationTrackedStockAsync(itemIds, cancellationToken);
@@ -1614,6 +1819,62 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
     }
 
     private async Task<ServiceResult<DocumentMutationResultDto>> DeleteRepairReceiveAsync(int id, CurrentUserContext user, CancellationToken cancellationToken)
+    {
+        var document = await _db.RepairDocuments.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (document == null)
+        {
+            return ServiceResult<DocumentMutationResultDto>.Fail("Repair document not found.");
+        }
+
+        var latestLog = await _db.RepairDocumentLogs
+            .Where(x => x.RepairDocumentId == id)
+            .OrderByDescending(x => x.Timestamp)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (latestLog == null || latestLog.Action != "RepairReceive")
+        {
+            return ServiceResult<DocumentMutationResultDto>.Fail("Repair document has no latest receive effects to delete.");
+        }
+
+        var logsToRevert = await _db.RepairDocumentLogs
+            .Where(x => x.RepairDocumentId == id &&
+                        x.Action == "RepairReceive" &&
+                        x.Timestamp == latestLog.Timestamp &&
+                        x.PerformedBy == latestLog.PerformedBy)
+            .ToArrayAsync(cancellationToken);
+        var instanceIds = logsToRevert.Select(x => x.ItemInstanceId).Distinct().ToArray();
+        var laterDeps = await FindLaterPhaseDependenciesAsync(nameof(RepairDocument), id, MovementActionType.ReceiveFromRepair, instanceIds, cancellationToken);
+        if (laterDeps.Count > 0)
+        {
+            return ServiceResult<DocumentMutationResultDto>.Fail(laterDeps);
+        }
+
+        var itemIds = await _db.ItemInstances.Where(x => instanceIds.Contains(x.Id)).Select(x => x.ItemId).Distinct().ToArrayAsync(cancellationToken);
+        _db.RepairDocumentLogs.RemoveRange(logsToRevert);
+        _db.InventoryTransactions.RemoveRange(_db.InventoryTransactions.Where(x =>
+            x.DocumentType == nameof(RepairDocument) &&
+            x.DocumentId == id &&
+            x.TransactionType == InventoryTransactionType.RepairReceive &&
+            x.PostedAt == latestLog.Timestamp &&
+            x.ItemInstanceId.HasValue &&
+            instanceIds.Contains(x.ItemInstanceId.Value)));
+        _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x =>
+            x.DocumentType == nameof(RepairDocument) &&
+            x.DocumentId == id &&
+            x.ActionType == MovementActionType.ReceiveFromRepair &&
+            x.PerformedAt == latestLog.Timestamp &&
+            instanceIds.Contains(x.ItemInstanceId)));
+
+        await _db.SaveChangesAsync(cancellationToken);
+        await ReplayRepairDocumentLinesAsync(document, user, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
+        await RebuildLocationTrackedInstancesAsync(instanceIds, cancellationToken);
+        await CleanupPostSideEffectsAsync(nameof(RepairDocument), id, document.DocumentNo, cancellationToken);
+        await RecalculateLocationTrackedStockAsync(itemIds, cancellationToken);
+        return Deleted("repair-receive", document.Id, document.DocumentNo);
+    }
+
+    private async Task<ServiceResult<DocumentMutationResultDto>> DeleteRepairReceiveLegacyAsync(int id, CurrentUserContext user, CancellationToken cancellationToken)
     {
         var document = await _db.RepairDocuments.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (document == null)
@@ -1647,12 +1908,126 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         _db.RepairDocumentLogs.RemoveRange(_db.RepairDocumentLogs.Where(x => x.RepairDocumentId == id && x.Action == "RepairReceive"));
         _db.InventoryTransactions.RemoveRange(_db.InventoryTransactions.Where(x => x.DocumentType == nameof(RepairDocument) && x.DocumentId == id && x.TransactionType == InventoryTransactionType.RepairReceive));
         _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x => x.DocumentType == nameof(RepairDocument) && x.DocumentId == id && x.ActionType == MovementActionType.ReceiveFromRepair));
+        await _db.SaveChangesAsync(cancellationToken);
         await RebuildLocationTrackedInstancesAsync(instanceIds, cancellationToken);
         // FIX D: Remove Notification records tied to the RepairReceive action.
         // Previously missing — caused orphan notifications pointing to a deleted receive phase.
         await CleanupPostSideEffectsAsync(nameof(RepairDocument), id, document.DocumentNo, cancellationToken);
         await RecalculateLocationTrackedStockAsync(itemIds, cancellationToken);
         return Deleted("repair-receive", document.Id, document.DocumentNo);
+    }
+
+    private async Task ReplayBorrowDocumentLinesAsync(BorrowDocument document, CurrentUserContext user, CancellationToken cancellationToken)
+    {
+        var lines = await _db.BorrowDocumentLines.Where(x => x.BorrowDocumentId == document.Id).ToListAsync(cancellationToken);
+        var logs = await _db.BorrowDocumentLogs
+            .Where(x => x.BorrowDocumentId == document.Id)
+            .OrderBy(x => x.Timestamp)
+            .ThenBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+        var histories = await _db.ItemMovementHistories
+            .Where(x => x.DocumentType == nameof(BorrowDocument) && x.DocumentId == document.Id)
+            .OrderBy(x => x.PerformedAt)
+            .ThenBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+        var now = _clock.UtcNow;
+
+        foreach (var line in lines.ToArray())
+        {
+            var latest = logs.LastOrDefault(x => x.ItemInstanceId == line.ItemInstanceId);
+            if (latest == null)
+            {
+                _db.BorrowDocumentLines.Remove(line);
+                continue;
+            }
+
+            var latestHistory = histories.LastOrDefault(x => x.ItemInstanceId == line.ItemInstanceId);
+            line.IsReturned = latest.Action == "BorrowReturn";
+            line.ReturnedAt = line.IsReturned ? latest.Timestamp : null;
+            line.ReturnCondition = line.IsReturned ? ParseBorrowReturnCondition(latest.NewStatus) : null;
+            line.TargetBinLocationId = line.IsReturned && latestHistory?.ToLocationType == LocationType.BinLocation ? latestHistory.ToLocationId : null;
+            line.UpdatedAt = now;
+            line.UpdatedBy = user.UserName;
+        }
+    }
+
+    private async Task ReplayRepairDocumentLinesAsync(RepairDocument document, CurrentUserContext user, CancellationToken cancellationToken)
+    {
+        var lines = await _db.RepairDocumentLines.Where(x => x.RepairDocumentId == document.Id).ToListAsync(cancellationToken);
+        var logs = await _db.RepairDocumentLogs
+            .Where(x => x.RepairDocumentId == document.Id)
+            .OrderBy(x => x.Timestamp)
+            .ThenBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+        var histories = await _db.ItemMovementHistories
+            .Where(x => x.DocumentType == nameof(RepairDocument) && x.DocumentId == document.Id)
+            .OrderBy(x => x.PerformedAt)
+            .ThenBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+        var now = _clock.UtcNow;
+
+        foreach (var line in lines.ToArray())
+        {
+            var latest = logs.LastOrDefault(x => x.ItemInstanceId == line.ItemInstanceId);
+            if (latest == null)
+            {
+                _db.RepairDocumentLines.Remove(line);
+                continue;
+            }
+
+            var latestHistory = histories.LastOrDefault(x => x.ItemInstanceId == line.ItemInstanceId);
+            line.IsReturned = latest.Action == "RepairReceive";
+            line.TargetBinLocationId = line.IsReturned && latestHistory?.ToLocationType == LocationType.BinLocation ? latestHistory.ToLocationId : null;
+            line.UpdatedAt = now;
+            line.UpdatedBy = user.UserName;
+        }
+    }
+
+    private async Task RemoveBorrowDocumentIfEmptyAsync(BorrowDocument document, CancellationToken cancellationToken)
+    {
+        var hasLogs = await _db.BorrowDocumentLogs.AnyAsync(x => x.BorrowDocumentId == document.Id, cancellationToken);
+        if (hasLogs)
+        {
+            return;
+        }
+
+        var lines = await _db.BorrowDocumentLines.Where(x => x.BorrowDocumentId == document.Id).ToListAsync(cancellationToken);
+        _db.BorrowDocumentLines.RemoveRange(lines);
+        _db.BorrowDocuments.Remove(document);
+    }
+
+    private async Task RemoveRepairDocumentIfEmptyAsync(RepairDocument document, CancellationToken cancellationToken)
+    {
+        var hasLogs = await _db.RepairDocumentLogs.AnyAsync(x => x.RepairDocumentId == document.Id, cancellationToken);
+        if (hasLogs)
+        {
+            return;
+        }
+
+        var lines = await _db.RepairDocumentLines.Where(x => x.RepairDocumentId == document.Id).ToListAsync(cancellationToken);
+        _db.RepairDocumentLines.RemoveRange(lines);
+        _db.RepairDocuments.Remove(document);
+    }
+
+    private static BorrowReturnCondition? ParseBorrowReturnCondition(string? value)
+    {
+        if (Enum.TryParse<BorrowReturnCondition>(value, true, out var condition))
+        {
+            return condition;
+        }
+
+        if (Enum.TryParse<ItemStatus>(value, true, out var status))
+        {
+            return status switch
+            {
+                ItemStatus.Damaged => BorrowReturnCondition.Damaged,
+                ItemStatus.Lost => BorrowReturnCondition.Lost,
+                ItemStatus.Scrapped => BorrowReturnCondition.Scrapped,
+                _ => BorrowReturnCondition.Normal
+            };
+        }
+
+        return BorrowReturnCondition.Normal;
     }
 
     private async Task<ServiceResult<DocumentMutationResultDto>> DeleteQuantityAsync(int id, string type, CurrentUserContext user, CancellationToken cancellationToken)
@@ -1674,6 +2049,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         _db.QuantityInventoryTransactions.RemoveRange(_db.QuantityInventoryTransactions.Where(x => x.DocumentId == id));
         _db.QuantityInventoryDocumentLines.RemoveRange(document.Lines);
         _db.QuantityInventoryDocuments.Remove(document);
+        await _db.SaveChangesAsync(cancellationToken);
         await CleanupPostSideEffectsAsync(nameof(QuantityInventoryDocument), id, document.DocumentNo, cancellationToken);
 
         await _db.SaveChangesAsync(cancellationToken);
@@ -1720,27 +2096,12 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
 
         _db.QuantityStockBalances.AddRange(grouped);
 
-        var instance = await _db.ItemInstances.FirstOrDefaultAsync(x =>
-            x.ItemId == itemId &&
-            x.SerialNumber == snCode &&
-            x.TrackingType == ItemTrackingType.QuantityOnly, cancellationToken);
-
-        if (instance == null)
-        {
-            return;
-        }
-
-        var lastTx = txs.LastOrDefault();
-        if (lastTx == null)
-        {
-            _db.ItemInstances.Remove(instance);
-            return;
-        }
-
-        instance.Status = lastTx.StatusAfter;
-        instance.IsActive = grouped.Sum(x => x.Quantity) > 0;
-        instance.UpdatedAt = _clock.UtcNow;
-        instance.UpdatedBy = "system";
+        var quantityInstances = await _db.ItemInstances
+            .Where(x => x.ItemId == itemId &&
+                        x.SerialNumber == snCode &&
+                        x.TrackingType == ItemTrackingType.QuantityOnly)
+            .ToListAsync(cancellationToken);
+        _db.ItemInstances.RemoveRange(quantityInstances);
     }
 
     private async Task RecalculateLocationTrackedStockAsync(IEnumerable<int> itemIds, CancellationToken cancellationToken)
@@ -1860,15 +2221,32 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             .ToListAsync(cancellationToken);
 
         var laterCandidates = await _db.ItemMovementHistories
-            .Where(x => ids.Contains(x.ItemInstanceId) && !(x.DocumentType == documentType && x.DocumentId == documentId && x.ActionType == actionType))
-            .Select(x => new { x.ItemInstanceId, x.PerformedAt, x.Id })
-            .ToListAsync(cancellationToken);
+        .Where(x => ids.Contains(x.ItemInstanceId)
+                 && !(x.DocumentType == documentType
+                   && x.DocumentId == documentId
+                   && x.ActionType == actionType))
+        .Select(x => new
+        {
+            x.ItemInstanceId,
+            x.PerformedAt,
+            x.Id,
+            SerialNumber = x.ItemInstance.SerialNumber
+        })
+        .ToListAsync(cancellationToken);
 
         return phaseMarks
             .Where(item => laterCandidates.Any(x =>
                 x.ItemInstanceId == item.ItemInstanceId &&
-                (x.PerformedAt > item.LastAt || (x.PerformedAt == item.LastAt && x.Id > item.LastId))))
-            .Select(item => $"Item instance {item.ItemInstanceId} has downstream operations after {actionType}.")
+                (x.PerformedAt > item.LastAt ||
+                 (x.PerformedAt == item.LastAt && x.Id > item.LastId))))
+            .Select(item =>
+            {
+                var serial = laterCandidates
+                    .First(x => x.ItemInstanceId == item.ItemInstanceId)
+                    .SerialNumber;
+
+                return $"Item instance {serial} has downstream operations after {actionType}.";
+            })
             .ToList();
     }
 
@@ -2253,9 +2631,6 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             .Include(x => x.Lines).ThenInclude(x => x.Item)
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (document == null) return null;
-        var itemId = document.Lines.Select(x => x.ItemId).FirstOrDefault();
-        var instance = await _db.ItemInstances.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.ItemId == itemId && x.TrackingType == ItemTrackingType.QuantityOnly, cancellationToken);
         var item = document.Lines.Select(x => x.Item).FirstOrDefault(x => x != null);
         var categoryCode = item == null
             ? string.Empty
@@ -2269,7 +2644,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             itemCode = item?.ItemCode ?? string.Empty,
             approvedBy = document.ApprovedBy,
             note = document.Note,
-            ownerName = instance?.OwnerName,
+            ownerName = (string?)null,
             lines = document.Lines.Select(x => new
             {
                 snCode = x.SnCode,
