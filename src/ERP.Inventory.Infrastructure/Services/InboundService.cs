@@ -28,7 +28,8 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
         if (errors.Count > 0) return ServiceResult<PostedDocumentDto>.Fail(errors);
 
         await using var transaction = await BeginOperationTransactionAsync(cancellationToken);
-
+        var now = _clock.UtcNow;
+        var lifecycleBatchId = Guid.NewGuid();
         // ── Resolve optional Supplier ────────────────────────────────
         int? sourcePartyId = null;
         if (!string.IsNullOrWhiteSpace(request.SourcePartyer))
@@ -82,7 +83,15 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
             }
         }
 
-        var now = _clock.UtcNow;
+        if (!string.IsNullOrWhiteSpace(request.DepartmentOwner))
+        {
+            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, ExternalPartyType.Department, "Owner","", user.UserName, now, cancellationToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ApprovedBy))
+        {
+            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, ExternalPartyType.Department, "Owner", "", user.UserName, now, cancellationToken);
+        }
 
         var oldDocument = await FindInboundDocumentByCodeAsync(request.DocumentNo.Trim(), cancellationToken);
 
@@ -179,8 +188,8 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
                 });
 
                 await ApplyStockDeltaAsync(warehouse.Id, bin.Id, item.Id, instance.Status, 1, user, cancellationToken);
-                AddHistory(instance.Id, MovementActionType.Inbound, null, null, "Supplier", LocationType.BinLocation, bin.Id, bin.FullPath, ItemStatus.Reserved, instance.Status, nameof(InboundDocument), document.Id, document.DocumentNo, line.Note, user);
-                AddInventoryTransaction(InventoryTransactionType.Inbound, item.Id, instance.Id, warehouse.Id, bin.Id, 1, instance.Status, nameof(InboundDocument), document.Id, document.DocumentNo, user);
+                AddHistory(instance.Id, MovementActionType.Inbound, null, null, "Supplier", LocationType.BinLocation, bin.Id, bin.FullPath, ItemStatus.Reserved, instance.Status, nameof(InboundDocument), document.Id, document.DocumentNo, line.Note, user, lifecycleBatchId);
+                AddInventoryTransaction(InventoryTransactionType.Inbound, item.Id, instance.Id, warehouse.Id, bin.Id, 1, instance.Status, nameof(InboundDocument), document.Id, document.DocumentNo, user, lifecycleBatchId);
 
                 // Ghi log kiểm toán cho phếu nhập
                 _db.InboundDocumentLogs.Add(new InboundDocumentLog
@@ -188,6 +197,7 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
                     InboundDocumentId = document.Id,
                     ItemInstanceId = instance.Id,
                     Action = "InboundReceive",
+                    LifecycleBatchId = lifecycleBatchId,
                     OldStatus = "Reserved",
                     NewStatus = instance.Status.ToString(),
                     Receiver = receiverDisplay,
@@ -249,8 +259,8 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
             });
 
             await ApplyStockDeltaAsync(warehouse.Id, bin.Id, item.Id, instance.Status, line.Quantity, user, cancellationToken);
-            AddHistory(instance.Id, MovementActionType.Inbound, null, null, "Supplier", LocationType.BinLocation, bin.Id, bin.FullPath, ItemStatus.Reserved, instance.Status, nameof(InboundDocument), oldDocument.Id, oldDocument.DocumentNo, line.Note, user);
-            AddInventoryTransaction(InventoryTransactionType.Inbound, item.Id, instance.Id, warehouse.Id, bin.Id, 1, instance.Status, nameof(InboundDocument), oldDocument.Id, oldDocument.DocumentNo, user);
+            AddHistory(instance.Id, MovementActionType.Inbound, null, null, "Supplier", LocationType.BinLocation, bin.Id, bin.FullPath, ItemStatus.Reserved, instance.Status, nameof(InboundDocument), oldDocument.Id, oldDocument.DocumentNo, line.Note, user, lifecycleBatchId);
+            AddInventoryTransaction(InventoryTransactionType.Inbound, item.Id, instance.Id, warehouse.Id, bin.Id, 1, instance.Status, nameof(InboundDocument), oldDocument.Id, oldDocument.DocumentNo, user, lifecycleBatchId);
 
             // Ghi log kiểm toán cho phếu nhập (bổ sung)
             _db.InboundDocumentLogs.Add(new InboundDocumentLog
@@ -258,6 +268,7 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
                 InboundDocumentId = oldDocument.Id,
                 ItemInstanceId = instance.Id,
                 Action = "InboundReceive",
+                LifecycleBatchId = lifecycleBatchId,
                 OldStatus = "Reserved",
                 NewStatus = instance.Status.ToString(),
                 Receiver = receiverDisplay,

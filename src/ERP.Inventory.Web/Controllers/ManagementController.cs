@@ -3,6 +3,8 @@ using ERP.Inventory.Application.Interfaces;
 using ERP.Inventory.Domain.Entities;
 using ERP.Inventory.Domain.Enums;
 using ERP.Inventory.Infrastructure.Data;
+using ERP.Inventory.Infrastructure.Services;
+using ERP.Inventory.Web.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -22,14 +24,16 @@ public sealed class ManagementController : ManagementBaseController
     private readonly WarehouseStructureController _warehouseStructure;
     private readonly UserManagementController _userManagement;
     private readonly SystemController _system;
+    private readonly ILogErrorSystemService _errorLog;
 
-    public ManagementController(InventoryDbContext db, ICurrentUserService currentUserService)
+    public ManagementController(InventoryDbContext db, ICurrentUserService currentUserService, ILogErrorSystemService errorLog)
         : base(db, currentUserService)
     {
         _masterData = new MasterDataController(db, currentUserService);
         _warehouseStructure = new WarehouseStructureController(db, currentUserService);
         _userManagement = new UserManagementController(db, currentUserService);
         _system = new SystemController(db, currentUserService);
+        _errorLog = errorLog;
     }
 
     // ─── Master Data ──────────────────────────────────────────
@@ -233,7 +237,13 @@ public sealed class ManagementController : ManagementBaseController
         catch (Exception ex)
         {
             await transaction.RollbackAsync(ct);
-            return Json(new { success = false,message = ex.Message});
+            user = CurrentUserService.GetCurrentUser();
+            var log = await _errorLog.LogAsync(ex, new LogErrorContext(
+                Module: nameof(ManagementController),
+                Action: "HardDeleteItemInstance",
+                UserId: user.UserId,
+                UserName: user.UserName), ct);
+            return Json(new { success = false, message = string.Format(LocalizationCatalog.Text(user.LanguageCode, "SystemError.UserMessage"), log.ErrorCode), errorCode = log.ErrorCode });
         }
     }
 

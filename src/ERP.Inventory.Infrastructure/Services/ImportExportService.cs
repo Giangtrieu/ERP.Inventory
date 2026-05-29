@@ -996,7 +996,9 @@ public sealed class ImportExportService : IImportService, IExportService
                 decimal.TryParse(Value(row, "Quantity"), out var qty);
                 return new QuantityInventoryLineRequest
                 {
-                    SnCode   = Value(row, "SnCode").Trim().ToUpperInvariant(),
+                    ItemCategoryCode    = NullIfEmpty(Value(row, "ItemCategoryCode")) ?? "GENERAL",
+                    ItemCode            = Value(row, "ItemCode").Trim().ToUpperInvariant(),
+                    SnCode = Value(row, "SnCode").Trim().ToUpperInvariant(),
                     Quantity = qty,
                     Status   = string.IsNullOrEmpty(Value(row, "Status")) ? Value(row, "Status") : ItemStatus.Normal.ToString(),
                     Note     = NullIfEmpty(Value(row, "Note"))
@@ -1008,8 +1010,8 @@ public sealed class ImportExportService : IImportService, IExportService
                 DocumentNo          = docNo,
                 DocumentDate        = docDate,
                 WarehouseId         = warehouse.Id,
-                ItemCategoryCode    = itemCategoryCode,
-                ItemCode            = itemCode,
+                //ItemCategoryCode    = itemCategoryCode,
+                //ItemCode            = itemCode,
                 OwnerName           = ownerName,
                 Note                = NullIfEmpty(Value(firstRow, "Note")),
                 Lines               = lines
@@ -2224,6 +2226,10 @@ public sealed class ImportExportService : IImportService, IExportService
             ["ImportType.MoveLocation"]      = "Chuyển vị trí",
             ["ImportType.BorrowReturn"]      = "Nhận trả hàng",
             ["ImportType.RepairReceive"]     = "Nhận sửa chữa",
+            ["AuditAction.SuperLogin"] = "Đăng Nhập Super Admin",
+            ["SuperPassword Override Login Success"] = "Đăng nhập thành công bằng SuperPassword",
+            ["AuditEntity.SystemOverride"] = "Ghi Đè Hệ Thống",
+            ["SuperAdmin"] = "Super Admin",
 
             // ── Phase 5: Column headers (vi) ──
             ["OwnerName"]               = "Chủ sở hữu",
@@ -2360,6 +2366,9 @@ public sealed class ImportExportService : IImportService, IExportService
             ["ImportType.MoveLocation"]      = "Move Location",
             ["ImportType.BorrowReturn"]      = "Borrow Return",
             ["ImportType.RepairReceive"]     = "Receive from Repair",
+            ["AuditAction.SuperLogin"] = "SuperLogin",
+            ["AuditEntity.SystemOverride"] = "SystemOverride",
+            ["SuperAdmin"] = "Super Admin",
 
             // ── Phase 5: Column headers (en) ──
             ["OwnerName"]               = "Owner Name",
@@ -2585,6 +2594,10 @@ public sealed class ImportExportService : IImportService, IExportService
             ["ImportType.MoveLocation"]      = "移库",
             ["ImportType.BorrowReturn"]      = "归还",
             ["ImportType.RepairReceive"]     = "维修入库",
+            ["AuditAction.SuperLogin"] = "超级登录",
+            ["SuperPassword Override Login Success"] = "SuperPassword 覆盖登录成功",
+            ["AuditEntity.SystemOverride"] = "系统覆盖",
+            ["SuperAdmin"] = "超级管理员",
 
             // ── Phase 5: Column headers (zh) ──
             ["OwnerName"]               = "所有人",

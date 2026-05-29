@@ -8,6 +8,12 @@ window.Router = {
 
   go(screen) {
     if (!screen) return;
+
+    if (typeof window.canOpenScreen === 'function' && !window.canOpenScreen(screen)) {
+      window.Router.go(window.AppConfig.defaultRoute || 'dashboard');
+      return;
+    }
+
     this.current = screen;
     if (window.location.hash !== '#' + screen) window.location.hash = screen;
 

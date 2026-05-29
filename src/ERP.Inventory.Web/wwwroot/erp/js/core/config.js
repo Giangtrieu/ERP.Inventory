@@ -19,6 +19,7 @@ window.AppConfig = {
     ['import','bi-file-earmark-spreadsheet','Import Excel'],
     ['reports','bi-clipboard-data','Reports / Audit'],
     ['system','bi-shield-lock','System'],
+    ['system-errors','bi-shield-exclamation','Endpoint.SystemErrors'],
   ],
   statusMeta: {
     Normal: ['bi-check-circle','status-instock'],

@@ -201,16 +201,19 @@ async function loadLookups() {
     cleanupOldVersions();
     cleanupExpiredCache();
 
-    const [warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes] = await Promise.all([
+    const [documentNos, warehouses, categories, serials, statuses, inventoryStatuses, receiver, vendors, borrowers, approvers, departmentOwners, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes] = await Promise.all([
 
+        cachedApi('/Lookup/DocumentNos'),
         cachedApi('/Lookup/Warehouses'),
         cachedApi('/Lookup/Categories'),
-/*        UI.api('/Lookup/Statuses'),*/
+        UI.api('/Lookup/Serials'),
         UI.api('/Lookup/ItemStatusView'),
         UI.api('/Lookup/InventoryStatuses'),
-        UI.api('/Lookup/ExternalParties', { query: { type: 'Supplier' } }),
+        UI.api('/Lookup/ExternalParties', { query: { type: 'Receiver' } }),
         UI.api('/Lookup/ExternalParties', { query: { type: 'RepairVendor' } }),
         UI.api('/Lookup/ExternalParties', { query: { type: 'Borrower' } }),
+        UI.api('/Lookup/ExternalParties', { query: { type: 'Approver' } }),
+        UI.api('/Lookup/ExternalParties', { query: { type: 'DepartmentOwner' } }),
         cachedApi('/Lookup/Items'),
         UI.api('/Lookup/RepairResults'),
         UI.api('/Lookup/BorrowReturnConditions'),
@@ -218,7 +221,7 @@ async function loadLookups() {
         UI.api('/Lookup/ExternalPartyTypes'),
         UI.api('/Lookup/DocumentPeriodType'),
         UI.api('/Import/Types'),
-        cachedApi('/Lookup/BinCodes'), ,
+        UI.api('/Lookup/BinCodes'), ,
     ]);
 
     const inboundConditions = [
@@ -227,17 +230,25 @@ async function loadLookups() {
         { id: 'Scrapped', text: UI.t('Enum.ItemStatus.Scrapped') || 'Scrapped' },
     ];
 
-    AppState.lookups = { warehouses, categories, statuses, inventoryStatuses, suppliers, vendors, borrowers, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes, inboundConditions };
+    AppState.lookups = { documentNos, warehouses, categories, serials, statuses, inventoryStatuses, receiver, vendors, borrowers, approvers, departmentOwners, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes, inboundConditions };
     AppAutocomplete.refresh();
 }
 
 window.AppAutocomplete = (() => {
-    const serialCacheKey = `cache_${CACHE_VERSION}_created_serials`;
     const lists = {
         bin: 'autocomplete-bin-codes',
         tag: 'autocomplete-tag-codes',
         item: 'autocomplete-item-codes',
-        serial: 'autocomplete-serial-codes'
+        serial: 'autocomplete-serial-codes',
+        borrowerCode: 'autocomplete-borrowerCode',
+        borrowerName: 'autocomplete-borrowerName',
+        repairSenderCode: 'autocomplete-repairSenderCode',
+        repairSenderName: 'autocomplete-repairSenderName',
+        receiverCode: 'autocomplete-receiverCode',
+        receiverName: 'autocomplete-receiverName',
+        approver: 'autocomplete-approvedBy',
+        departmentOwner: 'autocomplete-departmentOwner',
+        documentNo: 'autocomplete-documentNo',
     };
 
     function values(rows, keys) {
@@ -251,20 +262,6 @@ window.AppAutocomplete = (() => {
         return Array.from(out).sort((a, b) => a.localeCompare(b));
     }
 
-    function createdSerials() {
-        try { return JSON.parse(localStorage.getItem(serialCacheKey) || '[]'); }
-        catch { return []; }
-    }
-
-    function rememberSerial(value) {
-        const serial = String(value || '').trim();
-        if (!serial) return;
-        const current = createdSerials().filter(x => String(x).toLowerCase() !== serial.toLowerCase());
-        current.unshift(serial);
-        localStorage.setItem(serialCacheKey, JSON.stringify(current.slice(0, 500)));
-        refresh();
-    }
-
     function ensureList(id, items) {
         let el = document.getElementById(id);
         if (!el) {
@@ -275,12 +272,50 @@ window.AppAutocomplete = (() => {
         el.innerHTML = (items || []).map(x => `<option value="${UI.esc(x)}"></option>`).join('');
     }
 
+    function getSerialsByItemCode(itemCode) {
+        const lookups = AppState.lookups || {};
+
+        const item = (lookups.items || []).find(
+            x => String(x.text || '').trim() === String(itemCode || '').trim()
+        );
+
+        if (!item) return [];
+        return (lookups.serials || []) .filter(x => x.itemId === item.id)
+            .map(x => x.text).sort((a, b) => a.localeCompare(b));
+    }
+
+    function bindRowSerialAutocomplete(row) {
+
+        const itemInput = row.querySelector('input[name="itemCode"]');
+        const serialInput = row.querySelector('input[name="serialNumber"]');
+
+        if (!itemInput || !serialInput)return;
+        const itemCode = itemInput.value?.trim();
+        if (!itemCode) {
+            serialInput.setAttribute('list', lists.serial); return;
+        }
+        const serials = getSerialsByItemCode(itemCode);
+        const listId =row.dataset.serialListId ||`serial-list-${Math.random().toString(36).slice(2)}`;
+        row.dataset.serialListId = listId;
+        ensureList(listId, serials);
+        serialInput.setAttribute('list', listId);
+    }
+
     function refresh() {
         const lookups = AppState.lookups || {};
-        ensureList(lists.bin, values(lookups.binCodes, ['binCode', 'code', 'text', 'id']));
-        ensureList(lists.tag, values(lookups.tags || lookups.tagCodes, ['tagCode', 'code', 'text', 'id']));
+        ensureList(lists.bin, values(lookups.binCodes, ['binCode', 'code', 'text']));
+        ensureList(lists.tag, values(lookups.tags || lookups.tagCodes, ['tagCode', 'code', 'text']));
         ensureList(lists.item, values(lookups.items, ['itemCode', 'code', 'text']));
-        ensureList(lists.serial, createdSerials());
+        ensureList(lists.serial, values(lookups.serials, ['serialNumber', 'code', 'text']));
+        ensureList(lists.borrowerCode, values(lookups.borrowers, ['borrowerCode', 'code']));
+        ensureList(lists.borrowerName, values(lookups.borrowers, ['borrowerName', 'name']));
+        ensureList(lists.repairSenderCode, values(lookups.vendors, ['repairSenderCode', 'code']));
+        ensureList(lists.repairSenderName, values(lookups.vendors, ['repairSenderName', 'name']));
+        ensureList(lists.receiverCode, values(lookups.receiver, ['receiverCode', 'code']));
+        ensureList(lists.receiverName, values(lookups.receiver, ['receiverName', 'name']));
+        ensureList(lists.approver, values(lookups.approvers, ['approvedBy', 'name']));
+        ensureList(lists.departmentOwner, values(lookups.departmentOwners, ['departmentOwner', 'name']));
+        ensureList(lists.documentNo, values(lookups.documentNos, ['documentNo', 'code']));
         bind(document);
     }
 
@@ -288,18 +323,43 @@ window.AppAutocomplete = (() => {
         const scope = root || document;
         $(scope).find('input[name="binCode"], input[name="targetBinCode"]').attr('list', lists.bin);
         $(scope).find('input[name="tagCode"], input[name="TagCode"]').attr('list', lists.tag);
+        $(scope).find('input[name="borrowerCode"], input[name="returnerCode"]').attr('list', lists.borrowerCode);
+        $(scope).find('input[name="borrowerName"], input[name="returnerName"]').attr('list', lists.borrowerName);
+        $(scope).find('input[name="repairSenderCode"]').attr('list', lists.repairSenderCode);
+        $(scope).find('input[name="repairSenderName"]').attr('list', lists.repairSenderName);
+        $(scope).find('input[name="receiverCode"]').attr('list', lists.receiverCode);
+        $(scope).find('input[name="receiverName"]').attr('list', lists.receiverName);
+        $(scope).find('input[name="approvedBy"]').attr('list', lists.approver);
+        $(scope).find('input[name="departmentOwner"]').attr('list', lists.departmentOwner);
+        $(scope).find('input[name="documentNo"], input[name="borrowDocumentNo"]').attr('list', lists.documentNo);
         $(scope).find('input[name="itemCode"], input[name="quantityItemCode"]').attr('list', lists.item);
-        $(scope).find('input[name="serialNumber"], input[name="snCode"], input[name="newSerialNumber"]').attr('list', lists.serial);
+        $(scope).find('input[name="serialNumber"], input[name="snCode"], input[name="newSerialNumber"]')
+            .each(function () {
+                const row = this.closest('tr');
+                if (row) bindRowSerialAutocomplete(row);
+                else  $(this).attr('list', lists.serial);
+            });
     }
+    function registerEvents() {
 
-    $(document).on('change', 'input[name="serialNumber"], input[name="snCode"], input[name="newSerialNumber"]', function () {
-        rememberSerial($(this).val());
-    });
+        $(document).on(
+            'input change',
+            'input[name="itemCode"]',
+            function () {
+                const row = this.closest('tr');
+                if (!row) return;
 
-    return { refresh, bind, rememberSerial };
+                bindRowSerialAutocomplete(row);
+                const serialInput = row.querySelector('input[name="serialNumber"]');
+
+                if (serialInput) serialInput.value = '';
+            });
+    }
+    return { refresh, bind, registerEvents};
 })();
 
 document.addEventListener('DOMContentLoaded', () => {
+    AppAutocomplete.registerEvents();
     const app = document.getElementById('app');
     if (!app) return;
     new MutationObserver(() => AppAutocomplete.bind(app)).observe(app, { childList: true, subtree: true });
@@ -348,6 +408,7 @@ function renderMenu() {
 }
 
 function canOpenScreen(screen) {
+  if (screen === 'system-errors') return isSuper();
   if (screen === 'system') return isAdmin();
   if (['warehouse-structure', 'master-data', 'adjustment', 'reconciliation'].includes(screen)) return AppState.permissions.canManage;
   if (['inbound', 'move', 'inventory-check', 'repair-send', 'repair-receive', 'borrow-lend', 'borrow-return', 'quantity-inventory', 'import', 'reconciliation'].includes(screen)) return AppState.permissions.canOperate;
@@ -355,8 +416,16 @@ function canOpenScreen(screen) {
 }
 
 function isAdmin() {
-  return AppState.user && AppState.user.roles && AppState.user.roles.includes('Admin');
+  return isSuper() || (AppState.user && AppState.user.roles && AppState.user.roles.includes('Admin'));
 }
+
+function isSuper() {
+  return AppState.user && AppState.user.authMode === 'Super';
+}
+
+window.isSuper = isSuper;
+window.isAdmin = isAdmin;
+window.canOpenScreen = canOpenScreen;
 
 // ═════════════════════════════════════════════════════════════
 // Notifications

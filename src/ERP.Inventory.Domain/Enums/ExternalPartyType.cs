@@ -9,7 +9,9 @@ public enum ExternalPartyType
     Department = 5,
     Employee = 6,
     Logistics = 7,
-    Receiver = 8   // Người nhập kho (InboundDocument)
+    Receiver = 8,   // Người nhập kho (InboundDocument)
+    Approver = 9,
+    DepartmentOwner = 10,   
 }
 
 

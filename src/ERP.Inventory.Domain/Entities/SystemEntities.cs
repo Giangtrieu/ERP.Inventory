@@ -83,6 +83,29 @@ public class AuditLog
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
+public class LogErrorSystem
+{
+    public long Id { get; set; }
+    public string ErrorCode { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public string? UserId { get; set; }
+    public string? UserName { get; set; }
+    public string? RequestPath { get; set; }
+    public string? HttpMethod { get; set; }
+    public string? Module { get; set; }
+    public string? Action { get; set; }
+    public string ErrorMessage { get; set; } = string.Empty;
+    public string? InnerException { get; set; }
+    public string? StackTrace { get; set; }
+    public string? PayloadJson { get; set; }
+    public string? ClientIp { get; set; }
+    public string? Browser { get; set; }
+    public bool IsResolved { get; set; }
+    public DateTime? ResolvedAt { get; set; }
+    public string? ResolvedBy { get; set; }
+    public string? Notes { get; set; }
+}
+
 public class Translation : AuditableEntity
 {
     public string EntityName { get; set; } = string.Empty;

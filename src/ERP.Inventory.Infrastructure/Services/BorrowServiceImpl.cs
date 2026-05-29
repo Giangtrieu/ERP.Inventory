@@ -38,6 +38,9 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
         //if (borrower == null) return ServiceResult<PostedDocumentDto>.Fail($"Borrower {request.BorrowerCode} not found.");
 
         await using var transaction = await BeginOperationTransactionAsync(cancellationToken);
+        var now = _clock.UtcNow;
+        var lifecycleBatchId = Guid.NewGuid();
+
         if (string.IsNullOrWhiteSpace(request.BorrowerCode)) return ServiceResult<PostedDocumentDto>.Fail($"Borrower {request.Borrower} not found.");
         var borrower = await FindPartyByCodeAsync(request.BorrowerCode, ExternalPartyType.Borrower, cancellationToken);
         if (borrower == null)
@@ -54,7 +57,16 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
             await _db.SaveChangesAsync(cancellationToken);
         }
 
-        var now = _clock.UtcNow;
+        if (!string.IsNullOrWhiteSpace(request.DepartmentOwner))
+        {
+            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, ExternalPartyType.Department, "Owner", "", user.UserName, now, cancellationToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ApprovedBy))
+        {
+            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, ExternalPartyType.Department, "Owner", "", user.UserName, now, cancellationToken);
+        }
+
         var processedInstances = new HashSet<int>();
 
         var oldDocument = await FindBorrowLendDocumentByCodeAsync(request.DocumentNo.Trim(), cancellationToken);
@@ -123,8 +135,8 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
                     await ApplyStockDeltaAsync(fromWarehouseId.Value, fromBinLocationId, instance.ItemId, oldStatus, -1, user, cancellationToken);
 
                 var toDisplay = ExternalLocationDisplay(borrower.Name, targetExternalLocation);
-                AddHistory(instance.Id, MovementActionType.Lend, LocationType.BinLocation, fromBinLocationId, fromDisplay, LocationType.Borrower, borrower.Id, toDisplay, oldStatus, ItemStatus.LentOut, nameof(BorrowDocument), document.Id, document.DocumentNo, string.IsNullOrWhiteSpace(line.Note) ? request.Purpose : line.Note, user);
-                AddInventoryTransaction(InventoryTransactionType.BorrowLend, instance.ItemId, instance.Id, fromWarehouseId, fromBinLocationId, -1, ItemStatus.LentOut, nameof(BorrowDocument), document.Id, document.DocumentNo, user);
+                AddHistory(instance.Id, MovementActionType.Lend, LocationType.BinLocation, fromBinLocationId, fromDisplay, LocationType.Borrower, borrower.Id, toDisplay, oldStatus, ItemStatus.LentOut, nameof(BorrowDocument), document.Id, document.DocumentNo, string.IsNullOrWhiteSpace(line.Note) ? request.Purpose : line.Note, user, lifecycleBatchId);
+                AddInventoryTransaction(InventoryTransactionType.BorrowLend, instance.ItemId, instance.Id, fromWarehouseId, fromBinLocationId, -1, ItemStatus.LentOut, nameof(BorrowDocument), document.Id, document.DocumentNo, user, lifecycleBatchId);
 
                 // Ghi BorrowDocumentLog - BorrowIssue
                 _db.BorrowDocumentLogs.Add(new BorrowDocumentLog
@@ -132,6 +144,7 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
                     BorrowDocumentId = document.Id,
                     ItemInstanceId = instance.Id,
                     Action = "BorrowIssue",
+                    LifecycleBatchId = lifecycleBatchId,
                     OldStatus = oldStatus.ToString(),
                     NewStatus = ItemStatus.LentOut.ToString(),
                     Borrower = $"{borrower.PartyCode}-{borrower.Name}",
@@ -204,8 +217,8 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
                 await ApplyStockDeltaAsync(fromWarehouseId.Value, fromBinLocationId, instance.ItemId, oldStatus, -1, user, cancellationToken);
 
             var toDisplay = ExternalLocationDisplay(borrower.Name, targetExternalLocation);
-            AddHistory(instance.Id, MovementActionType.Lend, LocationType.BinLocation, fromBinLocationId, fromDisplay, LocationType.Borrower, borrower.Id, toDisplay, oldStatus, ItemStatus.LentOut, nameof(BorrowDocument), oldDocument.Id, oldDocument.DocumentNo, string.IsNullOrWhiteSpace(line.Note) ? request.Purpose : line.Note, user);
-            AddInventoryTransaction(InventoryTransactionType.BorrowLend, instance.ItemId, instance.Id, fromWarehouseId, fromBinLocationId, -1, ItemStatus.LentOut, nameof(BorrowDocument), oldDocument.Id, oldDocument.DocumentNo, user);
+            AddHistory(instance.Id, MovementActionType.Lend, LocationType.BinLocation, fromBinLocationId, fromDisplay, LocationType.Borrower, borrower.Id, toDisplay, oldStatus, ItemStatus.LentOut, nameof(BorrowDocument), oldDocument.Id, oldDocument.DocumentNo, string.IsNullOrWhiteSpace(line.Note) ? request.Purpose : line.Note, user, lifecycleBatchId);
+            AddInventoryTransaction(InventoryTransactionType.BorrowLend, instance.ItemId, instance.Id, fromWarehouseId, fromBinLocationId, -1, ItemStatus.LentOut, nameof(BorrowDocument), oldDocument.Id, oldDocument.DocumentNo, user, lifecycleBatchId);
 
             // Ghi BorrowDocumentLog - BorrowIssue (bổ sung vào document cũ)
             _db.BorrowDocumentLogs.Add(new BorrowDocumentLog
@@ -213,6 +226,7 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
                 BorrowDocumentId = oldDocument.Id,
                 ItemInstanceId = instance.Id,
                 Action = "BorrowIssue",
+                LifecycleBatchId = lifecycleBatchId,
                 OldStatus = oldStatus.ToString(),
                 NewStatus = ItemStatus.LentOut.ToString(),
                 Borrower = $"{borrower.PartyCode}-{borrower.Name}",
@@ -260,6 +274,11 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
         if (requiredErrors.Count > 0) return ServiceResult<PostedDocumentDto>.Fail(requiredErrors);
 
         if (string.IsNullOrWhiteSpace(request.ReturnerCode)) return ServiceResult<PostedDocumentDto>.Fail($"Borrower {request.Returner} not found.");
+
+        await using var transaction = await BeginOperationTransactionAsync(cancellationToken);
+        var now = _clock.UtcNow;
+        var lifecycleBatchId = Guid.NewGuid();
+
         var borrower = await FindPartyByCodeAsync(request.ReturnerCode, ExternalPartyType.Borrower, cancellationToken);
         if (borrower == null)
         {
@@ -275,8 +294,16 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
             await _db.SaveChangesAsync(cancellationToken);
         }
 
-        await using var transaction = await BeginOperationTransactionAsync(cancellationToken);
-        var now = _clock.UtcNow;
+        if (!string.IsNullOrWhiteSpace(request.DepartmentOwner))
+        {
+            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, ExternalPartyType.Department, "Owner", "", user.UserName, now, cancellationToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ApprovedBy))
+        {
+            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, ExternalPartyType.Department, "Owner", "", user.UserName, now, cancellationToken);
+        }
+
         var targetBinsInRequest = new HashSet<int>();
 
         foreach (var line in request.Lines)
@@ -326,8 +353,8 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
             if (targetBin != null)
                 await ApplyStockDeltaAsync(targetBin.WarehouseId, targetBin.Id, instance.ItemId, targetStatus, 1, user, cancellationToken);
 
-            AddHistory(instance.Id, MovementActionType.ReturnBorrowed, LocationType.Borrower, document.BorrowerId, fromDisplay, targetBin != null ? LocationType.BinLocation : LocationType.Unknown, targetBin?.Id, targetBin?.FullPath ?? "Lost", oldStatus, targetStatus, nameof(BorrowDocument), document.Id, document.DocumentNo, line.Note, user);
-            AddInventoryTransaction(InventoryTransactionType.BorrowReturn, instance.ItemId, instance.Id, targetBin?.WarehouseId, targetBin?.Id, targetBin == null ? 0 : 1, targetStatus, nameof(BorrowDocument), document.Id, document.DocumentNo, user);
+            AddHistory(instance.Id, MovementActionType.ReturnBorrowed, LocationType.Borrower, document.BorrowerId, fromDisplay, targetBin != null ? LocationType.BinLocation : LocationType.Unknown, targetBin?.Id, targetBin?.FullPath ?? "Lost", oldStatus, targetStatus, nameof(BorrowDocument), document.Id, document.DocumentNo, line.Note, user, lifecycleBatchId);
+            AddInventoryTransaction(InventoryTransactionType.BorrowReturn, instance.ItemId, instance.Id, targetBin?.WarehouseId, targetBin?.Id, targetBin == null ? 0 : 1, targetStatus, nameof(BorrowDocument), document.Id, document.DocumentNo, user, lifecycleBatchId);
 
             // Ghi BorrowDocumentLog - BorrowReturn
             _db.BorrowDocumentLogs.Add(new BorrowDocumentLog
@@ -335,6 +362,7 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
                 BorrowDocumentId = document.Id,
                 ItemInstanceId = instance.Id,
                 Action = "BorrowReturn",
+                LifecycleBatchId = lifecycleBatchId,
                 OldStatus = oldStatus.ToString(),
                 NewStatus = targetStatus.ToString(),
                 Borrower = borrower != null ? $"{request.ReturnerCode}-{request.ReturnerName}" : null,

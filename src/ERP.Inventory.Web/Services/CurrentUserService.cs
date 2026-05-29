@@ -29,6 +29,7 @@ public sealed class CurrentUserService : ICurrentUserService
             .ToArray() ?? Array.Empty<int>();
 
         var language = principal?.FindFirstValue("language") ?? "vi";
+        var authMode = principal?.FindFirstValue("AuthMode") ?? string.Empty;
 
         return new CurrentUserContext
         {
@@ -36,7 +37,8 @@ public sealed class CurrentUserService : ICurrentUserService
             UserName = name,
             LanguageCode = language,
             Roles = roles,
-            WarehouseIds = warehouseIds
+            WarehouseIds = warehouseIds,
+            AuthMode = authMode
         };
     }
 }

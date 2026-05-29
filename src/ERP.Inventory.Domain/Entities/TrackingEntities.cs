@@ -39,6 +39,7 @@ public class ItemMovementHistory
     public string DocumentType { get; set; } = string.Empty;
     public int DocumentId { get; set; }
     public string DocumentNo { get; set; } = string.Empty;
+    public Guid? LifecycleBatchId { get; set; }
     public string? Note { get; set; }
     public DateTime PerformedAt { get; set; } = DateTime.UtcNow;
     public string PerformedBy { get; set; } = string.Empty;

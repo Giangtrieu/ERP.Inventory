@@ -31,11 +31,27 @@ public sealed class DocumentRollbackService : IDocumentRollbackService
         }
 
         var instances = await _db.ItemInstances.Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, cancellationToken);
-        var locations = await _db.CurrentItemLocations.Where(x => ids.Contains(x.ItemInstanceId)).ToDictionaryAsync(x => x.ItemInstanceId, cancellationToken);
+        var locationRows = await _db.CurrentItemLocations
+            .Where(x => ids.Contains(x.ItemInstanceId))
+            .OrderByDescending(x => x.UpdatedLocationAt)
+            .ThenByDescending(x => x.Id)
+            .ToListAsync(cancellationToken);
+        var duplicateLocations = locationRows
+            .GroupBy(x => x.ItemInstanceId)
+            .SelectMany(g => g.Skip(1))
+            .ToArray();
+        if (duplicateLocations.Length > 0)
+        {
+            _db.CurrentItemLocations.RemoveRange(duplicateLocations);
+        }
+
+        var locations = locationRows
+            .GroupBy(x => x.ItemInstanceId)
+            .ToDictionary(x => x.Key, x => x.First());
         var latestHistoryIds = await _db.ItemMovementHistories
             .Where(x => ids.Contains(x.ItemInstanceId))
             .GroupBy(x => x.ItemInstanceId)
-            .Select(g => g.OrderByDescending(x => x.Id).Select(x => x.Id).FirstOrDefault())
+            .Select(g => g.OrderByDescending(x => x.PerformedAt).ThenByDescending(x => x.Id).Select(x => x.Id).FirstOrDefault())
             .ToArrayAsync(cancellationToken);
         var latestHistories = latestHistoryIds.Length == 0
             ? new Dictionary<int, ItemMovementHistory>()
@@ -103,7 +119,9 @@ public sealed class DocumentRollbackService : IDocumentRollbackService
             instance.UpdatedAt = _clock.UtcNow;
             instance.UpdatedBy = "system";
 
-            var binLocation = await _db.BinLocations.FirstOrDefaultAsync(x => x.Id == latest.ToLocationId, cancellationToken);
+            var binLocation = latest.ToLocationType == LocationType.BinLocation && latest.ToLocationId.HasValue
+                ? await _db.BinLocations.FirstOrDefaultAsync(x => x.Id == latest.ToLocationId.Value, cancellationToken)
+                : null;
 
             if (!locations.TryGetValue(instanceId, out var location))
             {

@@ -121,6 +121,7 @@ public class BorrowDocumentLog
     public ItemInstance? ItemInstance { get; set; }
     /// <summary>BorrowIssue | BorrowReturn</summary>
     public string Action { get; set; } = string.Empty;
+    public Guid? LifecycleBatchId { get; set; }
     public string OldStatus { get; set; } = string.Empty;
     public string NewStatus { get; set; } = string.Empty;
     public string? Borrower { get; set; }
@@ -144,6 +145,7 @@ public class InboundDocumentLog
     public ItemInstance? ItemInstance { get; set; }
     /// <summary>InboundReceive</summary>
     public string Action { get; set; } = "InboundReceive";
+    public Guid? LifecycleBatchId { get; set; }
     public string OldStatus { get; set; } = string.Empty;
     public string NewStatus { get; set; } = string.Empty;
     /// <summary>Người nhập kho: Mã-Tên</summary>
@@ -214,6 +216,7 @@ public class RepairDocumentLog
     public ItemInstance? ItemInstance { get; set; }
     /// <summary>RepairSend | RepairReceive</summary>
     public string Action { get; set; } = string.Empty;
+    public Guid? LifecycleBatchId { get; set; }
     public string OldStatus { get; set; } = string.Empty;
     public string NewStatus { get; set; } = string.Empty;
     /// <summary>Tên đơn vị sửa chữa — snapshot tại thời điểm thao tác.</summary>

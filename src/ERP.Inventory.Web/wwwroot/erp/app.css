@@ -988,6 +988,9 @@ button.card:hover {
 .svg-chart     { width: 100%; height: 230px; display: block; }
 .svg-bar-chart { height: auto; max-height: 360px; }
 .svg-donut     { width: 180px; height: 180px; display: block; }
+.pie-slice { transition: opacity .15s ease; }
+.pie-slice:hover { opacity: .82; }
+.qty-item-drilldown { cursor: pointer; }
 
 .gauge-wrap { display: grid; gap: 12px; }
 .svg-gauge  { width: 100%; height: 180px; display: block; }

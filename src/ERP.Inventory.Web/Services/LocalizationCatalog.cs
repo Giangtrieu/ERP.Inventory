@@ -161,6 +161,30 @@ public static class LocalizationCatalog
     private static readonly Dictionary<string, string> ViSupplement = new()
 
     {
+        ["SystemError.UserMessage"] = "Có lỗi hệ thống. Mã lỗi: {0}. Vui lòng liên hệ TE/IT.",
+        ["Error Management"] = "Quản lý lỗi hệ thống",
+        ["SuperAdmin Password"] = "Mật khẩu SuperAdmin",
+        ["Unlock Error Management"] = "Mở khóa quản lý lỗi",
+        ["System Errors"] = "Lỗi hệ thống",
+        ["Error Code"] = "Mã lỗi",
+        ["Module"] = "Phân hệ",
+        ["Request Path"] = "Đường dẫn",
+        ["HTTP Method"] = "Phương thức HTTP",
+        ["Error message"] = "Thông báo lỗi",
+        ["Detail"] = "Chi tiết",
+        ["Resolved by"] = "Người xử lý",
+        ["Client IP"] = "IP máy khách",
+        ["Browser"] = "Trình duyệt",
+        ["Resolved"] = "Đã xử lý",
+        ["Unresolved"] = "Chưa xử lý",
+        ["Mark resolved"] = "Đánh dấu đã xử lý",
+        ["Mark this system error as resolved?"] = "Đánh dấu lỗi hệ thống này là đã xử lý?",
+        ["Resolution notes"] = "Ghi chú xử lý",
+        ["Stack Trace"] = "Stack trace",
+        ["Payload JSON"] = "Payload JSON",
+        ["Inner Exception"] = "Inner exception",
+        ["SuperAdmin password is invalid or not configured."] = "Mật khẩu SuperAdmin không đúng hoặc chưa được cấu hình.",
+        ["Error log not found."] = "Không tìm thấy log lỗi.",
 
         ["Quantity Inventory"] = "Tồn kho số lượng",
 
@@ -301,6 +325,30 @@ public static class LocalizationCatalog
     private static readonly Dictionary<string, string> EnSupplement = new()
 
     {
+        ["SystemError.UserMessage"] = "System error occurred. Error code: {0}. Please contact TE/IT.",
+        ["Error Management"] = "Error Management",
+        ["SuperAdmin Password"] = "SuperAdmin Password",
+        ["Unlock Error Management"] = "Unlock Error Management",
+        ["System Errors"] = "System Errors",
+        ["Error Code"] = "Error Code",
+        ["Module"] = "Module",
+        ["Request Path"] = "Request Path",
+        ["HTTP Method"] = "HTTP Method",
+        ["Error message"] = "Error message",
+        ["Detail"] = "Detail",
+        ["Resolved by"] = "Resolved by",
+        ["Client IP"] = "Client IP",
+        ["Browser"] = "Browser",
+        ["Resolved"] = "Resolved",
+        ["Unresolved"] = "Unresolved",
+        ["Mark resolved"] = "Mark resolved",
+        ["Mark this system error as resolved?"] = "Mark this system error as resolved?",
+        ["Resolution notes"] = "Resolution notes",
+        ["Stack Trace"] = "Stack Trace",
+        ["Payload JSON"] = "Payload JSON",
+        ["Inner Exception"] = "Inner Exception",
+        ["SuperAdmin password is invalid or not configured."] = "SuperAdmin password is invalid or not configured.",
+        ["Error log not found."] = "Error log not found.",
 
         ["Quantity Inventory"] = "Quantity Inventory",
 
@@ -441,6 +489,30 @@ public static class LocalizationCatalog
     private static readonly Dictionary<string, string> ZhSupplement = new()
 
     {
+        ["SystemError.UserMessage"] = "系统发生错误。错误代码：{0}。请联系 TE/IT 获取支持。",
+        ["Error Management"] = "错误管理",
+        ["SuperAdmin Password"] = "SuperAdmin 密码",
+        ["Unlock Error Management"] = "解锁错误管理",
+        ["System Errors"] = "系统错误",
+        ["Error Code"] = "错误代码",
+        ["Module"] = "模块",
+        ["Request Path"] = "请求路径",
+        ["HTTP Method"] = "HTTP 方法",
+        ["Error message"] = "错误消息",
+        ["Detail"] = "详情",
+        ["Resolved by"] = "处理人",
+        ["Client IP"] = "客户端 IP",
+        ["Browser"] = "浏览器",
+        ["Resolved"] = "已处理",
+        ["Unresolved"] = "未处理",
+        ["Mark resolved"] = "标记为已处理",
+        ["Mark this system error as resolved?"] = "将此系统错误标记为已处理？",
+        ["Resolution notes"] = "处理备注",
+        ["Stack Trace"] = "堆栈跟踪",
+        ["Payload JSON"] = "Payload JSON",
+        ["Inner Exception"] = "内部异常",
+        ["SuperAdmin password is invalid or not configured."] = "SuperAdmin 密码无效或尚未配置。",
+        ["Error log not found."] = "未找到错误日志。",
 
         ["Quantity Inventory"] = "数量库存",
 
@@ -1336,6 +1408,10 @@ public static class LocalizationCatalog
         ["Replacement adjustment line edit requires explicit rebuild/recovery flow."] = "Chỉnh sửa dòng điều chỉnh thay thế yêu cầu luồng rebuild/recovery tường minh",
         ["Item {0}/{1} is duplicated in this adjustment document."] = "Vật tư {0}/{1} bị trùng trong chứng từ điều chỉnh này",
         ["Adjustment document selectively edited."] = "Chứng từ điều chỉnh đã được chỉnh sửa chọn lọc",
+        ["Borrow lend selectively edited."] = "Phiếu mượn cấp phát đã được chỉnh sửa chọn lọc",
+        ["Repair send selectively edited."] = "Phiếu gửi sửa chữa đã được chỉnh sửa chọn lọc",
+        ["Borrow return selectively edited."] = "Phiếu trả mượn đã được chỉnh sửa chọn lọc",
+        ["Repair receive selectively edited."] = "Phiếu nhận sửa chữa đã được chỉnh sửa chọn lọc",
         ["Current location for item instance {0} does not exist."] = "Vị trí hiện tại của cá thể vật tư {0} không tồn tại",
         ["Item instance {0}/{1} cannot be moved."] = "Cá thể vật tư {0}/{1} không thể di chuyển",
         ["Item instance {0}/{1} does not belong to selected warehouse."] = "Cá thể vật tư {0}/{1} không thuộc kho đã chọn",
@@ -1754,6 +1830,7 @@ public static class LocalizationCatalog
         ["Endpoint.WarehouseStructure"] = "Cấu trúc kho",
 
         ["Endpoint.MasterDataList"] = "Dữ liệu danh mục",
+        ["Endpoint.SystemErrors"] = "Lỗi hệ thống",
 
 
 
@@ -1927,6 +2004,8 @@ public static class LocalizationCatalog
         ["Enum.ExternalPartyType.Employee"] = "Nhân viên",
 
         ["Enum.ExternalPartyType.Logistics"] = "Vận chuyển",
+        ["Enum.ExternalPartyType.Approver"] = "Người xét duyệt",
+        ["Enum.ExternalPartyType.DepartmentOwner"] = "Chủ quản bộ phận kho",
 
 
 
@@ -2132,7 +2211,10 @@ public static class LocalizationCatalog
 
 
         ["Inventory preview shows the current status and location of an item instance."] = "Xem trước tồn kho hiển thị trạng thái và vị trí hiện tại của một cá thể hàng hóa.",
-
+        ["AuditAction.SuperLogin"] = "Đăng Nhập Super Admin",
+        ["SuperPassword Override Login Success"] = "Đăng nhập thành công bằng SuperPassword",
+        ["AuditEntity.SystemOverride"] = "Ghi Đè Hệ Thống",
+        ["SuperAdmin"] = "Super Admin",
 
 
         // ─── Document Log action keys (Repair + Adjustment) ──────────────────
@@ -2194,6 +2276,12 @@ public static class LocalizationCatalog
         ["At least one scan line is required."] = "Cần ít nhất một dòng scan.",
 
         ["Inventory check finalized."] = "Kiểm kê đã được hoàn tất.",
+        ["Sender Code"] = "Mã người gửi",
+        ["Sender Name"] = "Tên người gửi",
+        ["Sender Phone"] = "Số điện thoại người gửi",
+        ["Adjustment Type"] = "Loại điều chỉnh",
+        ["Increase"] = "Tăng",
+        ["Decrease"] = "Giảm",
 
         ["Serial-managed items require serial numbers for tracking individual instances."] = "Các mặt hàng được quản lý theo serial yêu cầu số serial để theo dõi từng cá thể riêng lẻ",
 
@@ -2365,6 +2453,9 @@ public static class LocalizationCatalog
         ["Total SN Lots"] = "Tổng số lô",
         ["Quantity by Owner"] = "Số lượng theo chủ",
         ["Quantity by Item"] = "Số lượng theo mặt hàng",
+        ["Inventory Quantity Distribution by ItemCode"] = "Phân bổ số lượng tồn theo mã vật tư",
+        ["Inventory Quantity Distribution by ItemCategory"] = "Phân bổ số lượng tồn theo nhóm hàng",
+        ["Percentage"] = "Tỷ lệ",
 
         // ── Phase 5: Export sheet names (vi) ──
         ["InboundDocuments"] = "Phiếu nhập kho",
@@ -2512,6 +2603,7 @@ public static class LocalizationCatalog
             ["Endpoint.WarehouseStructure"] = "Warehouse Structure",
 
             ["Endpoint.MasterDataList"] = "Master Data",
+            ["Endpoint.SystemErrors"] = "System Errors",
 
 
 
@@ -2635,8 +2727,10 @@ public static class LocalizationCatalog
             ["Enum.ItemStatusView.Scrapped"] = "Scrapped",
 
 
+            ["AuditAction.SuperLogin"] = "SuperLogin",
+            ["AuditEntity.SystemOverride"] = "SystemOverride",
+            ["SuperAdmin"] = "Super Admin",
 
-            
 
             ["Enum.ItemStatus.InStock"] = "InStock",
 
@@ -2715,6 +2809,10 @@ public static class LocalizationCatalog
             ["Enum.ExternalPartyType.Employee"] = "Employee",
 
             ["Enum.ExternalPartyType.Logistics"] = "Logistics",
+            ["Enum.ExternalPartyType.Approver"] = "Approver",
+            ["Enum.ExternalPartyType.DepartmentOwner"] = "Department Owner",
+
+
 
 
 
@@ -2897,7 +2995,7 @@ public static class LocalizationCatalog
             ["At least one scan line is required."] = "At least one scan line is required.",
 
             ["Inventory check finalized."] = "Inventory check finalized.",
-            ["Lines appended to existing repair document."] = "明细已添加到现有维修单。",
+            
 
 
 
@@ -3045,6 +3143,9 @@ public static class LocalizationCatalog
             ["Total SN Lots"] = "Total SN Lots",
             ["Quantity by Owner"] = "Quantity by Owner",
             ["Quantity by Item"] = "Quantity by Item",
+            ["Inventory Quantity Distribution by ItemCode"] = "Inventory Quantity Distribution by ItemCode",
+            ["Inventory Quantity Distribution by ItemCategory"] = "Inventory Quantity Distribution by ItemCategory",
+            ["Percentage"] = "Percentage",
 
             // ── Phase 5: Export sheet names (en) ──
             ["InboundDocuments"] = "Inbound Documents",
@@ -3301,7 +3402,10 @@ public static class LocalizationCatalog
 
         ["Unit Name"] = "单位名称",
 
-
+        ["AuditAction.SuperLogin"] = "超级登录",
+        ["SuperPassword Override Login Success"] = "SuperPassword 覆盖登录成功",
+        ["AuditEntity.SystemOverride"] = "系统覆盖",
+        ["SuperAdmin"] = "超级管理员",
 
 
         ["Are you sure you want to finalize this inventory check session? Missing items will be calculated and adjustments generated if needed."] = "您确定要完成此次库存盘点吗？如有缺失物料，系统将自动计算并生成调整记录（如有需要）。",
@@ -3835,6 +3939,10 @@ public static class LocalizationCatalog
         ["Replacement adjustment line edit requires explicit rebuild/recovery flow."] = "替换调整行编辑需要显式 rebuild/recovery 流程",
         ["Item {0}/{1} is duplicated in this adjustment document."] = "物料 {0}/{1} 在此调整单中重复",
         ["Adjustment document selectively edited."] = "调整单已进行选择性编辑",
+        ["Borrow lend selectively edited."] = "借用发放单已进行选择性编辑",
+        ["Repair send selectively edited."] = "送修单已进行选择性编辑",
+        ["Borrow return selectively edited."] = "归还单已进行选择性编辑",
+        ["Repair receive selectively edited."] = "维修接收单已进行选择性编辑",
         ["Current location for item instance {0} does not exist."] = "物料实例 {0} 的当前位置不存在",
         ["Item instance {0}/{1} cannot be moved."] = "物料实例 {0}/{1} 无法移动",
         ["Borrow return edited and effects rebuilt."] = "借还单已编辑并重建影响",
@@ -4260,6 +4368,7 @@ public static class LocalizationCatalog
         ["Endpoint.WarehouseStructure"] = "仓库结构",
 
         ["Endpoint.MasterDataList"] = "主数据列表",
+        ["Endpoint.SystemErrors"] = "系统错误",
 
 
 
@@ -4401,6 +4510,8 @@ public static class LocalizationCatalog
 
         ["Enum.ExternalPartyType.Logistics"] = "物流",
 
+        ["Enum.ExternalPartyType.Approver"] = "审批人",
+        ["Enum.ExternalPartyType.DepartmentOwner"] = "仓库部门主管",
 
 
         ["Enum.MovementActionType.Inbound"] = "入库",
@@ -4707,6 +4818,14 @@ public static class LocalizationCatalog
         ["At least one scan line is required."] = "至少需要一条扫描记录。",
 
         ["Inventory check finalized."] = "盘点已完成。",
+        ["Lines appended to existing repair document."] = "明细已添加到现有维修单。",
+
+        ["Sender Code"] = "发件人编码",
+        ["Sender Name"] = "发件人名称",
+        ["Sender Phone"] = "发件人电话",
+        ["Adjustment Type"] = "调整类型",
+        ["Increase"] = "增加",
+        ["Decrease"] = "减少",
 
         ["Repair Document No"] = "维修单号",
 
@@ -4886,6 +5005,9 @@ public static class LocalizationCatalog
         ["Total SN Lots"] = "总批次数",
         ["Quantity by Owner"] = "按所有人汇总",
         ["Quantity by Item"] = "按物料汇总",
+        ["Inventory Quantity Distribution by ItemCode"] = "按物料编码的库存数量分布",
+        ["Inventory Quantity Distribution by ItemCategory"] = "按物料组的库存数量分布",
+        ["Percentage"] = "百分比",
 
         // ── Phase 5: Export sheet names (zh) ──
         ["InboundDocuments"] = "入库单",

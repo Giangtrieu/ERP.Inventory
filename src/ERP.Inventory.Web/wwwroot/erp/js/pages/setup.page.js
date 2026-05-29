@@ -444,6 +444,175 @@ Router.register('system', async function(){
   await loadAuditLog();
 });
 
+Router.register('system-errors', async function(){
+  $('#app').html(UI.pageHeader(UI.t('Endpoint.SystemErrors'), 'Home / ' + UI.t('Endpoint.SystemErrors')) +
+    `<div class="card mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-3"><div class="form-section-title mb-0">${UI.t('Error Management')}</div><button class="btn btn-outline-secondary btn-sm" id="btnReloadErrors"><i class="bi bi-arrow-clockwise"></i></button></div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-5">${UI.input('Keyword','text','','errorKeyword')}</div>
+        <div class="col-md-4">${UI.select('Status','errorResolved',[{id:'',text:UI.t('All')},{id:'false',text:UI.t('Unresolved')},{id:'true',text:UI.t('Resolved')}])}</div>
+        <div class="col-md-3 d-flex align-items-end"><label class="form-label w-100"><span class="fw-semibold small"><span class="fw-semibold small"></span><button class="btn btn-primary w-100" id="btnReloadErrorsList">${UI.t('Load')}</button></label></div>
+      </div>
+      <div id="systemErrors">${UI.loading()}</div>
+    </div></div>`);
+
+  $('#btnReloadErrorsList, #btnReloadErrors').on('click', () => loadSystemErrors(1));
+  $('#app [name="errorKeyword"], #app [name="errorResolved"]').on('change input', UI.debounce(() => {
+    loadSystemErrors(1);
+  }, 300));
+  await loadSystemErrors(1);
+});
+
+async function loadSystemErrors(page = 1, pageSize = AppState.pageSize || 25){
+  const resolvedValue = $('#app [name="errorResolved"]').val();
+  const request = {
+    page,
+    pageSize,
+    keyword: $('#app [name="errorKeyword"]').val()?.trim() || null,
+    isResolved: resolvedValue === '' ? null : resolvedValue === 'true'
+  };
+
+  $('#systemErrors').html(UI.loading());
+  try {
+    const result = await UI.api('/SystemErrors/Search', { method: 'POST', data: request });
+    if (!result.success) {
+      $('#systemErrors').html(UI.empty(UI.resultError(result)));
+      return;
+    }
+
+    systemErrorRows = result.items || [];
+    const total = result.totalCount || 0;
+    const effectivePageSize = result.pageSize || pageSize || 25;
+    if (!systemErrorRows.length) {
+      $('#systemErrors').html(UI.empty('No data'));
+      return;
+    }
+
+    const totalPages = effectivePageSize === 0 ? 1 : Math.ceil(total / effectivePageSize);
+    const isAll = effectivePageSize === 0;
+    const from = isAll ? (total ? 1 : 0) : (page - 1) * effectivePageSize + 1;
+    const to = isAll ? total : Math.min(page * effectivePageSize, total);
+    const totalPageRows = (to - from) + 1;
+    const pagination = Pagination.render({
+      page,
+      pageSize: effectivePageSize,
+      total,
+      totalPages,
+      isAll,
+      selectId: 'systemErrorPageSizeSelect',
+      onChange: 'loadSystemErrors'
+    });
+
+    $('#systemErrors').html(`
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th class="px-3">${UI.t('Error Code')}</th>
+              <th>${UI.t('Time')}</th>
+              <th>${UI.t('Module')}</th>
+              <th>${UI.t('Request Path')}</th>
+              <th>${UI.t('User')}</th>
+              <th>${UI.t('Error message')}</th>
+              <th>${UI.t('Status')}</th>
+              <th>${UI.t('Actions')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${systemErrorRows.map(r => `
+              <tr>
+                <td class="px-3 fw-semibold">${UI.esc(r.errorCode)}</td>
+                <td>${UI.esc(UI.formatDate(r.createdAt))}</td>
+                <td>${UI.esc([r.module, r.action].filter(Boolean).join(' / ') || '-')}</td>
+                <td>${UI.esc([r.httpMethod, r.requestPath].filter(Boolean).join(' ') || '-')}</td>
+                <td>${UI.esc(r.userName || '-')}</td>
+                <td>${UI.esc(r.errorMessage || '-')}</td>
+                <td><span class="badge ${r.isResolved ? 'text-bg-success' : 'text-bg-danger'}">${UI.t(r.isResolved ? 'Resolved' : 'Unresolved')}</span></td>
+                <td>
+                  <div class="btn-group btn-group-sm">
+                    <button class="btn btn-light btn-system-error-detail" title="${UI.t('Detail')}" data-id="${UI.esc(r.id)}"><i class="bi bi-eye"></i></button>
+                    ${r.isResolved ? '' : `<button class="btn btn-outline-success btn-system-error-resolve" title="${UI.t('Mark resolved')}" data-id="${UI.esc(r.id)}"><i class="bi bi-check2-circle"></i></button>`}
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        <div class="server-footer">
+          <span>${UI.endpoint('SystemErrors')}: ${total} ${UI.t('rows')}</span>
+          <span>${UI.t('Page')} ${page} &middot; ${totalPageRows} ${UI.t('rows')}</span>
+        </div>
+      </div>
+      ${pagination}`);
+    Pagination.bindPageSize('systemErrorPageSizeSelect', loadSystemErrors);
+  } catch (err) {
+    $('#systemErrors').html(UI.empty(err.responseJSON ? UI.resultError(err.responseJSON) : 'Request failed.'));
+  }
+}
+
+async function openSystemErrorDetail(id){
+  const result = await UI.api(`/SystemErrors/${id}`, { method: 'POST', data: {} });
+  if (!result.success) {
+    UI.toast(UI.resultError(result));
+    return;
+  }
+
+  const row = result.data;
+  $('#drawer .fw-bold').first().text(`${UI.t('System Errors')} - ${row.errorCode}`);
+  $('#drawerBody').html(`
+    <div class="row g-2">
+      ${systemErrorField('Error Code', row.errorCode)}
+      ${systemErrorField('Time', UI.formatDate(row.createdAt))}
+      ${systemErrorField('Status', UI.t(row.isResolved ? 'Resolved' : 'Unresolved'))}
+      ${systemErrorField('Resolved by', row.resolvedBy || '-')}
+      ${systemErrorField('Module', [row.module, row.action].filter(Boolean).join(' / ') || '-')}
+      ${systemErrorField('User', row.userName || row.userId || '-')}
+      ${systemErrorField('Request Path', [row.httpMethod, row.requestPath].filter(Boolean).join(' ') || '-')}
+      ${systemErrorField('Client IP', row.clientIp || '-')}
+      ${systemErrorField('Browser', row.browser || '-', 12)}
+      ${systemErrorBlock('Error message', row.errorMessage)}
+      ${systemErrorBlock('Inner Exception', row.innerException)}
+      ${systemErrorBlock('Payload JSON', row.payloadJson)}
+      ${systemErrorBlock('Stack Trace', row.stackTrace)}
+      ${systemErrorBlock('Resolution notes', row.notes)}
+    </div>
+    ${row.isResolved ? '' : `<div class="mt-3">${UI.input('Resolution notes', 'text', '', 'systemErrorNotes')}<button class="btn btn-success w-100 mt-2" id="btnResolveSystemError" data-id="${UI.esc(row.id)}"><i class="bi bi-check2-circle me-2"></i>${UI.t('Mark resolved')}</button></div>`}`);
+  $('#drawer').addClass('open right-drawer-detail');
+  $('#btnPrintVoucher').toggleClass('d-none', true);
+}
+
+function systemErrorField(label, value, columns = 6){
+  return `<div class="col-md-${columns}"><div class="small text-muted">${UI.t(label)}</div><div class="fw-semibold text-break">${UI.esc(value || '-')}</div></div>`;
+}
+
+function systemErrorBlock(label, value){
+  return `<div class="col-12"><div class="small text-muted">${UI.t(label)}</div><pre class="border rounded bg-light p-2 small text-break" style="white-space: pre-wrap; max-height: 260px; overflow:auto;">${UI.esc(value || '-')}</pre></div>`;
+}
+
+$(document).on('click', '.btn-system-error-detail', function(){
+  openSystemErrorDetail($(this).data('id'));
+});
+
+$(document).on('click', '.btn-system-error-resolve', function(){
+  const id = $(this).data('id');
+  UI.confirm('Mark resolved', 'Mark this system error as resolved?', `<div>ID: <b>${UI.esc(id)}</b></div>`, async function(){
+    const result = await UI.api(`/SystemErrors/${id}/Resolve`, { method: 'POST', data: { notes: '' } });
+    UI.toast(result.success ? UI.t('Saved') : UI.resultError(result));
+    if (result.success) await loadSystemErrors(1);
+  }, 'Mark resolved');
+});
+
+$(document).on('click', '#btnResolveSystemError', async function(){
+  const id = $(this).data('id');
+  const notes = $('#drawerBody [name="systemErrorNotes"]').val() || '';
+  const result = await UI.api(`/SystemErrors/${id}/Resolve`, { method: 'POST', data: { notes } });
+  UI.toast(result.success ? UI.t('Saved') : UI.resultError(result));
+  if (result.success) {
+    $('#drawer').removeClass('open right-drawer-detail');
+    await loadSystemErrors(1);
+  }
+});
+
 async function loadUsers(){
   systemUsers = await UI.api('/Management/Users');
   if(!systemUsers.length){ $('#systemUsers').html(UI.empty('No data')); return; }

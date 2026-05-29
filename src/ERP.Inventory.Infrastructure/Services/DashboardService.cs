@@ -253,9 +253,7 @@ public sealed class DashboardService : IDashboardService
 
     public async Task<QuantitySummaryDto> GetQuantitySummaryAsync(int? warehouseId, CurrentUserContext user, CancellationToken cancellationToken = default)
     {
-        // Scope balance query by warehouse + user permissions
         var query = _db.QuantityStockBalances.AsNoTracking()
-            .Include(x => x.Item)
             .Where(x => x.Quantity > 0);
 
         if (warehouseId.HasValue)
@@ -269,62 +267,83 @@ public sealed class DashboardService : IDashboardService
             query = query.Where(x => user.WarehouseIds.Contains(x.WarehouseId));
         }
 
-        // Aggregate in one query
-        var rows = await query
-            .Select(x => new
-            {
-                x.SnCode,
-                x.Quantity,
-                ItemCode = x.Item != null ? x.Item.ItemCode : string.Empty,
-                // Join to ItemInstance to get OwnerName
-                OwnerName = _db.ItemInstances
-                    .Where(i => i.ItemId == x.ItemId &&
-                                i.SerialNumber == x.SnCode &&
-                                i.TrackingType == ItemTrackingType.QuantityOnly)
-                    .Select(i => i.OwnerName)
-                    .FirstOrDefault()
-            })
-            .ToArrayAsync(cancellationToken);
-
-        if (!rows.Any())
+        var totalQty = await query.SumAsync(x => (decimal?)x.Quantity, cancellationToken) ?? 0;
+        if (totalQty <= 0)
         {
             return new QuantitySummaryDto();
         }
 
-        var totalQty      = rows.Sum(x => x.Quantity);
-        var activeSnCount = rows.Select(x => x.SnCode).Distinct().Count();
-        var totalSnCount  = activeSnCount; // all rows here already have Quantity > 0
-        var ownerCount    = rows.Where(x => !string.IsNullOrWhiteSpace(x.OwnerName))
-                               .Select(x => x.OwnerName!)
-                               .Distinct(StringComparer.OrdinalIgnoreCase)
-                               .Count();
+        var activeSnCount = await query
+            .Select(x => new { x.ItemId, x.SnCode })
+            .Distinct()
+            .CountAsync(cancellationToken);
 
-        // Chart: Qty by Owner (top 10)
-        var byOwner = rows
-            .GroupBy(x => string.IsNullOrWhiteSpace(x.OwnerName) ? "(No Owner)" : x.OwnerName!,
-                     StringComparer.OrdinalIgnoreCase)
-            .Select(g => new ChartPointDto { Key = g.Key, Label = g.Key, Value = g.Sum(x => x.Quantity) })
+        var ownerRows = await query
+            .GroupJoin(
+                _db.ItemInstances.AsNoTracking().Where(i => i.TrackingType == ItemTrackingType.QuantityOnly),
+                balance => new { balance.ItemId, SerialNumber = balance.SnCode },
+                instance => new { instance.ItemId, SerialNumber = instance.SerialNumber ?? string.Empty },
+                (balance, instances) => new
+                {
+                    balance.Quantity,
+                    OwnerName = instances.Select(i => i.OwnerName).FirstOrDefault()
+                })
+            .GroupBy(x => x.OwnerName == null || x.OwnerName == string.Empty ? "TE" : x.OwnerName)
+            .Select(g => new { Label = g.Key, Value = g.Sum(x => x.Quantity) })
             .OrderByDescending(x => x.Value)
             .Take(10)
+            .ToArrayAsync(cancellationToken);
+
+        var itemRows = await query
+            .GroupBy(x => x.Item != null ? x.Item.ItemCode : "Unknown")
+            .Select(g => new { Label = g.Key, Value = g.Sum(x => x.Quantity) })
+            .OrderByDescending(x => x.Value)
+            .ToArrayAsync(cancellationToken);
+
+        var categoryRows = await query
+            .GroupBy(x => x.Item != null && x.Item.Category != null
+                ? x.Item.Category.CategoryCode + " - " + x.Item.Category.Name
+                : "Unknown")
+            .Select(g => new { Label = g.Key, Value = g.Sum(x => x.Quantity) })
+            .OrderByDescending(x => x.Value)
+            .ToArrayAsync(cancellationToken);
+
+        var byOwner = ownerRows
+            .Select(x => ToQuantityChartPoint(x.Label, x.Value, totalQty))
             .ToArray();
-
-        // Chart: Qty by Item (top 10)
-        var byItem = rows
-            .GroupBy(x => string.IsNullOrWhiteSpace(x.ItemCode) ? "Unknown" : x.ItemCode,
-                     StringComparer.OrdinalIgnoreCase)
-            .Select(g => new ChartPointDto { Key = g.Key, Label = g.Key, Value = g.Sum(x => x.Quantity) })
-            .OrderByDescending(x => x.Value)
+        var byItem = itemRows
             .Take(10)
+            .Select(x => ToQuantityChartPoint(x.Label, x.Value, totalQty))
+            .ToArray();
+        var quantityByItemCode = itemRows
+            .Select(x => ToQuantityChartPoint(x.Label, x.Value, totalQty))
+            .ToArray();
+        var quantityByItemCategory = categoryRows
+            .Select(x => ToQuantityChartPoint(x.Label, x.Value, totalQty))
             .ToArray();
 
         return new QuantitySummaryDto
         {
-            TotalSnCount  = totalSnCount,
+            TotalSnCount  = activeSnCount,
             TotalQuantity = totalQty,
             ActiveSnCount = activeSnCount,
-            OwnerCount    = ownerCount,
+            OwnerCount    = ownerRows.Length,
             ByOwner       = byOwner,
-            ByItem        = byItem
+            ByItem        = byItem,
+            QuantityByItemCode = quantityByItemCode,
+            QuantityByItemCategory = quantityByItemCategory
+        };
+    }
+
+    private static ChartPointDto ToQuantityChartPoint(string? label, decimal value, decimal total)
+    {
+        var resolvedLabel = string.IsNullOrWhiteSpace(label) ? "Unknown" : label;
+        return new ChartPointDto
+        {
+            Key = resolvedLabel,
+            Label = resolvedLabel,
+            Value = value,
+            Percentage = total == 0 ? 0 : Math.Round(value / total * 100, 2)
         };
     }
 

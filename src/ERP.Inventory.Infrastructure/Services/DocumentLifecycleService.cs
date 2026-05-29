@@ -29,6 +29,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
     private readonly IQuantityInventoryService _quantityService;
     private readonly AdjustmentService _adjustmentService;
     private readonly IDocumentRollbackService _rollbackService;
+    private readonly ILogErrorSystemService _errorLog;
 
     public DocumentLifecycleService(
         InventoryDbContext db,
@@ -39,7 +40,8 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         IBorrowService borrowService,
         IQuantityInventoryService quantityService,
         AdjustmentService adjustmentService,
-        IDocumentRollbackService rollbackService)
+        IDocumentRollbackService rollbackService,
+        ILogErrorSystemService errorLog)
     {
         _db = db;
         _clock = clock;
@@ -50,6 +52,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         _quantityService = quantityService;
         _adjustmentService = adjustmentService;
         _rollbackService = rollbackService;
+        _errorLog = errorLog;
     }
 
     public async Task<ServiceResult<DocumentMutationResultDto>> DeleteAsync(string type, int id, CurrentUserContext user, CancellationToken cancellationToken = default)
@@ -112,7 +115,13 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         catch (Exception ex)
         {
             await tx.RollbackAsync(cancellationToken);
-            return ServiceResult<DocumentMutationResultDto>.Fail(ex.Message);
+            var log = await _errorLog.LogAsync(ex, new LogErrorContext(
+                Module: nameof(DocumentLifecycleService),
+                Action: $"Edit:{normalizedType}",
+                PayloadJson: payload.GetRawText(),
+                UserId: user.UserId,
+                UserName: user.UserName), cancellationToken);
+            return ServiceResult<DocumentMutationResultDto>.Fail(SystemErrorMessage(user.LanguageCode, log.ErrorCode));
         }
     }
 
@@ -542,9 +551,26 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         var incoming = await ResolveLineInstancesAsync(request.Lines.Select(x => (x.ItemCode, x.SerialNumber)), cancellationToken);
         if (!incoming.Success) return ServiceResult<DocumentMutationResultDto>.Fail(incoming.Errors);
         var incomingByInstance = incoming.Data!.Zip(request.Lines, (i, l) => new { Instance = i, Line = l }).ToDictionary(x => x.Instance.Id);
+        var incomingTargetBins = new Dictionary<int, int?>();
+        foreach (var incomingLine in incomingByInstance.Values)
+        {
+            if (string.IsNullOrWhiteSpace(incomingLine.Line.TargetBinCode))
+            {
+                incomingTargetBins[incomingLine.Instance.Id] = null;
+                continue;
+            }
+
+            var bin = await _db.BinLocations.AsNoTracking().FirstOrDefaultAsync(x => x.BinCode == incomingLine.Line.TargetBinCode.Trim() && x.IsActive, cancellationToken);
+            if (bin == null) return ServiceResult<DocumentMutationResultDto>.Fail($"Target bin {incomingLine.Line.TargetBinCode} not found.");
+            incomingTargetBins[incomingLine.Instance.Id] = bin.Id;
+        }
+
         var returnedByInstance = document.Lines.Where(x => x.IsReturned).ToDictionary(x => x.ItemInstanceId);
         var affectedIds = returnedByInstance
-            .Where(x => !incomingByInstance.ContainsKey(x.Key) || incomingByInstance[x.Key].Line.Condition != x.Value.ReturnCondition || !Same(incomingByInstance[x.Key].Line.Note, x.Value.Note))
+            .Where(x => !incomingByInstance.ContainsKey(x.Key) ||
+                        incomingByInstance[x.Key].Line.Condition != x.Value.ReturnCondition ||
+                        incomingTargetBins.GetValueOrDefault(x.Key) != x.Value.TargetBinLocationId ||
+                        !Same(incomingByInstance[x.Key].Line.Note, x.Value.Note))
             .Select(x => x.Key)
             .Concat(incomingByInstance.Keys.Where(x => !returnedByInstance.ContainsKey(x)))
             .Distinct()
@@ -577,9 +603,36 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         var incoming = await ResolveLineInstancesAsync(request.Lines.Select(x => (x.ItemCode, x.SerialNumber)), cancellationToken);
         if (!incoming.Success) return ServiceResult<DocumentMutationResultDto>.Fail(incoming.Errors);
         var incomingByInstance = incoming.Data!.Zip(request.Lines, (i, l) => new { Instance = i, Line = l }).ToDictionary(x => x.Instance.Id);
+        var incomingTargetBins = new Dictionary<int, int>();
+        foreach (var incomingLine in incomingByInstance.Values)
+        {
+            if (string.IsNullOrWhiteSpace(incomingLine.Line.TargetBinCode))
+            {
+                return ServiceResult<DocumentMutationResultDto>.Fail("Target bin is required for repaired item.");
+            }
+
+            var binCode = incomingLine.Line.TargetBinCode.Trim();
+            var bin = await _db.BinLocations.AsNoTracking().FirstOrDefaultAsync(x => x.BinCode == binCode && x.IsActive, cancellationToken);
+            if (bin == null) return ServiceResult<DocumentMutationResultDto>.Fail($"Target bin {incomingLine.Line.TargetBinCode} not found.");
+            incomingTargetBins[incomingLine.Instance.Id] = bin.Id;
+        }
+
+        var receiveLogs = await _db.RepairDocumentLogs.AsNoTracking()
+            .Where(x => x.RepairDocumentId == id && x.Action == "RepairReceive")
+            .OrderByDescending(x => x.Timestamp)
+            .ThenByDescending(x => x.Id)
+            .ToListAsync(cancellationToken);
+        var latestReceiveStatusByInstance = receiveLogs
+            .GroupBy(x => x.ItemInstanceId)
+            .ToDictionary(x => x.Key, x => x.First().NewStatus);
+
         var returnedByInstance = document.Lines.Where(x => x.IsReturned).ToDictionary(x => x.ItemInstanceId);
         var affectedIds = returnedByInstance
-            .Where(x => !incomingByInstance.ContainsKey(x.Key) || !Same(incomingByInstance[x.Key].Line.Note, x.Value.RepairResultNote))
+            .Where(x => !incomingByInstance.ContainsKey(x.Key) ||
+                        incomingTargetBins.GetValueOrDefault(x.Key) != x.Value.TargetBinLocationId ||
+                        !Same(incomingByInstance[x.Key].Line.NewSerialNumber, x.Value.NewSerialNumber) ||
+                        !Same(incomingByInstance[x.Key].Line.Note, x.Value.RepairResultNote) ||
+                        !Same(StatusAfterRepairReceive(incomingByInstance[x.Key].Line.Result).ToString(), latestReceiveStatusByInstance.GetValueOrDefault(x.Key)))
             .Select(x => x.Key)
             .Concat(incomingByInstance.Keys.Where(x => !returnedByInstance.ContainsKey(x)))
             .Distinct()
@@ -698,6 +751,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             }
         }
 
+        var lifecycleBatchId = Guid.NewGuid();
         foreach (var item in incoming.Where(x => x.Existing == null || x.SideEffectsChanged))
         {
             var instance = item.Existing?.ItemInstanceId == null
@@ -749,7 +803,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
                 CreatedAt = request.DocumentDate,
                 CreatedBy = user.UserName
             });
-            AddInboundSideEffects(document, lineEntity, instance, item.Bin, request, user);
+            AddInboundSideEffects(document, lineEntity, instance, item.Bin, request, user, lifecycleBatchId);
         }
 
         var itemIds = document.Lines.Select(x => x.ItemId).Concat(incoming.Select(x => x.Item.Id)).Distinct().ToArray();
@@ -1206,11 +1260,11 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         return Edited("adjustment", document.Id, document.DocumentNo);
     }
 
-    private void AddInboundSideEffects(InboundDocument document, InboundDocumentLine line, ItemInstance instance, BinLocation bin, InboundRequest request, CurrentUserContext user)
+    private void AddInboundSideEffects(InboundDocument document, InboundDocumentLine line, ItemInstance instance, BinLocation bin, InboundRequest request, CurrentUserContext user, Guid? lifecycleBatchId)
     {
-        _db.ItemMovementHistories.Add(new ItemMovementHistory { ItemInstanceId = instance.Id, ActionType = MovementActionType.Inbound, FromLocationType = null, FromLocationId = null, FromLocationDisplay = "Supplier", ToLocationType = LocationType.BinLocation, ToLocationId = bin.Id, ToLocationDisplay = bin.FullPath, OldStatus = ItemStatus.Reserved, NewStatus = instance.Status, DocumentType = nameof(InboundDocument), DocumentId = document.Id, DocumentNo = document.DocumentNo, Note = line.Note, PerformedAt = request.DocumentDate, PerformedBy = user.UserName });
-        _db.InventoryTransactions.Add(new InventoryTransaction { TransactionType = InventoryTransactionType.Inbound, ItemId = instance.ItemId, ItemInstanceId = instance.Id, WarehouseId = document.WarehouseId, BinLocationId = bin.Id, QuantityDelta = 1, StatusAfter = instance.Status, DocumentType = nameof(InboundDocument), DocumentId = document.Id, DocumentNo = document.DocumentNo, PostedAt = request.DocumentDate, PostedBy = user.UserName });
-        _db.InboundDocumentLogs.Add(new InboundDocumentLog { InboundDocumentId = document.Id, ItemInstanceId = instance.Id, Action = "InboundReceive", OldStatus = "Reserved", NewStatus = instance.Status.ToString(), Receiver = $"{request.ReceiverCode}-{request.ReceiverName}", ReceiverPhone = request.ReceiverPhone, ReceiverDepartment = request.ReceiverDepartment, DepartmentOwner = request.DepartmentOwner, OldLocationText = "Supplier", NewLocationText = bin.FullPath, PerformedBy = user.UserName, Timestamp = request.DocumentDate, Note = line.Note });
+        _db.ItemMovementHistories.Add(new ItemMovementHistory { ItemInstanceId = instance.Id, ActionType = MovementActionType.Inbound, FromLocationType = null, FromLocationId = null, FromLocationDisplay = "Supplier", ToLocationType = LocationType.BinLocation, ToLocationId = bin.Id, ToLocationDisplay = bin.FullPath, OldStatus = ItemStatus.Reserved, NewStatus = instance.Status, DocumentType = nameof(InboundDocument), DocumentId = document.Id, DocumentNo = document.DocumentNo, LifecycleBatchId = lifecycleBatchId, Note = line.Note, PerformedAt = request.DocumentDate, PerformedBy = user.UserName });
+        _db.InventoryTransactions.Add(new InventoryTransaction { TransactionType = InventoryTransactionType.Inbound, ItemId = instance.ItemId, ItemInstanceId = instance.Id, WarehouseId = document.WarehouseId, BinLocationId = bin.Id, QuantityDelta = 1, StatusAfter = instance.Status, DocumentType = nameof(InboundDocument), DocumentId = document.Id, DocumentNo = document.DocumentNo, LifecycleBatchId = lifecycleBatchId, PostedAt = request.DocumentDate, PostedBy = user.UserName });
+        _db.InboundDocumentLogs.Add(new InboundDocumentLog { InboundDocumentId = document.Id, ItemInstanceId = instance.Id, Action = "InboundReceive", LifecycleBatchId = lifecycleBatchId, OldStatus = "Reserved", NewStatus = instance.Status.ToString(), Receiver = $"{request.ReceiverCode}-{request.ReceiverName}", ReceiverPhone = request.ReceiverPhone, ReceiverDepartment = request.ReceiverDepartment, DepartmentOwner = request.DepartmentOwner, OldLocationText = "Supplier", NewLocationText = bin.FullPath, PerformedBy = user.UserName, Timestamp = request.DocumentDate, Note = line.Note });
     }
 
 
@@ -1431,22 +1485,41 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             return ServiceResult<DocumentMutationResultDto>.Fail("Inbound document not found.");
         }
 
-        var instanceIds = document.Lines.Where(x => x.ItemInstanceId.HasValue).Select(x => x.ItemInstanceId!.Value).Distinct().ToArray();
-        var laterDeps = await FindLaterHistoryDependenciesAsync(nameof(InboundDocument), id, instanceIds, cancellationToken);
+        var latestLog = await _db.InboundDocumentLogs
+            .Where(x => x.InboundDocumentId == id)
+            .OrderByDescending(x => x.Timestamp)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (latestLog == null)
+        {
+            return ServiceResult<DocumentMutationResultDto>.Fail("Inbound document has no receive effects to delete.");
+        }
+
+        var latestBatchId = latestLog.LifecycleBatchId;
+        var logsToRevert = await _db.InboundDocumentLogs
+            .Where(x => x.InboundDocumentId == id &&
+                        x.Action == "InboundReceive" &&
+                        (latestBatchId.HasValue
+                            ? x.LifecycleBatchId == latestBatchId
+                            : x.Timestamp == latestLog.Timestamp && x.PerformedBy == latestLog.PerformedBy))
+            .ToArrayAsync(cancellationToken);
+        var instanceIds = logsToRevert.Select(x => x.ItemInstanceId).Distinct().ToArray();
+        var laterDeps = await FindLaterPhaseDependenciesAsync(nameof(InboundDocument), id, MovementActionType.Inbound, instanceIds, cancellationToken);
         if (laterDeps.Count > 0)
         {
             return ServiceResult<DocumentMutationResultDto>.Fail(laterDeps);
         }
 
-        var itemIds = document.Lines.Select(x => x.ItemId).Distinct().ToArray();
-        _db.InboundDocumentLogs.RemoveRange(_db.InboundDocumentLogs.Where(x => x.InboundDocumentId == id));
-        _db.InventoryTransactions.RemoveRange(_db.InventoryTransactions.Where(x => x.DocumentType == nameof(InboundDocument) && x.DocumentId == id));
-        _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x => x.DocumentType == nameof(InboundDocument) && x.DocumentId == id));
+        var itemIds = document.Lines.Where(x => x.ItemInstanceId.HasValue && instanceIds.Contains(x.ItemInstanceId.Value)).Select(x => x.ItemId).Distinct().ToArray();
+        _db.InboundDocumentLogs.RemoveRange(logsToRevert);
+        await RemoveLatestMovementHistoriesAsync(nameof(InboundDocument), id, MovementActionType.Inbound, instanceIds, latestBatchId, cancellationToken);
+        await RemoveLatestInventoryTransactionsAsync(nameof(InboundDocument), id, InventoryTransactionType.Inbound, instanceIds, latestBatchId, cancellationToken);
         _db.CurrentItemLocations.RemoveRange(_db.CurrentItemLocations.Where(x => instanceIds.Contains(x.ItemInstanceId)));
-        _db.InboundDocumentLines.RemoveRange(document.Lines);
+        _db.InboundDocumentLines.RemoveRange(document.Lines.Where(x => x.ItemInstanceId.HasValue && instanceIds.Contains(x.ItemInstanceId.Value)));
         _db.ItemInstances.RemoveRange(_db.ItemInstances.Where(x => instanceIds.Contains(x.Id)));
-        _db.InboundDocuments.Remove(document);
-        await CleanupPostSideEffectsAsync(nameof(InboundDocument), id, document.DocumentNo, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
+        await RemoveInboundDocumentIfEmptyAsync(document, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
         await RecalculateLocationTrackedStockAsync(itemIds, cancellationToken);
         return Deleted("inbound", document.Id, document.DocumentNo);
     }
@@ -1530,11 +1603,13 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             return ServiceResult<DocumentMutationResultDto>.Fail("Latest borrow lifecycle action is a return. Delete borrow return first.");
         }
 
+        var latestBatchId = latestLog.LifecycleBatchId;
         var logsToRevert = await _db.BorrowDocumentLogs
             .Where(x => x.BorrowDocumentId == id &&
                         x.Action == "BorrowIssue" &&
-                        x.Timestamp == latestLog.Timestamp &&
-                        x.PerformedBy == latestLog.PerformedBy)
+                        (latestBatchId.HasValue
+                            ? x.LifecycleBatchId == latestBatchId
+                            : x.Timestamp == latestLog.Timestamp && x.PerformedBy == latestLog.PerformedBy))
             .ToArrayAsync(cancellationToken);
         var instanceIds = logsToRevert.Select(x => x.ItemInstanceId).Distinct().ToArray();
         var laterDeps = await FindLaterPhaseDependenciesAsync(nameof(BorrowDocument), id, MovementActionType.Lend, instanceIds, cancellationToken);
@@ -1545,19 +1620,8 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
 
         var itemIds = await _db.ItemInstances.Where(x => instanceIds.Contains(x.Id)).Select(x => x.ItemId).Distinct().ToArrayAsync(cancellationToken);
         _db.BorrowDocumentLogs.RemoveRange(logsToRevert);
-        _db.InventoryTransactions.RemoveRange(_db.InventoryTransactions.Where(x =>
-            x.DocumentType == nameof(BorrowDocument) &&
-            x.DocumentId == id &&
-            x.TransactionType == InventoryTransactionType.BorrowLend &&
-            x.PostedAt == latestLog.Timestamp &&
-            x.ItemInstanceId.HasValue &&
-            instanceIds.Contains(x.ItemInstanceId.Value)));
-        _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x =>
-            x.DocumentType == nameof(BorrowDocument) &&
-            x.DocumentId == id &&
-            x.ActionType == MovementActionType.Lend &&
-            x.PerformedAt == latestLog.Timestamp &&
-            instanceIds.Contains(x.ItemInstanceId)));
+        await RemoveLatestMovementHistoriesAsync(nameof(BorrowDocument), id, MovementActionType.Lend, instanceIds, latestBatchId, cancellationToken);
+        await RemoveLatestInventoryTransactionsAsync(nameof(BorrowDocument), id, InventoryTransactionType.BorrowLend, instanceIds, latestBatchId, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
         await ReplayBorrowDocumentLinesAsync(document, user, cancellationToken);
         await RemoveBorrowDocumentIfEmptyAsync(document, cancellationToken);
@@ -1588,11 +1652,13 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             return ServiceResult<DocumentMutationResultDto>.Fail("Borrow document has no latest return effects to delete.");
         }
 
+        var latestBatchId = latestLog.LifecycleBatchId;
         var logsToRevert = await _db.BorrowDocumentLogs
             .Where(x => x.BorrowDocumentId == id &&
                         x.Action == "BorrowReturn" &&
-                        x.Timestamp == latestLog.Timestamp &&
-                        x.PerformedBy == latestLog.PerformedBy)
+                        (latestBatchId.HasValue
+                            ? x.LifecycleBatchId == latestBatchId
+                            : x.Timestamp == latestLog.Timestamp && x.PerformedBy == latestLog.PerformedBy))
             .ToArrayAsync(cancellationToken);
         var instanceIds = logsToRevert.Select(x => x.ItemInstanceId).Distinct().ToArray();
         var laterDeps = await FindLaterPhaseDependenciesAsync(nameof(BorrowDocument), id, MovementActionType.ReturnBorrowed, instanceIds, cancellationToken);
@@ -1603,19 +1669,8 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
 
         var itemIds = await _db.ItemInstances.Where(x => instanceIds.Contains(x.Id)).Select(x => x.ItemId).Distinct().ToArrayAsync(cancellationToken);
         _db.BorrowDocumentLogs.RemoveRange(logsToRevert);
-        _db.InventoryTransactions.RemoveRange(_db.InventoryTransactions.Where(x =>
-            x.DocumentType == nameof(BorrowDocument) &&
-            x.DocumentId == id &&
-            x.TransactionType == InventoryTransactionType.BorrowReturn &&
-            x.PostedAt == latestLog.Timestamp &&
-            x.ItemInstanceId.HasValue &&
-            instanceIds.Contains(x.ItemInstanceId.Value)));
-        _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x =>
-            x.DocumentType == nameof(BorrowDocument) &&
-            x.DocumentId == id &&
-            x.ActionType == MovementActionType.ReturnBorrowed &&
-            x.PerformedAt == latestLog.Timestamp &&
-            instanceIds.Contains(x.ItemInstanceId)));
+        await RemoveLatestMovementHistoriesAsync(nameof(BorrowDocument), id, MovementActionType.ReturnBorrowed, instanceIds, latestBatchId, cancellationToken);
+        await RemoveLatestInventoryTransactionsAsync(nameof(BorrowDocument), id, InventoryTransactionType.BorrowReturn, instanceIds, latestBatchId, cancellationToken);
 
         await _db.SaveChangesAsync(cancellationToken);
         await ReplayBorrowDocumentLinesAsync(document, user, cancellationToken);
@@ -1746,11 +1801,13 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             return ServiceResult<DocumentMutationResultDto>.Fail("Latest repair lifecycle action is a receive. Delete repair receive first.");
         }
 
+        var latestBatchId = latestLog.LifecycleBatchId;
         var logsToRevert = await _db.RepairDocumentLogs
             .Where(x => x.RepairDocumentId == id &&
                         x.Action == "RepairSend" &&
-                        x.Timestamp == latestLog.Timestamp &&
-                        x.PerformedBy == latestLog.PerformedBy)
+                        (latestBatchId.HasValue
+                            ? x.LifecycleBatchId == latestBatchId
+                            : x.Timestamp == latestLog.Timestamp && x.PerformedBy == latestLog.PerformedBy))
             .ToArrayAsync(cancellationToken);
         var instanceIds = logsToRevert.Select(x => x.ItemInstanceId).Distinct().ToArray();
         var laterDeps = await FindLaterPhaseDependenciesAsync(nameof(RepairDocument), id, MovementActionType.SendToRepair, instanceIds, cancellationToken);
@@ -1761,19 +1818,8 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
 
         var itemIds = await _db.ItemInstances.Where(x => instanceIds.Contains(x.Id)).Select(x => x.ItemId).Distinct().ToArrayAsync(cancellationToken);
         _db.RepairDocumentLogs.RemoveRange(logsToRevert);
-        _db.InventoryTransactions.RemoveRange(_db.InventoryTransactions.Where(x =>
-            x.DocumentType == nameof(RepairDocument) &&
-            x.DocumentId == id &&
-            x.TransactionType == InventoryTransactionType.RepairSend &&
-            x.PostedAt == latestLog.Timestamp &&
-            x.ItemInstanceId.HasValue &&
-            instanceIds.Contains(x.ItemInstanceId.Value)));
-        _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x =>
-            x.DocumentType == nameof(RepairDocument) &&
-            x.DocumentId == id &&
-            x.ActionType == MovementActionType.SendToRepair &&
-            x.PerformedAt == latestLog.Timestamp &&
-            instanceIds.Contains(x.ItemInstanceId)));
+        await RemoveLatestMovementHistoriesAsync(nameof(RepairDocument), id, MovementActionType.SendToRepair, instanceIds, latestBatchId, cancellationToken);
+        await RemoveLatestInventoryTransactionsAsync(nameof(RepairDocument), id, InventoryTransactionType.RepairSend, instanceIds, latestBatchId, cancellationToken);
 
         await _db.SaveChangesAsync(cancellationToken);
         await ReplayRepairDocumentLinesAsync(document, user, cancellationToken);
@@ -1836,11 +1882,13 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             return ServiceResult<DocumentMutationResultDto>.Fail("Repair document has no latest receive effects to delete.");
         }
 
+        var latestBatchId = latestLog.LifecycleBatchId;
         var logsToRevert = await _db.RepairDocumentLogs
             .Where(x => x.RepairDocumentId == id &&
                         x.Action == "RepairReceive" &&
-                        x.Timestamp == latestLog.Timestamp &&
-                        x.PerformedBy == latestLog.PerformedBy)
+                        (latestBatchId.HasValue
+                            ? x.LifecycleBatchId == latestBatchId
+                            : x.Timestamp == latestLog.Timestamp && x.PerformedBy == latestLog.PerformedBy))
             .ToArrayAsync(cancellationToken);
         var instanceIds = logsToRevert.Select(x => x.ItemInstanceId).Distinct().ToArray();
         var laterDeps = await FindLaterPhaseDependenciesAsync(nameof(RepairDocument), id, MovementActionType.ReceiveFromRepair, instanceIds, cancellationToken);
@@ -1851,19 +1899,8 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
 
         var itemIds = await _db.ItemInstances.Where(x => instanceIds.Contains(x.Id)).Select(x => x.ItemId).Distinct().ToArrayAsync(cancellationToken);
         _db.RepairDocumentLogs.RemoveRange(logsToRevert);
-        _db.InventoryTransactions.RemoveRange(_db.InventoryTransactions.Where(x =>
-            x.DocumentType == nameof(RepairDocument) &&
-            x.DocumentId == id &&
-            x.TransactionType == InventoryTransactionType.RepairReceive &&
-            x.PostedAt == latestLog.Timestamp &&
-            x.ItemInstanceId.HasValue &&
-            instanceIds.Contains(x.ItemInstanceId.Value)));
-        _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x =>
-            x.DocumentType == nameof(RepairDocument) &&
-            x.DocumentId == id &&
-            x.ActionType == MovementActionType.ReceiveFromRepair &&
-            x.PerformedAt == latestLog.Timestamp &&
-            instanceIds.Contains(x.ItemInstanceId)));
+        await RemoveLatestMovementHistoriesAsync(nameof(RepairDocument), id, MovementActionType.ReceiveFromRepair, instanceIds, latestBatchId, cancellationToken);
+        await RemoveLatestInventoryTransactionsAsync(nameof(RepairDocument), id, InventoryTransactionType.RepairReceive, instanceIds, latestBatchId, cancellationToken);
 
         await _db.SaveChangesAsync(cancellationToken);
         await ReplayRepairDocumentLinesAsync(document, user, cancellationToken);
@@ -1915,6 +1952,103 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         await CleanupPostSideEffectsAsync(nameof(RepairDocument), id, document.DocumentNo, cancellationToken);
         await RecalculateLocationTrackedStockAsync(itemIds, cancellationToken);
         return Deleted("repair-receive", document.Id, document.DocumentNo);
+    }
+
+    private async Task RemoveLatestMovementHistoriesAsync(string documentType, int documentId, MovementActionType actionType, IReadOnlyCollection<int> instanceIds, Guid? lifecycleBatchId, CancellationToken cancellationToken)
+    {
+        if (lifecycleBatchId.HasValue)
+        {
+            _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x =>
+                x.DocumentType == documentType &&
+                x.DocumentId == documentId &&
+                x.ActionType == actionType &&
+                x.LifecycleBatchId == lifecycleBatchId &&
+                instanceIds.Contains(x.ItemInstanceId)));
+
+            foreach (var instanceId in instanceIds.Distinct())
+            {
+                var legacyRow = await _db.ItemMovementHistories
+                    .Where(x => x.DocumentType == documentType &&
+                                x.DocumentId == documentId &&
+                                x.ActionType == actionType &&
+                                x.ItemInstanceId == instanceId &&
+                                x.LifecycleBatchId == null)
+                    .OrderByDescending(x => x.PerformedAt)
+                    .ThenByDescending(x => x.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (legacyRow != null)
+                {
+                    _db.ItemMovementHistories.Remove(legacyRow);
+                }
+            }
+
+            return;
+        }
+
+        foreach (var instanceId in instanceIds.Distinct())
+        {
+            var row = await _db.ItemMovementHistories
+                .Where(x => x.DocumentType == documentType &&
+                            x.DocumentId == documentId &&
+                            x.ActionType == actionType &&
+                            x.ItemInstanceId == instanceId)
+                .OrderByDescending(x => x.PerformedAt)
+                .ThenByDescending(x => x.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (row != null)
+            {
+                _db.ItemMovementHistories.Remove(row);
+            }
+        }
+    }
+
+    private async Task RemoveLatestInventoryTransactionsAsync(string documentType, int documentId, InventoryTransactionType transactionType, IReadOnlyCollection<int> instanceIds, Guid? lifecycleBatchId, CancellationToken cancellationToken)
+    {
+        if (lifecycleBatchId.HasValue)
+        {
+            _db.InventoryTransactions.RemoveRange(_db.InventoryTransactions.Where(x =>
+                x.DocumentType == documentType &&
+                x.DocumentId == documentId &&
+                x.TransactionType == transactionType &&
+                x.LifecycleBatchId == lifecycleBatchId &&
+                x.ItemInstanceId.HasValue &&
+                instanceIds.Contains(x.ItemInstanceId.Value)));
+
+            foreach (var instanceId in instanceIds.Distinct())
+            {
+                var legacyRow = await _db.InventoryTransactions
+                    .Where(x => x.DocumentType == documentType &&
+                                x.DocumentId == documentId &&
+                                x.TransactionType == transactionType &&
+                                x.ItemInstanceId == instanceId &&
+                                x.LifecycleBatchId == null)
+                    .OrderByDescending(x => x.PostedAt)
+                    .ThenByDescending(x => x.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (legacyRow != null)
+                {
+                    _db.InventoryTransactions.Remove(legacyRow);
+                }
+            }
+
+            return;
+        }
+
+        foreach (var instanceId in instanceIds.Distinct())
+        {
+            var row = await _db.InventoryTransactions
+                .Where(x => x.DocumentType == documentType &&
+                            x.DocumentId == documentId &&
+                            x.TransactionType == transactionType &&
+                            x.ItemInstanceId == instanceId)
+                .OrderByDescending(x => x.PostedAt)
+                .ThenByDescending(x => x.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (row != null)
+            {
+                _db.InventoryTransactions.Remove(row);
+            }
+        }
     }
 
     private async Task ReplayBorrowDocumentLinesAsync(BorrowDocument document, CurrentUserContext user, CancellationToken cancellationToken)
@@ -1996,6 +2130,34 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         _db.BorrowDocuments.Remove(document);
     }
 
+    private async Task RemoveInboundDocumentIfEmptyAsync(InboundDocument document, CancellationToken cancellationToken)
+    {
+        var hasLogs = await _db.InboundDocumentLogs.AnyAsync(x => x.InboundDocumentId == document.Id, cancellationToken);
+        if (hasLogs)
+        {
+            return;
+        }
+
+        var lines = await _db.InboundDocumentLines.Where(x => x.InboundDocumentId == document.Id).ToListAsync(cancellationToken);
+        _db.InboundDocumentLines.RemoveRange(lines);
+        _db.InboundDocuments.Remove(document);
+        await CleanupPostSideEffectsAsync(nameof(InboundDocument), document.Id, document.DocumentNo, cancellationToken);
+    }
+
+    private async Task RemoveQuantityDocumentIfEmptyAsync(QuantityInventoryDocument document, CancellationToken cancellationToken)
+    {
+        var hasTransactions = await _db.QuantityInventoryTransactions.AnyAsync(x => x.DocumentId == document.Id, cancellationToken);
+        if (hasTransactions)
+        {
+            return;
+        }
+
+        var lines = await _db.QuantityInventoryDocumentLines.Where(x => x.QuantityInventoryDocumentId == document.Id).ToListAsync(cancellationToken);
+        _db.QuantityInventoryDocumentLines.RemoveRange(lines);
+        _db.QuantityInventoryDocuments.Remove(document);
+        await CleanupPostSideEffectsAsync(nameof(QuantityInventoryDocument), document.Id, document.DocumentNo, cancellationToken);
+    }
+
     private async Task RemoveRepairDocumentIfEmptyAsync(RepairDocument document, CancellationToken cancellationToken)
     {
         var hasLogs = await _db.RepairDocumentLogs.AnyAsync(x => x.RepairDocumentId == document.Id, cancellationToken);
@@ -2030,6 +2192,17 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         return BorrowReturnCondition.Normal;
     }
 
+    private static ItemStatus StatusAfterRepairReceive(RepairResult result)
+    {
+        return result switch
+        {
+            RepairResult.Success => ItemStatus.Normal,
+            RepairResult.Replaced => ItemStatus.Normal,
+            RepairResult.Failed => ItemStatus.Damaged,
+            _ => ItemStatus.Normal
+        };
+    }
+
     private async Task<ServiceResult<DocumentMutationResultDto>> DeleteQuantityAsync(int id, string type, CurrentUserContext user, CancellationToken cancellationToken)
     {
         var document = await _db.QuantityInventoryDocuments.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
@@ -2038,28 +2211,132 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             return ServiceResult<DocumentMutationResultDto>.Fail("Quantity inventory document not found.");
         }
 
-        var lineKeys = document.Lines.Select(x => new { x.ItemId, x.SnCode }).Distinct().ToArray();
-        var laterDeps = await GetQuantityDependencyReasonsAsync(id, lineKeys.Select(x => (x.ItemId, x.SnCode)), cancellationToken);
+        var expectedType = type switch
+        {
+            "quantity-receive" => QuantityInventoryDocumentType.Receive,
+            "quantity-issue" => QuantityInventoryDocumentType.Issue,
+            _ => QuantityInventoryDocumentType.Adjust
+        };
+
+        var latestTransaction = await _db.QuantityInventoryTransactions
+            .Where(x => x.DocumentId == id && x.TransactionType == expectedType)
+            .OrderByDescending(x => x.PostedAt)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (latestTransaction == null)
+        {
+            return ServiceResult<DocumentMutationResultDto>.Fail("Quantity inventory document has no latest posting effects to delete.");
+        }
+
+        var latestBatchId = latestTransaction.LifecycleBatchId;
+        var transactions = latestBatchId.HasValue
+            ? await _db.QuantityInventoryTransactions
+                .Where(x => x.DocumentId == id && x.TransactionType == expectedType && x.LifecycleBatchId == latestBatchId)
+                .ToListAsync(cancellationToken)
+            : await _db.QuantityInventoryTransactions
+                .Where(x => x.DocumentId == id &&
+                            x.TransactionType == expectedType &&
+                            x.PostedAt == latestTransaction.PostedAt &&
+                            x.PostedBy == latestTransaction.PostedBy)
+                .ToListAsync(cancellationToken);
+
+        var lineKeys = transactions.Select(x => new { x.ItemId, x.SnCode }).Distinct().ToArray();
+        var laterDeps = await GetQuantityDependencyReasonsAsync(id, lineKeys.Select(x => (x.ItemId, x.SnCode)), latestBatchId, expectedType, cancellationToken);
 
         if (laterDeps.Count > 0)
         {
             return ServiceResult<DocumentMutationResultDto>.Fail(laterDeps);
         }
 
-        _db.QuantityInventoryTransactions.RemoveRange(_db.QuantityInventoryTransactions.Where(x => x.DocumentId == id));
-        _db.QuantityInventoryDocumentLines.RemoveRange(document.Lines);
-        _db.QuantityInventoryDocuments.Remove(document);
-        await _db.SaveChangesAsync(cancellationToken);
-        await CleanupPostSideEffectsAsync(nameof(QuantityInventoryDocument), id, document.DocumentNo, cancellationToken);
-
-        await _db.SaveChangesAsync(cancellationToken);
-
-        foreach (var key in lineKeys)
+        foreach (var transaction in transactions)
         {
-            await RebuildQuantityInstanceAsync(document.WarehouseId, key.ItemId, key.SnCode, cancellationToken);
+            var balance = await _db.QuantityStockBalances.FirstOrDefaultAsync(x =>
+                x.WarehouseId == transaction.WarehouseId &&
+                x.ItemId == transaction.ItemId &&
+                x.SnCode == transaction.SnCode &&
+                x.Status == transaction.StatusAfter, cancellationToken);
+
+            if (balance != null)
+            {
+                balance.Quantity -= transaction.QuantityDelta;
+                balance.UpdatedAt = _clock.UtcNow;
+                balance.UpdatedBy = user.UserName;
+                if (balance.Quantity == 0)
+                {
+                    _db.QuantityStockBalances.Remove(balance);
+                }
+            }
+            else if (transaction.QuantityDelta < 0)
+            {
+                _db.QuantityStockBalances.Add(new QuantityStockBalance
+                {
+                    WarehouseId = transaction.WarehouseId,
+                    ItemId = transaction.ItemId,
+                    SnCode = transaction.SnCode,
+                    Status = transaction.StatusAfter,
+                    Quantity = -transaction.QuantityDelta,
+                    CreatedAt = _clock.UtcNow,
+                    CreatedBy = user.UserName
+                });
+            }
         }
 
+        _db.QuantityInventoryTransactions.RemoveRange(transactions);
+        if (latestBatchId.HasValue)
+        {
+            _db.QuantityInventoryDocumentLines.RemoveRange(document.Lines.Where(x => x.LifecycleBatchId == latestBatchId));
+        }
+        else
+        {
+            var keySet = lineKeys.Select(x => QuantityKey(x.ItemId, x.SnCode)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _db.QuantityInventoryDocumentLines.RemoveRange(document.Lines.Where(x => keySet.Contains(QuantityKey(x.ItemId, x.SnCode))));
+        }
+        await _db.SaveChangesAsync(cancellationToken);
+        await RemoveQuantityDocumentIfEmptyAsync(document, cancellationToken);
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        await CleanupQuantityOnlyInstancesAsync(lineKeys.Select(x => (x.ItemId, x.SnCode)), cancellationToken);
+
         return Deleted(type, document.Id, document.DocumentNo);
+    }
+
+    private async Task CleanupQuantityOnlyInstancesAsync(IEnumerable<(int ItemId, string SnCode)> keys, CancellationToken cancellationToken)
+    {
+        var normalizedKeys = keys
+            .Select(x => (x.ItemId, SnCode: x.SnCode?.Trim() ?? string.Empty))
+            .Distinct()
+            .ToArray();
+
+        if (normalizedKeys.Length == 0)
+        {
+            return;
+        }
+
+        var itemIds = normalizedKeys.Select(x => x.ItemId).Distinct().ToArray();
+        var snCodes = normalizedKeys.Select(x => x.SnCode).Distinct().ToArray();
+        var activeDocumentKeys = await _db.QuantityInventoryDocumentLines
+            .Where(x => itemIds.Contains(x.ItemId) && snCodes.Contains(x.SnCode))
+            .Select(x => new { x.ItemId, x.SnCode })
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+        var activeSet = activeDocumentKeys.Select(x => QuantityKey(x.ItemId, x.SnCode)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var orphanKeys = normalizedKeys.Where(x => !activeSet.Contains(QuantityKey(x.ItemId, x.SnCode))).ToArray();
+
+        if (orphanKeys.Length == 0)
+        {
+            return;
+        }
+
+        var orphanSet = orphanKeys.Select(x => QuantityKey(x.ItemId, x.SnCode)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var instances = await _db.ItemInstances
+            .Where(x => x.SerialNumber != null &&
+                        itemIds.Contains(x.ItemId) &&
+                        snCodes.Contains(x.SerialNumber) &&
+                        x.TrackingType == ItemTrackingType.QuantityOnly)
+            .ToListAsync(cancellationToken);
+
+        _db.ItemInstances.RemoveRange(instances.Where(x => orphanSet.Contains(QuantityKey(x.ItemId, x.SerialNumber))));
     }
 
     private async Task RebuildLocationTrackedInstancesAsync(IEnumerable<int> instanceIds, CancellationToken cancellationToken)
@@ -2250,7 +2527,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             .ToList();
     }
 
-    private async Task<List<string>> GetQuantityDependencyReasonsAsync(int documentId, IEnumerable<(int ItemId, string SnCode)> keys, CancellationToken cancellationToken)
+    private async Task<List<string>> GetQuantityDependencyReasonsAsync(int documentId, IEnumerable<(int ItemId, string SnCode)> keys, Guid? lifecycleBatchId, QuantityInventoryDocumentType transactionType, CancellationToken cancellationToken)
     {
         var normalizedKeys = keys
             .Where(x => !string.IsNullOrWhiteSpace(x.SnCode))
@@ -2267,7 +2544,13 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         var keySet = normalizedKeys.Select(x => QuantityKey(x.ItemId, x.SnCode)).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var latestByKey = await _db.QuantityInventoryTransactions
-            .Where(x => x.DocumentId == documentId && itemIds.Contains(x.ItemId) && snCodes.Contains(x.SnCode))
+            .Where(x => x.DocumentId == documentId &&
+                        x.TransactionType == transactionType &&
+                        itemIds.Contains(x.ItemId) &&
+                        snCodes.Contains(x.SnCode) &&
+                        (lifecycleBatchId.HasValue
+                            ? x.LifecycleBatchId == lifecycleBatchId
+                            : x.LifecycleBatchId == null))
             .GroupBy(x => new { x.ItemId, x.SnCode })
             .Select(g => g.OrderByDescending(x => x.PostedAt).ThenByDescending(x => x.Id)
                 .Select(x => new { x.ItemId, x.SnCode, x.PostedAt, x.Id })
@@ -2284,8 +2567,14 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         }
 
         var laterCandidates = await _db.QuantityInventoryTransactions
-            .Where(x => x.DocumentId != documentId && itemIds.Contains(x.ItemId) && snCodes.Contains(x.SnCode))
-            .Select(x => new { x.ItemId, x.SnCode, x.PostedAt, x.Id })
+            .Where(x => itemIds.Contains(x.ItemId) &&
+                        snCodes.Contains(x.SnCode) &&
+                        !(x.DocumentId == documentId &&
+                          x.TransactionType == transactionType &&
+                          (lifecycleBatchId.HasValue
+                              ? x.LifecycleBatchId == lifecycleBatchId
+                              : x.LifecycleBatchId == null)))
+            .Select(x => new { x.ItemId, x.SnCode, x.PostedAt, x.Id, x.LifecycleBatchId })
             .ToListAsync(cancellationToken);
 
         return effectiveMarks
@@ -2403,7 +2692,20 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             {
                 var document = await _db.QuantityInventoryDocuments.AsNoTracking().Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
                 if (document == null) return new List<string> { "Document not found." };
-                return await GetQuantityDependencyReasonsAsync(id, document.Lines.Select(x => (x.ItemId, x.SnCode)), cancellationToken);
+                var expectedType = type switch
+                {
+                    "quantity-receive" => QuantityInventoryDocumentType.Receive,
+                    "quantity-issue" => QuantityInventoryDocumentType.Issue,
+                    _ => QuantityInventoryDocumentType.Adjust
+                };
+                var latest = await _db.QuantityInventoryTransactions.AsNoTracking()
+                    .Where(x => x.DocumentId == id && x.TransactionType == expectedType)
+                    .OrderByDescending(x => x.PostedAt)
+                    .ThenByDescending(x => x.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+                return latest == null
+                    ? new List<string>()
+                    : await GetQuantityDependencyReasonsAsync(id, document.Lines.Select(x => (x.ItemId, x.SnCode)), latest.LifecycleBatchId, expectedType, cancellationToken);
             }
             default:
                 return new List<string>();
@@ -2631,22 +2933,37 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             .Include(x => x.Lines).ThenInclude(x => x.Item)
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (document == null) return null;
-        var item = document.Lines.Select(x => x.Item).FirstOrDefault(x => x != null);
-        var categoryCode = item == null
-            ? string.Empty
-            : await _db.ItemCategories.Where(x => x.Id == item.CategoryId).Select(x => x.CategoryCode).FirstOrDefaultAsync(cancellationToken) ?? string.Empty;
+        var categoryIds = document.Lines
+            .Select(x => x.Item?.CategoryId ?? 0)
+            .Where(x => x > 0)
+            .Distinct()
+            .ToArray();
+        var categoryMap = categoryIds.Length == 0
+            ? new Dictionary<int, string>()
+            : await _db.ItemCategories
+                .Where(x => categoryIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.CategoryCode, cancellationToken);
         return new
         {
             documentNo = document.DocumentNo,
             warehouseId = document.WarehouseId,
             documentDate = document.DocumentDate,
-            itemCategoryCode = categoryCode,
-            itemCode = item?.ItemCode ?? string.Empty,
             approvedBy = document.ApprovedBy,
+            operatorUserId = document.OperatorUserId,
+            operatorUserCode = document.OperatorUserCode,
+            operatorUserName = document.OperatorUserName,
+            senderCode = document.SenderCode,
+            senderName = document.SenderName,
+            senderPhone = document.SenderPhone,
+            receiverCode = document.ReceiverCode,
+            receiverName = document.ReceiverName,
+            receiverPhone = document.ReceiverPhone,
             note = document.Note,
             ownerName = (string?)null,
             lines = document.Lines.Select(x => new
             {
+                itemCategoryCode = x.Item != null && categoryMap.TryGetValue(x.Item.CategoryId, out var categoryCode) ? categoryCode : string.Empty,
+                itemCode = x.Item?.ItemCode ?? string.Empty,
                 snCode = x.SnCode,
                 status = x.Status,
                 quantity = x.Quantity,
@@ -2696,6 +3013,16 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             "quantity-issue" => normalized,
             "quantity-adjust" => normalized,
             _ => null
+        };
+    }
+
+    private static string SystemErrorMessage(string? language, string errorCode)
+    {
+        return language?.ToLowerInvariant() switch
+        {
+            "en" => $"System error occurred. Error code: {errorCode}. Please contact TE/IT.",
+            "zh" => $"系统发生错误。错误代码：{errorCode}。请联系 TE/IT 获取支持。",
+            _ => $"Có lỗi hệ thống. Mã lỗi: {errorCode}. Vui lòng liên hệ TE/IT."
         };
     }
 

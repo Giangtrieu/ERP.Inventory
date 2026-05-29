@@ -4,6 +4,7 @@ using ERP.Inventory.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,10 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ERP.Inventory.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(InventoryDbContext))]
-    partial class InventoryDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260529083538_AddLifecycleBatchId")]
+    partial class AddLifecycleBatchId
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1004,7 +1006,7 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
 
                     b.Property<string>("Action")
                         .IsRequired()
-                        .HasColumnType("nvarchar(450)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("DepartmentOwner")
                         .HasColumnType("nvarchar(max)");
@@ -1014,9 +1016,6 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
 
                     b.Property<int>("ItemInstanceId")
                         .HasColumnType("int");
-
-                    b.Property<Guid?>("LifecycleBatchId")
-                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("NewLocationText")
                         .HasColumnType("nvarchar(max)");
@@ -1056,8 +1055,6 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.HasIndex("InboundDocumentId");
 
                     b.HasIndex("ItemInstanceId", "Timestamp");
-
-                    b.HasIndex("InboundDocumentId", "Action", "LifecycleBatchId");
 
                     b.ToTable("InboundDocumentLogs");
                 });
@@ -1600,92 +1597,6 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.ToTable("ItemUnits");
                 });
 
-            modelBuilder.Entity("ERP.Inventory.Domain.Entities.LogErrorSystem", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"), 1L, 1);
-
-                    b.Property<string>("Action")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("Browser")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<string>("ClientIp")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("ErrorCode")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("nvarchar(40)");
-
-                    b.Property<string>("ErrorMessage")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("HttpMethod")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<string>("InnerException")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<bool>("IsResolved")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Module")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PayloadJson")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("RequestPath")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<DateTime?>("ResolvedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("ResolvedBy")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("StackTrace")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("UserId")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("UserName")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedAt");
-
-                    b.HasIndex("ErrorCode")
-                        .IsUnique();
-
-                    b.HasIndex("IsResolved");
-
-                    b.ToTable("LogErrorSystem", (string)null);
-                });
-
             modelBuilder.Entity("ERP.Inventory.Domain.Entities.MoveDocument", b =>
                 {
                     b.Property<int>("Id")
@@ -1961,9 +1872,6 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.Property<int>("ItemId")
                         .HasColumnType("int");
 
-                    b.Property<Guid?>("LifecycleBatchId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<string>("Note")
                         .HasColumnType("nvarchar(max)");
 
@@ -1994,8 +1902,6 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
 
                     b.HasIndex("QuantityInventoryDocumentId");
 
-                    b.HasIndex("QuantityInventoryDocumentId", "LifecycleBatchId");
-
                     b.ToTable("QuantityInventoryDocumentLines");
                 });
 
@@ -2016,9 +1922,6 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
 
                     b.Property<int>("ItemId")
                         .HasColumnType("int");
-
-                    b.Property<Guid?>("LifecycleBatchId")
-                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("PostedAt")
                         .HasColumnType("datetime2");
@@ -2050,8 +1953,6 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.HasIndex("ItemId");
 
                     b.HasIndex("WarehouseId");
-
-                    b.HasIndex("DocumentId", "TransactionType", "LifecycleBatchId");
 
                     b.HasIndex("DocumentNo", "ItemId", "SnCode");
 

@@ -27,6 +27,8 @@ public sealed class QuantitySummaryDto
     public IReadOnlyCollection<ChartPointDto> ByOwner { get; init; } = Array.Empty<ChartPointDto>();
     /// <summary>Top chart: tổng qty theo item.</summary>
     public IReadOnlyCollection<ChartPointDto> ByItem { get; init; } = Array.Empty<ChartPointDto>();
+    public IReadOnlyCollection<ChartPointDto> QuantityByItemCode { get; init; } = Array.Empty<ChartPointDto>();
+    public IReadOnlyCollection<ChartPointDto> QuantityByItemCategory { get; init; } = Array.Empty<ChartPointDto>();
 }
 
 public sealed class ChartPointDto
@@ -34,4 +36,5 @@ public sealed class ChartPointDto
     public string Label { get; init; } = string.Empty;
     public string? Key { get; init; }
     public decimal Value { get; init; }
+    public decimal Percentage { get; init; }
 }

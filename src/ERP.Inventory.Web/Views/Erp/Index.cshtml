@@ -52,7 +52,7 @@
                         <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" id="notificationCount">0</span>
                     </button>
                     <span class="badge rounded-pill text-bg-light px-3 py-2" id="currentUserBadge">...</span>
-                    <form asp-controller="Account" asp-action="Logout" method="post" class="m-0">
+                    <form asp-controller="Account" asp-action="Logout" method="post" class="m-0" id="logoutForm">
                         @Html.AntiForgeryToken()
                         <button class="btn btn-light" type="submit" title="Logout"><i class="bi bi-box-arrow-right"></i></button>
                     </form>
@@ -88,6 +88,12 @@
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         window.AppPathBase = '@Context.Request.PathBase';
+    </script>
+    <script>
+        document.getElementById('logoutForm').addEventListener('submit', function () {
+            localStorage.clear();
+            sessionStorage.clear();
+        });
     </script>
     <script src="~/erp/js/core/config.js" asp-append-version="true"></script>
     <script src="~/erp/js/core/ui.js" asp-append-version="true"></script>

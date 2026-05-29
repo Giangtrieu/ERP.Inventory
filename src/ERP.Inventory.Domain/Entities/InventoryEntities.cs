@@ -30,6 +30,7 @@ public class InventoryTransaction
     public string DocumentType { get; set; } = string.Empty;
     public int DocumentId { get; set; }
     public string DocumentNo { get; set; } = string.Empty;
+    public Guid? LifecycleBatchId { get; set; }
     public DateTime PostedAt { get; set; } = DateTime.UtcNow;
     public string PostedBy { get; set; } = string.Empty;
 }

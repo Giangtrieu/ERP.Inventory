@@ -13,19 +13,21 @@ namespace ERP.Inventory.Infrastructure.Services;
 
 public sealed class QuantityInventoryService : InventoryOperationBase, IQuantityInventoryService
 {
+    private const string QuantityStockKey = "";
+
     public QuantityInventoryService(InventoryDbContext db, IDocumentNumberService documentNumbers, IDateTimeProvider clock)
         : base(db, documentNumbers, clock)
     {
     }
 
     public Task<ServiceResult<PostedDocumentDto>> ReceiveAsync(QuantityInventoryRequest request, CurrentUserContext user, CancellationToken cancellationToken = default, bool isEdit = false)
-        => PostAsync(request, QuantityInventoryDocumentType.Receive, user, cancellationToken, isEdit: true);
+        => PostAsync(request, QuantityInventoryDocumentType.Receive, user, cancellationToken, isEdit);
 
     public Task<ServiceResult<PostedDocumentDto>> IssueAsync(QuantityInventoryRequest request, CurrentUserContext user, CancellationToken cancellationToken = default, bool isEdit = false)
-        => PostAsync(request, QuantityInventoryDocumentType.Issue, user, cancellationToken, isEdit: true);
+        => PostAsync(request, QuantityInventoryDocumentType.Issue, user, cancellationToken, isEdit);
 
     public Task<ServiceResult<PostedDocumentDto>> AdjustAsync(QuantityInventoryRequest request, CurrentUserContext user, CancellationToken cancellationToken = default, bool isEdit = false)
-        => PostAsync(request, QuantityInventoryDocumentType.Adjust, user, cancellationToken, isEdit: true);
+        => PostAsync(request, QuantityInventoryDocumentType.Adjust, user, cancellationToken, isEdit);
 
     public async Task<PagedResult<QuantityStockBalanceDto>> GetBalancesAsync(string? keyword, int? warehouseId, int? itemId, string? status, string? ownerName, int page, int pageSize, CurrentUserContext user, CancellationToken cancellationToken = default)
     {
@@ -63,21 +65,21 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
                  g.Key.ItemName, g.Key.WarehouseId,
                  g.Key.WarehouseCode, Quantity = g.Sum(x => x.Quantity),
                  LastUpdatedAt = g.Max(x => x.UpdatedAt ?? x.CreatedAt), Status = g.Select(x => x.Status).FirstOrDefault()
-             }).OrderBy(x => x.WarehouseCode).ThenBy(x => x.ItemCode)
+             }) //.OrderBy(x => x.WarehouseCode).ThenBy(x => x.ItemCode)
              .Skip((page - 1) * pageSize).Take(pageSize) .ToListAsync(cancellationToken);
                 var itemIds = groupedRows.Select(x => x.ItemId).Distinct().ToList();
-                var ownerDict = await _db.ItemInstances .AsNoTracking() .Where(x => itemIds.Contains(x.ItemId) &&x.TrackingType == ItemTrackingType.QuantityOnly) .GroupBy(x => x.ItemId)
-                    .Select(g => new
-                    {
-                        ItemId = g.Key,OwnerName = g.Select(x => x.OwnerName).FirstOrDefault()
-                    }) .ToDictionaryAsync(x => x.ItemId, x => x.OwnerName, cancellationToken);
+                //var ownerDict = await _db.ItemInstances .AsNoTracking() .Where(x => itemIds.Contains(x.ItemId) &&x.TrackingType == ItemTrackingType.QuantityOnly) .GroupBy(x => x.ItemId)
+                //    .Select(g => new
+                //    {
+                //        ItemId = g.Key,OwnerName = g.Select(x => x.OwnerName).FirstOrDefault()
+                //    }) .ToDictionaryAsync(x => x.ItemId, x => x.OwnerName, cancellationToken);
         var rows = groupedRows .Select(x => new QuantityStockBalanceDto
             {
                 ItemId = x.ItemId, ItemCode = x.ItemCode,
                 ItemName = x.ItemName, WarehouseId = x.WarehouseId,
                 WarehouseCode = x.WarehouseCode, Quantity = x.Quantity,
                 Status = x.Status.ToString(), LastUpdatedAt = x.LastUpdatedAt,
-                OwnerName = ownerDict.TryGetValue(x.ItemId, out var owner) ? owner : null, 
+                OwnerName = "TE", /*ownerDict.TryGetValue(x.ItemId, out var owner) ? owner : null, */
             }).ToArray();
         return new PagedResult<QuantityStockBalanceDto> { Items = rows, Page = page, PageSize = pageSize, TotalCount = total };
     }
@@ -118,7 +120,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
     // ─── Core Post Logic ─────────────────────────────────────────────
     private async Task<ServiceResult<PostedDocumentDto>> PostAsync(QuantityInventoryRequest request, QuantityInventoryDocumentType type, CurrentUserContext user, CancellationToken cancellationToken, bool isEdit = false)
     {
-        if(isEdit == false) return await PostNewAsync(request, type, user, cancellationToken);
+        if(isEdit == false) return await PostQuantityDocumentAsync(request, type, user, cancellationToken);
 
         var errors = ValidateHeader(request, user);
         var lines = request.Lines.Where(x => !IsEmptyLine(x)).ToArray();
@@ -131,16 +133,11 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             type == QuantityInventoryDocumentType.Issue ? "QOUT" : "QADJ", request.DocumentDate): request.DocumentNo.Trim();
         await using var tx = await BeginOperationTransactionAsync(cancellationToken);
 
-        var item = await ResolveOrCreateItemAsync(request, user, cancellationToken);
-        if (item == null)
-        {
-            await tx.RollbackAsync(cancellationToken);
-            return ServiceResult<PostedDocumentDto>.Fail("ItemCode is required.");
-        }
-
         // ── LẤY DOCUMENT ─────────────────────────────────────────────
-        var document = await _db.QuantityInventoryDocuments.FirstOrDefaultAsync(x => x.DocumentNo == documentNo, cancellationToken);
-        var isNewDocument = document == null;
+        var lifecycleBatchId = Guid.NewGuid();
+        var existingDocument = await _db.QuantityInventoryDocuments.FirstOrDefaultAsync(x => x.DocumentNo == documentNo, cancellationToken);
+        var isNewDocument = existingDocument == null;
+        QuantityInventoryDocument document;
 
         if (isNewDocument)
         {
@@ -156,17 +153,22 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
                 CreatedAt = request.DocumentDate,
                 CreatedBy = user.UserName
             };
+            ApplyQuantityHeader(document, request, type, user);
             _db.QuantityInventoryDocuments.Add(document);
         }
         else
         {
+            document = existingDocument!;
             _db.Entry(document).State = EntityState.Modified;
             document.DocumentDate = request.DocumentDate;
             document.PostedAt = request.DocumentDate;
+            document.DocumentType = type;
+            document.WarehouseId = request.WarehouseId;
             document.ApprovedBy = request.ApprovedBy;
             document.Note = request.Note;
             document.UpdatedAt = now;
             document.UpdatedBy = user.UserName;
+            ApplyQuantityHeader(document, request, type, user);
         }
 
         await _db.SaveChangesAsync(cancellationToken);
@@ -181,7 +183,14 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
 
         foreach (var line in lines)
         {
-            var snCode = NormalizeQuantityCode(line.SnCode, item.ItemCode);
+            var item = await ResolveOrCreateItemAsync(request.DocumentDate, line, user, cancellationToken);
+            if (item == null)
+            {
+                await tx.RollbackAsync(cancellationToken);
+                return ServiceResult<PostedDocumentDto>.Fail("ItemCode is required.");
+            }
+
+            var snCode = QuantityStockKey;
 
             var lineKey = QuantityLineKey(item.Id, snCode);
             if (!incomingKeys.Add(lineKey))
@@ -192,8 +201,8 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
 
             var existingLines = oldLineGroups.GetValueOrDefault(lineKey);
             var error = existingLines == null
-                ? await ApplyQuantityLineAsync(document, line, item, type, request, user, now, existingLine: null, cancellationToken)
-                : await ReplaceQuantityLineAsync(document, existingLines, line, item, type, request, user, now, cancellationToken);
+                ? await ApplyQuantityLineAsync(document, line, item, type, request, user, now, lifecycleBatchId, existingLine: null, cancellationToken)
+                : await ReplaceQuantityLineAsync(document, existingLines, line, item, type, request, user, now, lifecycleBatchId, cancellationToken);
             if (error != null) errors.Add(error);
         }
 
@@ -232,6 +241,94 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
 
     }
 
+    private async Task<ServiceResult<PostedDocumentDto>> PostQuantityDocumentAsync(QuantityInventoryRequest request, QuantityInventoryDocumentType type, CurrentUserContext user, CancellationToken cancellationToken)
+    {
+        var errors = ValidateHeader(request, user);
+        var lines = request.Lines.Where(x => !IsEmptyLine(x)).ToArray();
+
+        if (lines.Length == 0) errors.Add("At least one line is required.");
+        if (errors.Count > 0) return ServiceResult<PostedDocumentDto>.Fail(errors);
+
+        var now = _clock.UtcNow;
+        var documentNo = NormalizeQuantityDocumentNo(request.DocumentNo, type, request.DocumentDate);
+        var lifecycleBatchId = Guid.NewGuid();
+
+        await using var tx = await BeginOperationTransactionAsync(cancellationToken);
+
+        var existingDocument = await _db.QuantityInventoryDocuments
+            .FirstOrDefaultAsync(x => x.DocumentNo == documentNo, cancellationToken);
+        if (existingDocument != null && existingDocument.DocumentType != type)
+        {
+            await tx.RollbackAsync(cancellationToken);
+            return ServiceResult<PostedDocumentDto>.Fail($"Document number {documentNo} already exists.");
+        }
+
+        var document = existingDocument ?? new QuantityInventoryDocument
+        {
+            DocumentNo = documentNo,
+            DocumentDate = request.DocumentDate,
+            PostedAt = request.DocumentDate,
+            DocumentType = type,
+            WarehouseId = request.WarehouseId,
+            ApprovedBy = request.ApprovedBy,
+            Note = request.Note,
+            CreatedAt = request.DocumentDate,
+            CreatedBy = user.UserName
+        };
+        if (existingDocument != null)
+        {
+            document.DocumentDate = request.DocumentDate;
+            document.PostedAt = request.DocumentDate;
+            document.WarehouseId = request.WarehouseId;
+            document.ApprovedBy = request.ApprovedBy;
+            document.Note = request.Note;
+            document.UpdatedAt = now;
+            document.UpdatedBy = user.UserName;
+        }
+        ApplyQuantityHeader(document, request, type, user);
+        if (existingDocument == null)
+        {
+            _db.QuantityInventoryDocuments.Add(document);
+        }
+        await _db.SaveChangesAsync(cancellationToken);
+
+        var incomingKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in lines)
+        {
+            var item = await ResolveOrCreateItemAsync(request.DocumentDate, line, user, cancellationToken);
+            if (item == null)
+            {
+                await tx.RollbackAsync(cancellationToken);
+                return ServiceResult<PostedDocumentDto>.Fail("ItemCode is required.");
+            }
+
+            var lineKey = QuantityLineKey(item.Id, QuantityStockKey);
+            if (!incomingKeys.Add(lineKey))
+            {
+                errors.Add($"Item {item.ItemCode} is duplicated in this quantity document.");
+                continue;
+            }
+
+            var error = await ApplyQuantityLineAsync(document, line, item, type, request, user, now, lifecycleBatchId, existingLine: null, cancellationToken);
+            if (error != null) errors.Add(error);
+        }
+
+        if (errors.Count > 0)
+        {
+            await tx.RollbackAsync(cancellationToken);
+            return ServiceResult<PostedDocumentDto>.Fail(errors);
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
+        await CleanupZeroQuantityBalancesAsync(cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
+        AddPostSideEffects(type.ToString(), nameof(QuantityInventoryDocument), document.Id, documentNo, user, "Quantity inventory posted.");
+        await _db.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+
+        return ServiceResult<PostedDocumentDto>.Ok(ToPostedDto("QuantityInventory", document.Id, documentNo, now), "Quantity inventory posted.");
+    }
+
     private async Task<ServiceResult<PostedDocumentDto>> PostNewAsync(QuantityInventoryRequest request, QuantityInventoryDocumentType type, CurrentUserContext user, CancellationToken cancellationToken)
     {
         var errors = ValidateHeader(request, user);
@@ -242,9 +339,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         if (errors.Count > 0) return ServiceResult<PostedDocumentDto>.Fail(errors);
 
         var now = _clock.UtcNow;
-        var documentNo = string.IsNullOrWhiteSpace(request.DocumentNo) ? _documentNumbers.Next(type == QuantityInventoryDocumentType.Receive ?
-            "QIN" : type == QuantityInventoryDocumentType.Issue ? "QOUT" : "QADJ", request.DocumentDate) :
-            type == QuantityInventoryDocumentType.Receive ? "QIN" : type == QuantityInventoryDocumentType.Issue ? "QOUT" : "QADJ" + request.DocumentNo.Trim();
+        var documentNo = NormalizeQuantityDocumentNo(request.DocumentNo, type, request.DocumentDate);
 
         // ── Begin transaction ─────────────────────────────────────────
         await using var tx = await BeginOperationTransactionAsync(cancellationToken);
@@ -253,60 +348,6 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         var document = await _db.QuantityInventoryDocuments.FirstOrDefaultAsync(x => x.DocumentNo == documentNo, cancellationToken);
 
         // ── Resolve/Create ItemCategory (once, outside line loop) ─────
-        var normalizedCategoryCode = (request.ItemCategoryCode ?? string.Empty).Trim().ToUpperInvariant();
-        var normalizedItemCode = (request.ItemCode ?? string.Empty).Trim().ToUpperInvariant();
-
-        ItemCategory? itemCategory = null;
-        if (!string.IsNullOrWhiteSpace(normalizedCategoryCode))
-        {
-            itemCategory = await _db.ItemCategories
-                .FirstOrDefaultAsync(x => x.CategoryCode == normalizedCategoryCode && x.IsActive, cancellationToken);
-
-            if (itemCategory == null)
-            {
-                itemCategory = new ItemCategory
-                {
-                    CategoryCode = normalizedCategoryCode,
-                    Name = normalizedCategoryCode,
-                    IsActive = true,
-                    CreatedAt = request.DocumentDate,
-                    CreatedBy = user.UserName
-                };
-                _db.ItemCategories.Add(itemCategory);
-                await _db.SaveChangesAsync(cancellationToken);
-            }
-        }
-
-        // ── Resolve/Create Item (once, outside line loop) ─────────────
-        Item? item = null;
-        if (!string.IsNullOrWhiteSpace(normalizedItemCode))
-        {
-            item = await _db.Items.FirstOrDefaultAsync(x => x.ItemCode == normalizedItemCode && x.IsActive, cancellationToken);
-            if (item == null)
-            {
-                var unit = await _db.ItemUnits.FirstOrDefaultAsync(x => x.UnitCode == "PCS", cancellationToken);
-
-                item = new Item
-                {
-                    ItemCode = normalizedItemCode,
-                    DefaultName = normalizedItemCode,
-                    CategoryId = itemCategory?.Id ?? 0,
-                    UnitId = unit?.Id ?? 0,
-                    IsSerialManaged = false, // QuantityOnly items không cần serial tracking
-                    IsActive = true,
-                    CreatedAt = request.DocumentDate,
-                    CreatedBy = user.UserName
-                };
-                _db.Items.Add(item);
-                await _db.SaveChangesAsync(cancellationToken);
-            }
-        }
-
-        if (item == null)
-        {
-            await tx.RollbackAsync(cancellationToken);
-            return ServiceResult<PostedDocumentDto>.Fail("ItemCode is required.");
-        }
         // ── Create document header ────────────────────────────────────
         if (document == null)
         {
@@ -328,6 +369,60 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         // ── Process lines ─────────────────────────────────────────────
         foreach (var line in lines)
         {
+            var normalizedCategoryCode = (line.ItemCategoryCode ?? string.Empty).Trim().ToUpperInvariant();
+            var normalizedItemCode = (line.ItemCode ?? string.Empty).Trim().ToUpperInvariant();
+
+            ItemCategory? itemCategory = null;
+            if (!string.IsNullOrWhiteSpace(normalizedCategoryCode))
+            {
+                itemCategory = await _db.ItemCategories
+                    .FirstOrDefaultAsync(x => x.CategoryCode == normalizedCategoryCode && x.IsActive, cancellationToken);
+
+                if (itemCategory == null)
+                {
+                    itemCategory = new ItemCategory
+                    {
+                        CategoryCode = normalizedCategoryCode,
+                        Name = normalizedCategoryCode,
+                        IsActive = true,
+                        CreatedAt = request.DocumentDate,
+                        CreatedBy = user.UserName
+                    };
+                    _db.ItemCategories.Add(itemCategory);
+                    await _db.SaveChangesAsync(cancellationToken);
+                }
+            }
+
+            // ── Resolve/Create Item (once, outside line loop) ─────────────
+            Item? item = null;
+            if (!string.IsNullOrWhiteSpace(normalizedItemCode))
+            {
+                item = await _db.Items.FirstOrDefaultAsync(x => x.ItemCode == normalizedItemCode && x.IsActive, cancellationToken);
+                if (item == null)
+                {
+                    var unit = await _db.ItemUnits.FirstOrDefaultAsync(x => x.UnitCode == "PCS", cancellationToken);
+
+                    item = new Item
+                    {
+                        ItemCode = normalizedItemCode,
+                        DefaultName = normalizedItemCode,
+                        CategoryId = itemCategory?.Id ?? 0,
+                        UnitId = unit?.Id ?? 0,
+                        IsSerialManaged = false, // QuantityOnly items không cần serial tracking
+                        IsActive = true,
+                        CreatedAt = request.DocumentDate,
+                        CreatedBy = user.UserName
+                    };
+                    _db.Items.Add(item);
+                    await _db.SaveChangesAsync(cancellationToken);
+                }
+            }
+
+            if (item == null)
+            {
+                await tx.RollbackAsync(cancellationToken);
+                return ServiceResult<PostedDocumentDto>.Fail("ItemCode is required.");
+            }
             if (line.Quantity <= 0)
             {
                 errors.Add("Quantity must be greater than zero.");
@@ -457,6 +552,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         QuantityInventoryRequest request,
         CurrentUserContext user,
         DateTime now,
+        Guid? lifecycleBatchId,
         CancellationToken ct)
     {
         var preservedLine = existingLines.OrderBy(x => x.Id).First();
@@ -469,7 +565,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             _db.QuantityInventoryDocumentLines.RemoveRange(duplicateLines);
         }
 
-        return await ApplyQuantityLineAsync(document, line, item, type, request, user, now, preservedLine, ct);
+        return await ApplyQuantityLineAsync(document, line, item, type, request, user, now, lifecycleBatchId, preservedLine, ct);
     }
 
     private async Task<string?> RemoveQuantityLineAsync(
@@ -498,19 +594,20 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         QuantityInventoryRequest request,
         CurrentUserContext user,
         DateTime now,
+        Guid? lifecycleBatchId,
         QuantityInventoryDocumentLine? existingLine,
         CancellationToken ct)
     {
         if (line.Quantity <= 0)
             return "Quantity must be greater than zero.";
 
-        var snCode = NormalizeQuantityCode(line.SnCode, item.ItemCode);
+        var snCode = QuantityStockKey;
 
         var status = ResolveInboundStatus(line.Status);
 
         if (type == QuantityInventoryDocumentType.Adjust)
         {
-            var error = await ApplyQuantityAdjustmentAsync(document, request, item, snCode, status, line.Quantity, user, now, ct);
+            var error = await ApplyQuantityAdjustmentAsync(document, request, line, item, snCode, status, line.Quantity, user, now, ct);
             if (error != null) return error;
         }
         else
@@ -519,13 +616,13 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             var balance = await GetOrCreateQuantityBalanceAsync(request.WarehouseId, item.Id, snCode, status, request.DocumentDate, user, ct);
 
             if (type == QuantityInventoryDocumentType.Issue && balance.Quantity < line.Quantity)
-                return $"Insufficient quantity for item {item.ItemCode} SN {snCode}.";
+                return $"Insufficient quantity for item {item.ItemCode}.";
+
+            AddQuantityTransaction(document, type, request.WarehouseId, item.Id, snCode, status, delta, request.DocumentDate, user, lifecycleBatchId);
 
             balance.Quantity += delta;
             balance.UpdatedAt = now;
             balance.UpdatedBy = user.UserName;
-
-            AddQuantityTransaction(document, type, request.WarehouseId, item.Id, snCode, status, delta, request.DocumentDate, user);
         }
 
         if (existingLine == null)
@@ -536,6 +633,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
                 SnCode = snCode,
                 Status = status,
                 Quantity = line.Quantity,
+                LifecycleBatchId = lifecycleBatchId,
                 Note = line.Note,
                 CreatedAt = request.DocumentDate,
                 CreatedBy = user.UserName
@@ -547,6 +645,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             existingLine.SnCode = snCode;
             existingLine.Status = status;
             existingLine.Quantity = line.Quantity;
+            existingLine.LifecycleBatchId = lifecycleBatchId;
             existingLine.Note = line.Note;
             existingLine.UpdatedAt = now;
             existingLine.UpdatedBy = user.UserName;
@@ -558,6 +657,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
     private async Task<string?> ApplyQuantityAdjustmentAsync(
         QuantityInventoryDocument document,
         QuantityInventoryRequest request,
+        QuantityInventoryLineRequest line,
         Item item,
         string snCode,
         ItemStatus targetStatus,
@@ -566,36 +666,17 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         DateTime now,
         CancellationToken ct)
     {
-        var sourceBalance = await _db.QuantityStockBalances
-            .Where(x => x.WarehouseId == request.WarehouseId &&
-                        x.ItemId == item.Id &&
-                        x.SnCode == snCode &&
-                        x.Quantity > 0)
-            .OrderBy(x => x.Status == targetStatus)
-            .FirstOrDefaultAsync(ct);
+        var delta = ResolveAdjustmentDelta(request, line, quantity);
+        var balance = await GetOrCreateQuantityBalanceAsync(request.WarehouseId, item.Id, snCode, targetStatus, request.DocumentDate, user, ct);
 
-        if (sourceBalance == null || sourceBalance.Quantity < quantity)
-        {
-            return $"Insufficient quantity for item {item.ItemCode} SN {snCode}.";
-        }
+        if (delta < 0 && balance.Quantity < Math.Abs(delta))
+            return $"Insufficient quantity for item {item.ItemCode}.";
 
-        if (sourceBalance.Status == targetStatus)
-        {
-            AddQuantityTransaction(document, QuantityInventoryDocumentType.Adjust, request.WarehouseId, item.Id, snCode, targetStatus, 0, request.DocumentDate, user);
-            return null;
-        }
+        AddQuantityTransaction(document, QuantityInventoryDocumentType.Adjust, request.WarehouseId, item.Id, snCode, targetStatus, delta, request.DocumentDate, user, null);
 
-        sourceBalance.Quantity -= quantity;
-        sourceBalance.UpdatedAt = now;
-        sourceBalance.UpdatedBy = user.UserName;
-
-        var targetBalance = await GetOrCreateQuantityBalanceAsync(request.WarehouseId, item.Id, snCode, targetStatus, request.DocumentDate, user, ct);
-        targetBalance.Quantity += quantity;
-        targetBalance.UpdatedAt = now;
-        targetBalance.UpdatedBy = user.UserName;
-
-        AddQuantityTransaction(document, QuantityInventoryDocumentType.Adjust, request.WarehouseId, item.Id, snCode, sourceBalance.Status, -quantity, request.DocumentDate, user);
-        AddQuantityTransaction(document, QuantityInventoryDocumentType.Adjust, request.WarehouseId, item.Id, snCode, targetStatus, quantity, request.DocumentDate, user);
+        balance.Quantity += delta;
+        balance.UpdatedAt = now;
+        balance.UpdatedBy = user.UserName;
         return null;
     }
 
@@ -703,7 +784,8 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         ItemStatus status,
         decimal delta,
         DateTime postedAt,
-        CurrentUserContext user)
+        CurrentUserContext user,
+        Guid? lifecycleBatchId)
     {
         _db.QuantityInventoryTransactions.Add(new QuantityInventoryTransaction
         {
@@ -715,6 +797,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             QuantityDelta = delta,
             DocumentId = document.Id,
             DocumentNo = document.DocumentNo,
+            LifecycleBatchId = lifecycleBatchId,
             PostedAt = postedAt,
             PostedBy = user.UserName
         });
@@ -850,10 +933,10 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
 
         return null;
     }
-    private async Task<Item?> ResolveOrCreateItemAsync(QuantityInventoryRequest request, CurrentUserContext user, CancellationToken ct)
+    private async Task<Item?> ResolveOrCreateItemAsync(DateTime documentDate, QuantityInventoryLineRequest line, CurrentUserContext user, CancellationToken ct)
     {
-        var normalizedCategoryCode = (request.ItemCategoryCode ?? string.Empty).Trim().ToUpperInvariant();
-        var normalizedItemCode = (request.ItemCode ?? string.Empty).Trim().ToUpperInvariant();
+        var normalizedCategoryCode = (line.ItemCategoryCode ?? string.Empty).Trim().ToUpperInvariant();
+        var normalizedItemCode = (line.ItemCode ?? string.Empty).Trim().ToUpperInvariant();
 
         ItemCategory? itemCategory = null;
         if (!string.IsNullOrWhiteSpace(normalizedCategoryCode))
@@ -868,7 +951,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
                     CategoryCode = normalizedCategoryCode,
                     Name = normalizedCategoryCode,
                     IsActive = true,
-                    CreatedAt = request.DocumentDate,
+                    CreatedAt = documentDate,
                     CreatedBy = user.UserName
                 };
                 _db.ItemCategories.Add(itemCategory);
@@ -892,7 +975,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
                     UnitId = unit?.Id ?? 0,
                     IsSerialManaged = false,
                     IsActive = true,
-                    CreatedAt = request.DocumentDate,
+                    CreatedAt = documentDate,
                     CreatedBy = user.UserName
                 };
                 _db.Items.Add(item);
@@ -900,6 +983,67 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             }
         }
         return item;
+    }
+
+    private string NormalizeQuantityDocumentNo(string? documentNo, QuantityInventoryDocumentType type, DateTime documentDate)
+    {
+        if (string.IsNullOrWhiteSpace(documentNo))
+        {
+            return _documentNumbers.Next(type == QuantityInventoryDocumentType.Receive ? "QIN" :
+                type == QuantityInventoryDocumentType.Issue ? "QOUT" : "QADJ", documentDate);
+        }
+
+        var prefix = type == QuantityInventoryDocumentType.Receive ? "QIN" :
+            type == QuantityInventoryDocumentType.Issue ? "QOUT" : "QADJ";
+        var trimmed = documentNo.Trim();
+        return trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            ? trimmed
+            : prefix + trimmed;
+    }
+
+    private static void ApplyQuantityHeader(QuantityInventoryDocument document, QuantityInventoryRequest request, QuantityInventoryDocumentType type, CurrentUserContext user)
+    {
+        document.OperatorUserId = user.UserId;
+        document.OperatorUserCode = string.IsNullOrWhiteSpace(request.OperatorUserCode) ? user.UserId : request.OperatorUserCode.Trim();
+        document.OperatorUserName = string.IsNullOrWhiteSpace(request.OperatorUserName) ? user.UserName : request.OperatorUserName.Trim();
+
+        if (type == QuantityInventoryDocumentType.Receive)
+        {
+            document.SenderCode = (request.SenderCode ?? string.Empty).Trim();
+            document.SenderName = (request.SenderName ?? string.Empty).Trim();
+            document.SenderPhone = (request.SenderPhone ?? string.Empty).Trim();
+            document.ReceiverCode = string.Empty;
+            document.ReceiverName = string.Empty;
+            document.ReceiverPhone = string.Empty;
+        }
+        else
+        {
+            document.ReceiverCode = (request.ReceiverCode ?? string.Empty).Trim();
+            document.ReceiverName = (request.ReceiverName ?? string.Empty).Trim();
+            document.ReceiverPhone = (request.ReceiverPhone ?? string.Empty).Trim();
+            document.SenderCode = string.Empty;
+            document.SenderName = string.Empty;
+            document.SenderPhone = string.Empty;
+        }
+    }
+
+    private static decimal ResolveAdjustmentDelta(QuantityInventoryRequest request, QuantityInventoryLineRequest line, decimal quantity)
+    {
+        var direction = string.IsNullOrWhiteSpace(line.AdjustmentDirection)
+            ? request.AdjustmentDirection
+            : line.AdjustmentDirection;
+        return IsDecrease(direction) ? -quantity : quantity;
+    }
+
+    private static bool IsDecrease(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        var normalized = value.Trim().Replace(" ", string.Empty).Replace("-", string.Empty);
+        return normalized.Equals("Decrease", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("AdjustmentDecrease", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("Out", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("Minus", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("-", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<string?> ProcessSingleLineAsync(QuantityInventoryDocument document, QuantityInventoryLineRequest line,
@@ -1063,12 +1207,15 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         var errors = new List<string>();
         if (request.WarehouseId <= 0) errors.Add("Warehouse is required.");
         else if (!user.CanAccessWarehouse(request.WarehouseId)) errors.Add("Access denied for selected warehouse.");
-        if (string.IsNullOrWhiteSpace(request.ItemCode)) errors.Add("ItemCode is required.");
+        foreach(var line in request.Lines)
+        {
+            if (string.IsNullOrWhiteSpace(line.ItemCode)) errors.Add("ItemCode is required.");
+        }
         return errors;
     }
 
     private static bool IsEmptyLine(QuantityInventoryLineRequest line)
-        => string.IsNullOrWhiteSpace(line.SnCode) && line.Quantity == 0;
+        => string.IsNullOrWhiteSpace(line.ItemCode) && line.Quantity == 0;
 
     private IQueryable<QuantityStockBalance> ApplyReadScope(IQueryable<QuantityStockBalance> query, int? warehouseId, CurrentUserContext user)
     {
@@ -1085,7 +1232,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
     private static string NormalizeSn(string value) => value.Trim().ToUpperInvariant();
 
     private static string NormalizeQuantityCode(string? snCode, string itemCode)
-        => string.IsNullOrWhiteSpace(snCode) ? itemCode.Trim().ToUpperInvariant() : snCode.Trim().ToUpperInvariant();
+        => QuantityStockKey;
 
     private static string QuantityLineKey(int itemId, string snCode)
         => $"{itemId}:{NormalizeSn(snCode)}";

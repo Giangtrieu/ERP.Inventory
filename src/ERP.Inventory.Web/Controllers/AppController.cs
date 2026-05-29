@@ -39,7 +39,8 @@ public sealed class AppController : Controller
                 displayName,
                 language = user.LanguageCode,
                 roles = user.Roles,
-                warehouseIds = user.WarehouseIds
+                warehouseIds = user.WarehouseIds,
+                authMode = User.FindFirstValue("AuthMode") ?? string.Empty
             },
             permissions = new
             {

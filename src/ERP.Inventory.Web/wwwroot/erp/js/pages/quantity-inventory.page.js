@@ -76,26 +76,10 @@ Router.register('quantity-inventory', async function () {
         
     });
 
-    $(document).on('keydown.qtyRemoveLine', function (e) {
-        // Ctrl + X
-        if (e.altKey && e.key.toLowerCase() === 'x') {
-            e.preventDefault();
-            const $targetRow = $('#quantityLineBody tr.selected').length ? $('#quantityLineBody tr.selected') : $('#quantityLineBody tr:last');
-            if ($targetRow.length) $targetRow.find('.btn-remove-quantity-line').trigger('click')
-        }
-    });
-
-    $(document).on('keydown.quantityLineBody', function (e) {
-        if (e.altKey && e.key.toLowerCase() === 'a') {
-            e.preventDefault();
-            $('#btnAddQuantityLine').trigger('click');
-        }
-    });
-
   // ── Inventory filter events (delegated) ──────────────────────────────
   $(document).off('change.qtyFilter input.qtyFilter')
   .on('change.qtyFilter input.qtyFilter',
-      '.cbo-input, #qtyContent [name="filterWarehouseId"], #qtyContent [name="filterItemId"], #qtyContent [name="filterStatus"], #qtyContent [name="keyword"], #qtyContent [name="filterOwnerName"]',
+      '.cbo-input, #qtyContent [name="filterWarehouseId"], #qtyContent [name="filterItemId"], #qtyContent [name="keyword"]',
       UI.debounce(() => loadQuantityInventory(1), 250));
     
   // ── Detail back button ───────────────────────────────────────────────
@@ -105,13 +89,13 @@ Router.register('quantity-inventory', async function () {
   });
 
   // ── Detail view button ───────────────────────────────────────────────
-  $(document).off('click.qtyDetail').on('click.qtyDetail', '.btn-qty-detail', function () {
-    const itemCode = $(this).data('item-code');
-    const itemName = $(this).data('item-name');
-    const warehouseId = $(this).data('warehouse-id');
-    qtySelectedItem = { itemCode, itemName, warehouseId };
-    loadQtyDetailPanel(itemCode, itemName, warehouseId);
-  });
+  //$(document).off('click.qtyDetail').on('click.qtyDetail', '.btn-qty-detail', function () {
+  //  const itemCode = $(this).data('item-code');
+  //  const itemName = $(this).data('item-name');
+  //  const warehouseId = $(this).data('warehouse-id');
+  //  qtySelectedItem = { itemCode, itemName, warehouseId };
+  //  loadQtyDetailPanel(itemCode, itemName, warehouseId);
+  //});
 
   // ── History filter events ────────────────────────────────────────────
   $(document).off('change.qtyHistFilter input.qtyHistFilter')
@@ -132,6 +116,22 @@ Router.register('quantity-inventory', async function () {
     await switchQtyView(viewType);
 });
 
+$(document).on('keydown.qtyRemoveLine', function (e) {
+    // Ctrl + X
+    if (e.altKey && e.key.toLowerCase() === 'x') {
+        e.preventDefault();
+        const $targetRow = $('#quantityLineBody tr.selected').length ? $('#quantityLineBody tr.selected') : $('#quantityLineBody tr:last');
+        if ($targetRow.length) $targetRow.find('.btn-remove-quantity-line').trigger('click')
+    }
+});
+
+$(document).on('keydown.quantityLineBody', function (e) {
+    if (e.altKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        $('#btnAddQuantityLine').trigger('click');
+    }
+});
+
 // ── View router ───────────────────────────────────────────────────────
 async function switchQtyView(view) {
   qtyActiveView = view;
@@ -144,15 +144,15 @@ async function switchQtyView(view) {
 // PANEL 1 — Inventory (balance list + detail drill-down)
 // ═══════════════════════════════════════════════════════════════
 async function loadQtyInventoryPanel() {
+  const preset = AppState.quantityPreset || {};
+  AppState.quantityPreset = null;
   $('#qtyContent').html(`
     <div class="card"><div class="card-body">
       <div class="form-section-title">${UI.t('Quantity Stock')}</div>
       <div class="row g-3 mb-3">
-        <div class="col-md-3">${UI.select('Warehouse', 'filterWarehouseId', AppState.lookups.warehouses, AppState.lookups.warehouses[0].id)}</div>
+        <div class="col-md-3">${UI.select('Warehouse', 'filterWarehouseId', AppState.lookups.warehouses, preset.warehouseId || AppState.lookups.warehouses?.[0]?.id || '')}</div>
         <div class="col-md-3">${UI.selectOption('Item','filterItemId', AppState.lookups.items)}</div>
-        <div class="col-md-2">${UI.select('Status','filterStatus', AppState.lookups.inboundConditions)}</div>
-        <div class="col-md-2">${UI.input('OwnerName','text','','filterOwnerName')}</div>
-        <div class="col-md-2">${UI.input('Keyword','text','','keyword')}</div>
+        <div class="col-md-6">${UI.input('Keyword','text', preset.keyword || '', 'keyword')}</div>
       </div>
       <div id="quantityInventoryTable">${UI.loading()}</div>
     </div></div>`);
@@ -164,9 +164,9 @@ async function loadQuantityInventory(page = 1, pageSize = AppState.pageSize || 2
     page, pageSize,
     warehouseId: $('#qtyContent [name="filterWarehouseId"]').val() || null,
     itemId:      $('#qtyContent [name="filterItemId"]').val() || null,
-    status:      $('#qtyContent [name="filterStatus"]').val() || null,
+    status:      null,
     keyword:     $('#qtyContent [name="keyword"]').val() || null,
-    ownerName:   $('#qtyContent [name="filterOwnerName"]').val().trim() || null
+    ownerName:    null
   };
   $('#quantityInventoryTable').html(UI.loading());
   const result = await UI.api('/QuantityInventory/Balances', { query });
@@ -191,20 +191,16 @@ async function loadQuantityInventory(page = 1, pageSize = AppState.pageSize || 2
       <table class="data-table"><thead><tr>
         <th class="px-3">${UI.t('Item')}</th>
         <th>${UI.t('Warehouse')}</th>
-        <th>${UI.t('Status')}</th>
         <th>${UI.t('Quantity')}</th>
-        <th>${UI.t('OwnerName')}</th>
         <th>${UI.t('Last Updated')}</th>
         <th></th>
       </tr></thead>
       <tbody>${qtyBalanceRows.map(r => `<tr>
         <td class="px-3 fw-semibold">${UI.esc(r.itemCode)}<div class="small text-muted">${UI.esc(r.itemName)}</div></td>
         <td>${UI.esc(r.warehouseCode)}</td>
-        <td>${UI.badge(r.status)}</td>
         <td class="fw-bold">${UI.esc(r.quantity)}</td>
-        <td class="small text-muted">${UI.esc(r.ownerName || '-')}</td>
         <td class="text-muted small">${UI.formatDate(r.lastUpdatedAt)}</td>
-        <td>
+        <!--<td>
           <button class="btn btn-light btn-sm btn-qty-detail"
             data-item-code="${UI.esc(r.itemCode)}"
             data-item-name="${UI.esc(r.itemName)}"
@@ -212,7 +208,7 @@ async function loadQuantityInventory(page = 1, pageSize = AppState.pageSize || 2
             title="${UI.t('View Detail')}">
             <i class="bi bi-eye"></i>
           </button>
-        </td>
+        </td>-->
       </tr>`).join('')}</tbody>
       </table>
       <div class="server-footer">
@@ -252,17 +248,13 @@ async function loadQtyDetailPanel(itemCode, itemName, warehouseId) {
       <table class="data-table"><thead><tr>
         <th class="px-3">${UI.t('Document No')}</th>
         <th class="px-3">${UI.t('SN')}</th>
-        <th>${UI.t('Status')}</th>
         <th>${UI.t('Warehouse')}</th>
-        <th>${UI.t('OwnerName')}</th>
         <th>${UI.t('Time')}</th>
       </tr></thead>
       <tbody>${rows.map(r => `<tr>
         <td class="px-3">${UI.esc(r.documentNo)}</td>
         <td class="px-3 fw-semibold font-monospace">${UI.esc(r.snCode)}</td>
-        <td>${UI.badge(r.status)}</td>
         <td>${UI.esc(r.warehouseCode || '-')}</td>
-        <td class="small text-muted">${UI.esc(r.ownerName || '-')}</td>
         <td class="text-muted small">${UI.formatDate(r.createdAt)}</td>
       </tr>`).join('')}</tbody>
       </table>
@@ -277,6 +269,21 @@ async function loadQtyDetailPanel(itemCode, itemName, warehouseId) {
 // ═══════════════════════════════════════════════════════════════
 function loadQtyFormPanel(operation) {
   const opLabel = { receive: UI.t('Receive'), issue: UI.t('Issue'), adjust: UI.t('Adjust') }[operation] || operation;
+  const externalFields = operation === 'receive'
+    ? `
+        <div class="col-xl-3 col-md-4">${UI.input('Sender Code','text','','senderCode')}</div>
+        <div class="col-xl-3 col-md-4">${UI.input('Sender Name','text','','senderName')}</div>
+        <div class="col-xl-3 col-md-4">${UI.input('Sender Phone','text','','senderPhone')}</div>`
+    : `
+        <div class="col-xl-3 col-md-4">${UI.input('Receiver Code','text','','receiverCode')}</div>
+        <div class="col-xl-3 col-md-4">${UI.input('Receiver Name','text','','receiverName')}</div>
+        <div class="col-xl-3 col-md-4">${UI.input('Receiver Phone','text','','receiverPhone')}</div>`;
+  const adjustmentFields = operation === 'adjust'
+    ? `<div class="col-xl-3 col-md-4">${UI.select('Adjustment Type', 'adjustmentDirection', [
+        { id: 'Increase', text: UI.t('Increase') },
+        { id: 'Decrease', text: UI.t('Decrease') }
+      ], 'Increase')}</div>`
+    : '';
 
   $('#qtyContent').html(`
     <div class="card quantity-operation-card"><div class="card-body">
@@ -285,13 +292,14 @@ function loadQtyFormPanel(operation) {
 
       <div class="row g-3 mb-3">
         <div class="col-xl-3 col-md-4">${UI.select('Warehouse', 'operationWarehouseId', AppState.lookups.warehouses, AppState.lookups.warehouses[0].id)}</div>
-        <div class="col-xl-3 col-md-4">${UI.input('Category Code','text','','itemCategoryCode')}</div>
-        <div class="col-xl-3 col-md-4">${UI.input('Item Code','text','','quantityItemCode')}</div>
+        <!--<div class="col-xl-3 col-md-4">${UI.input('Category Code','text','','itemCategoryCode')}</div>-->
+        <!--<div class="col-xl-3 col-md-4">${UI.input('Item Code','text','','quantityItemCode')}</div>-->
         <div class="col-xl-3 col-md-4">${UI.input('Document Date','date',today(),'documentDate')}</div>
         <div class="col-xl-3 col-md-4">${UI.input('Document No','text','','documentNo')}</div>
         <div class="col-xl-3 col-md-4">${UI.input('Approver','text',AppState.user.userName || '','approvedBy')}</div>
-        <div class="col-xl-3 col-md-4">${UI.input('OwnerName','text','','ownerName')}</div>
         <div class="col-xl-3 col-md-4">${UI.input('Notes','text','','note')}</div>
+        ${externalFields}
+        ${adjustmentFields}
       </div>
 
       <div class="d-flex justify-content-between align-items-center mb-2">
@@ -304,8 +312,9 @@ function loadQtyFormPanel(operation) {
         <table class="data-table quantity-line-table">
           <thead><tr>
             <th class="col-stt">#</th>
+            <th>${UI.t('Category Code')}</th>
+            <th>${UI.t('PN')}</th>
             <th>${UI.t('Quantity')}</th>
-            <th>${UI.t('Status')}</th>
             <th class="quantity-col-action"></th>
           </tr></thead>
           <tbody id="quantityLineBody">${renderQuantityLine()}</tbody>
@@ -376,19 +385,17 @@ async function loadQuantityTransactions() {
     <div class="table-wrap">
       <table class="data-table"><thead><tr>
         <th class="px-3">${UI.t('Time')}</th>
+        <th >${UI.t('Document No')}</th>
         <th>${UI.t('Operation')}</th>
         <th>${UI.t('Item')}</th>
-        <th>${UI.t('SN')}</th>
-        <th>${UI.t('Status')}</th>
         <th>${UI.t('Qty')}</th>
         <th>${UI.t('User')}</th>
       </tr></thead>
       <tbody>${rows.map(r => `<tr>
         <td class="px-3 small text-muted">${UI.formatDate(r.postedAt)}</td>
+        <td>${UI.t(r.documentNo)}</td>
         <td>${UI.t(r.transactionType)}</td>
         <td>${UI.esc(r.itemCode)}</td>
-        <td class="font-monospace">${UI.esc(r.snCode)}</td>
-        <td>${UI.badge(r.status)}</td>
         <td class="${r.quantityDelta < 0 ? 'text-danger' : 'text-success'} fw-bold">${r.quantityDelta > 0 ? '+' : ''}${UI.esc(r.quantityDelta)}</td>
         <td class="small text-muted">${UI.esc(r.postedBy)}</td>
       </tr>`).join('')}</tbody>
@@ -411,7 +418,7 @@ async function loadQuantityDocuments() {
     }
   });
   if (!rows.length) { $('#quantityDocumentTable').html(UI.empty('No data')); return; }
-  $('#quantityDocumentTable').html(`<div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Document No')}</th><th>${UI.t('Document Date')}</th><th>${UI.t('Warehouse')}</th><th>${UI.t('Status')}</th><th>${UI.t('Lines')}</th><th>${UI.t('Actions')}</th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3 fw-semibold">${UI.esc(r.documentNo)}</td><td>${UI.formatDate(r.documentDate)}</td><td>${UI.esc(r.warehouse || '-')}</td><td><span class="badge text-bg-light">${UI.esc(r.status || '-')}</span></td><td>${UI.esc(r.lines)}</td><td>${buildDocumentActionButtons(type, r.id)}</td></tr>`).join('')}</tbody></table></div>`);
+  $('#quantityDocumentTable').html(`<div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Document No')}</th><th>${UI.t('Document Date')}</th><th>${UI.t('Warehouse')}</th><th>${UI.t('Lines')}</th><th>${UI.t('Actions')}</th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3 fw-semibold">${UI.esc(r.documentNo)}</td><td>${UI.formatDate(r.documentDate)}</td><td>${UI.esc(r.warehouse || '-')}</td><td>${UI.esc(r.lines)}</td><td>${buildDocumentActionButtons(type, r.id)}</td></tr>`).join('')}</tbody></table></div>`);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -424,31 +431,44 @@ async function postQuantityInventory() {
   const validationErrors = validateQuantityBeforePost();
   if (validationErrors.length) { showQuantityValidation(validationErrors); return; }
 
-  const warehouseId  = parseInt($('#qtyContent [name="operationWarehouseId"]').val() || '0', 10);
-  const itemCode     = $('#qtyContent [name="quantityItemCode"]').val().trim();
-  const itemCategoryCode = $('#qtyContent [name="itemCategoryCode"]').val().trim();
+    const warehouseId = parseInt($('#qtyContent [name="operationWarehouseId"]').val() || '0', 10);
+  //const itemCode     = $('#qtyContent [name="quantityItemCode"]').val().trim();
+  //const itemCategoryCode = $('#qtyContent [name="itemCategoryCode"]').val().trim();
   const lines = $('#quantityLineBody tr').map(function () {
     const row = $(this);
-    return {
-      snCode: '',
-      quantity: parseFloat(row.find('[name="quantity"]').val() || '0'),
-      status:   row.find('[name="lineStatus"]').val() || 'Normal'
+      return {
+          itemCategoryCode: row.find('[name="itemCategoryCode"]').val() || '',
+          itemCode: row.find('[name="quantityItemCode"]').val() || '',
+          snCode: '',
+          quantity: parseFloat(row.find('[name="quantity"]').val() || '0'),
+          status:   row.find('[name="lineStatus"]').val() || 'Normal'
     };
   }).get().filter(l => l.quantity > 0);
 
+    const itemCodes = [...new Set(
+        lines.map(x => x.itemCode).filter(Boolean)
+    )];
+
   const payload = {
-    warehouseId, itemCode, itemCategoryCode,
+    warehouseId, 
     documentDate: $('#qtyContent [name="documentDate"]').val(),
     documentNo:   $('#qtyContent [name="documentNo"]').val().trim(),
     approvedBy:   $('#qtyContent [name="approvedBy"]').val().trim(),
-    ownerName:    $('#qtyContent [name="ownerName"]').val().trim() || null,
+    senderCode:   $('#qtyContent [name="senderCode"]').val()?.trim() || '',
+    senderName:   $('#qtyContent [name="senderName"]').val()?.trim() || '',
+    senderPhone:  $('#qtyContent [name="senderPhone"]').val()?.trim() || '',
+    receiverCode: $('#qtyContent [name="receiverCode"]').val()?.trim() || '',
+    receiverName: $('#qtyContent [name="receiverName"]').val()?.trim() || '',
+    receiverPhone: $('#qtyContent [name="receiverPhone"]').val()?.trim() || '',
+    adjustmentDirection: $('#qtyContent [name="adjustmentDirection"]').val() || '',
+    ownerName:     null,
     note:         $('#qtyContent [name="note"]').val().trim(),
     lines
   };
 
   const opLabel = { receive: UI.t('Receive'), issue: UI.t('Issue'), adjust: UI.t('Adjust') }[operation];
   UI.confirm('Confirm Save & Post', 'This operation will be posted immediately.',
-    `${UI.t('Operation')}: <b>${opLabel}</b><br>${UI.t('Item')}: <b>${UI.esc(itemCode)}</b><br>${UI.t('Rows')}: <b>${lines.length}</b>`,
+    `${UI.t('Operation')}: <b>${opLabel}</b><br>${UI.t('Item')}: <b>${UI.esc(itemCodes)}</b><br>${UI.t('Rows')}: <b>${lines.length}</b>`,
     async function () {
       const apiOp = operation.charAt(0).toUpperCase() + operation.slice(1);
       const editor = AppState.documentEditor;
@@ -483,7 +503,14 @@ function applyQuantityEditorState(operation) {
     documentDate: 'documentDate',
     documentNo: 'documentNo',
     approvedBy: 'approvedBy',
-    ownerName: 'ownerName',
+    senderCode: 'senderCode',
+    senderName: 'senderName',
+    senderPhone: 'senderPhone',
+    receiverCode: 'receiverCode',
+    receiverName: 'receiverName',
+    receiverPhone: 'receiverPhone',
+    adjustmentDirection: 'adjustmentDirection',
+    ownerName: '',
     note: 'note',
   };
   Object.entries(payload).forEach(([key, value]) => {
@@ -499,6 +526,8 @@ function applyQuantityEditorState(operation) {
   $('#quantityLineBody').html(lines.map(() => renderQuantityLine()).join(''));
   $('#quantityLineBody tr').each(function (index) {
     const line = lines[index] || {};
+    $(this).find('[name="itemCategoryCode"]').val(line.itemCategoryCode || '');
+    $(this).find('[name="quantityItemCode"]').val(line.itemCode || '');
     $(this).find('[name="quantity"]').val(line.quantity || 0);
     $(this).find('[name="lineStatus"]').val(line.status || 'Normal');
   });
@@ -545,11 +574,11 @@ function validateQuantityBeforePost() {
   const errors = [];
   if (!$('#qtyContent [name="operationWarehouseId"]').val())
     errors.push({ field: 'operationWarehouseId', label: 'Warehouse', message: 'Warehouse is required.' });
-  if (!$('#qtyContent [name="quantityItemCode"]').val().trim())
-    errors.push({ field: 'quantityItemCode', label: 'Item Code', message: 'Item Code is required.' });
 
   $('#quantityLineBody tr').each(function (index) {
-    const row = $(this);
+      const row = $(this);
+      if (!row.find('[name="quantityItemCode"]').val().trim())
+          errors.push({ field: 'quantityItemCode', label: 'Item Code', message: 'Item Code is required.' });
     const qty = parseFloat(row.find('[name="quantity"]').val() || '0');
     if (qty <= 0) errors.push({ row: index + 1, field: 'quantity', label: 'Qty', message: 'Quantity must be greater than zero.' });
   });
@@ -562,8 +591,9 @@ function validateQuantityBeforePost() {
 function renderQuantityLine() {
     return `<tr class="quantity-line">
     <td class="col-stt"></td>
+    <td>${UI.input('Category Code', 'text', '', 'itemCategoryCode')}</td>
+    <td>${UI.input('PN', 'text', '', 'quantityItemCode')}</td>
     <td>${UI.input('Quantity', 'number', '1', 'quantity')}</td>
-    <td class="col-select">${selectInline('lineStatus', AppState.lookups.inboundConditions, false, 'Normal') }</td>
     <td><button class="btn btn-light btn-sm btn-remove-quantity-line" type="button"><i class="bi bi-x-lg"></i></button></td>
   </tr>`;
 }

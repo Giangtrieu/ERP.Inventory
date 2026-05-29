@@ -68,6 +68,25 @@ public abstract class InventoryOperationBase
        => string.IsNullOrWhiteSpace(documentNo) ? Task.FromResult<BorrowDocument?>(null)
            : _db.BorrowDocuments.AsNoTracking().FirstOrDefaultAsync(x => x.DocumentNo == documentNo.Trim(), ct);
 
+    protected async Task<ExternalParty> GetOrCreatePartyByNameAsync(string name, ExternalPartyType type,string codePrefix, string phone, string userName, DateTime now,CancellationToken cancellationToken)
+    {
+        var party = await FindPartyByNameAsync(name, type, cancellationToken);
+        if (party != null)return party;
+
+        party = new ExternalParty
+        {
+            PartyCode = _documentNumbers.Next(codePrefix, now),
+            Name = name,
+            PartyType = type,
+            Phone = phone,
+            CreatedBy = userName
+        };
+
+        _db.ExternalParties.Add(party);
+
+        return party;
+    }
+
     protected async Task<string> NextCheckNoAsync(DateTime sessionDate, DocumentPeriodType periodType, CancellationToken cancellationToken = default)
     {
         string documentNo;
@@ -127,6 +146,10 @@ public abstract class InventoryOperationBase
     protected Task<ExternalParty?> FindPartyByCodeAsync(string? partyCode, ExternalPartyType partyType, CancellationToken ct)
         => string.IsNullOrWhiteSpace(partyCode) ? Task.FromResult<ExternalParty?>(null)
             : _db.ExternalParties.AsNoTracking().FirstOrDefaultAsync(x => x.PartyCode == partyCode.Trim() && x.PartyType == partyType && x.IsActive, ct);
+
+    protected Task<ExternalParty?> FindPartyByNameAsync(string? name, ExternalPartyType partyType, CancellationToken ct)
+       => string.IsNullOrWhiteSpace(name) ? Task.FromResult<ExternalParty?>(null)
+           : _db.ExternalParties.AsNoTracking().FirstOrDefaultAsync(x => x.Name == name.Trim() && x.PartyType == partyType && x.IsActive, ct);
 
     protected static PostedDocumentDto ToPostedDto(string documentType, int documentId, string documentNo, DateTime postedAt)
     {
@@ -203,7 +226,7 @@ public abstract class InventoryOperationBase
         balance.UpdatedBy = user.UserName;
     }
 
-    protected void AddHistory(int itemInstanceId, MovementActionType action, LocationType? fromType, int? fromId, string? fromDisplay, LocationType? toType, int? toId, string? toDisplay, ItemStatus oldStatus, ItemStatus newStatus, string documentType, int documentId, string documentNo, string? note, CurrentUserContext user)
+    protected void AddHistory(int itemInstanceId, MovementActionType action, LocationType? fromType, int? fromId, string? fromDisplay, LocationType? toType, int? toId, string? toDisplay, ItemStatus oldStatus, ItemStatus newStatus, string documentType, int documentId, string documentNo, string? note, CurrentUserContext user, Guid? lifecycleBatchId = null)
     {
         _db.ItemMovementHistories.Add(new ItemMovementHistory
         {
@@ -212,11 +235,12 @@ public abstract class InventoryOperationBase
             ToLocationType = toType, ToLocationId = toId, ToLocationDisplay = toDisplay,
             OldStatus = oldStatus, NewStatus = newStatus,
             DocumentType = documentType, DocumentId = documentId, DocumentNo = documentNo,
+            LifecycleBatchId = lifecycleBatchId,
             Note = note, PerformedAt = _clock.UtcNow, PerformedBy = user.UserName
         });
     }
 
-    protected void AddInventoryTransaction(InventoryTransactionType type, int itemId, int? itemInstanceId, int? warehouseId, int? binLocationId, decimal quantityDelta, ItemStatus statusAfter, string documentType, int documentId, string documentNo, CurrentUserContext user)
+    protected void AddInventoryTransaction(InventoryTransactionType type, int itemId, int? itemInstanceId, int? warehouseId, int? binLocationId, decimal quantityDelta, ItemStatus statusAfter, string documentType, int documentId, string documentNo, CurrentUserContext user, Guid? lifecycleBatchId = null)
     {
         _db.InventoryTransactions.Add(new InventoryTransaction
         {
@@ -224,6 +248,7 @@ public abstract class InventoryOperationBase
             WarehouseId = warehouseId, BinLocationId = binLocationId,
             QuantityDelta = quantityDelta, StatusAfter = statusAfter,
             DocumentType = documentType, DocumentId = documentId, DocumentNo = documentNo,
+            LifecycleBatchId = lifecycleBatchId,
             PostedAt = _clock.UtcNow, PostedBy = user.UserName
         });
     }

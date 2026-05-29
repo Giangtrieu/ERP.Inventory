@@ -100,6 +100,14 @@ Router.register('dashboard', async function(){
           <div class="fw-semibold small text-muted mb-2">${UI.t('Quantity by Item')}</div>
           <div id="qtyByItemChart" class="chart-area">${UI.loading()}</div>
         </div>
+        <div class="col-xl-6">
+          <div class="fw-semibold small text-muted mb-2">${UI.t('Inventory Quantity Distribution by ItemCode')}</div>
+          <div id="qtyItemCodePieChart" class="chart-area">${UI.loading()}</div>
+        </div>
+        <div class="col-xl-6">
+          <div class="fw-semibold small text-muted mb-2">${UI.t('Inventory Quantity Distribution by ItemCategory')}</div>
+          <div id="qtyCategoryPieChart" class="chart-area">${UI.loading()}</div>
+        </div>
       </div>
     </div></div>
   </div></div>`);
@@ -121,6 +129,13 @@ Router.register('dashboard', async function(){
   $('#app [name="utilizationWarehouseId"]').on('change', loadLocationUtilizationChart);
   $('#app [name="overdueWarehouseId"]').on('change', loadBorrowOverdueChart);
   $('#app [name="qtyWarehouseId"]').on('change', loadQuantitySummary);
+  $(document).off('click.qtyItemPie').on('click.qtyItemPie', '.qty-item-drilldown', function(){
+    AppState.quantityPreset = {
+      warehouseId: $('#app [name="qtyWarehouseId"]').val() || '',
+      keyword: $(this).data('key') || ''
+    };
+    Router.go('quantity-inventory');
+  });
 
   await Promise.all([
     loadDashboardSummary(),
@@ -200,6 +215,8 @@ async function loadQuantitySummary() {
     $('#qtySummaryCards').html(UI.empty('No quantity inventory data'));
     $('#qtyByOwnerChart').html(UI.empty('No data'));
     $('#qtyByItemChart').html(UI.empty('No data'));
+    $('#qtyItemCodePieChart').html(UI.empty('No data'));
+    $('#qtyCategoryPieChart').html(UI.empty('No data'));
     return;
   }
 
@@ -228,6 +245,8 @@ async function loadQuantitySummary() {
 
   $('#qtyByOwnerChart').html(barChart(d.byOwner || []));
   $('#qtyByItemChart').html(barChart(d.byItem || []));
+  $('#qtyItemCodePieChart').html(pieChart(d.quantityByItemCode || [], { drilldown: true, totalLabel: 'Total Quantity' }));
+  $('#qtyCategoryPieChart').html(pieChart(d.quantityByItemCategory || [], { totalLabel: 'Total Quantity' }));
 }
 
 function dashboardDaysOptions(){
@@ -280,6 +299,62 @@ function donutChart(rows, enumType){
       <b>${UI.esc(x.value)}</b>
     </div>`).join('')}</div>
   </div>`;
+}
+
+function pieChart(rows, options){
+  if(!rows || !rows.length) return UI.empty('No data');
+  const total = rows.reduce((sum, x) => sum + Number(x.value || 0), 0);
+  if(total <= 0) return UI.empty('No data');
+  const cx = 90;
+  const cy = 90;
+  const radius = 72;
+  let angle = -90;
+  const opts = options || {};
+  return `<div class="donut-wrap">
+    <svg class="svg-donut" viewBox="0 0 180 180" role="img" aria-label="${UI.t(opts.totalLabel || 'Total Quantity')}">
+      ${rows.map((x, i) => {
+        const value = Number(x.value || 0);
+        const slice = value / total * 360;
+        const path = pieSlicePath(cx, cy, radius, angle, angle + slice);
+        angle += slice;
+        const cls = opts.drilldown ? ' class="qty-item-drilldown pie-slice"' : ' class="pie-slice"';
+        const key = UI.esc(x.key || x.label || '');
+        return `<path${cls} data-key="${key}" d="${path}" fill="${chartColor(i)}"><title>${UI.esc(x.label)}: ${formatChartNumber(value)} (${formatPercent(x.percentage, value, total)})</title></path>`;
+      }).join('')}
+      <circle cx="${cx}" cy="${cy}" r="34" fill="#fff"></circle>
+      <text x="${cx}" y="86" text-anchor="middle" font-size="12" fill="#6b7280">${UI.esc(UI.t(opts.totalLabel || 'Total Quantity'))}</text>
+      <text x="${cx}" y="106" text-anchor="middle" font-size="18" font-weight="800" fill="#111827">${UI.esc(formatChartNumber(total))}</text>
+    </svg>
+    <div class="chart-legend">${rows.map((x, i) => `<div class="legend-row ${opts.drilldown ? 'qty-item-drilldown' : ''}" data-key="${UI.esc(x.key || x.label || '')}">
+      <div class="legend-key"><span class="legend-swatch" style="background:${chartColor(i)}"></span><span>${UI.esc(truncateChartLabel(x.label, 34))}</span></div>
+      <b>${UI.esc(formatChartNumber(x.value))} <span class="text-muted fw-normal">(${formatPercent(x.percentage, x.value, total)})</span></b>
+    </div>`).join('')}</div>
+  </div>`;
+}
+
+function pieSlicePath(cx, cy, radius, startAngle, endAngle){
+  const start = polarToCartesian(cx, cy, radius, endAngle);
+  const end = polarToCartesian(cx, cy, radius, startAngle);
+  const largeArc = endAngle - startAngle <= 180 ? 0 : 1;
+  return `M ${cx} ${cy} L ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 0 ${end.x} ${end.y} Z`;
+}
+
+function polarToCartesian(cx, cy, radius, angleInDegrees){
+  const angleInRadians = (angleInDegrees - 90) * Math.PI / 180;
+  return {
+    x: cx + (radius * Math.cos(angleInRadians)),
+    y: cy + (radius * Math.sin(angleInRadians))
+  };
+}
+
+function formatPercent(percentage, value, total){
+  const pct = Number(percentage || 0) || (total ? Number(value || 0) / total * 100 : 0);
+  return `${pct.toFixed(pct >= 10 ? 1 : 2)}%`;
+}
+
+function formatChartNumber(value){
+  const n = Number(value || 0);
+  return Number.isInteger(n) ? String(n) : n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 function lineChart(rows){

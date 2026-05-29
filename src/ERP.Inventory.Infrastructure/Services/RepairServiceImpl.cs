@@ -43,6 +43,7 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
 
         await using var transaction = await BeginOperationTransactionAsync(cancellationToken);
         var now = _clock.UtcNow;
+        var lifecycleBatchId = Guid.NewGuid();
         // ── Find-or-Create document (append pattern, same as BorrowLend) ──
         var normalizedDocNo = string.IsNullOrWhiteSpace(request.DocumentNo)? string.Empty: request.DocumentNo.Trim().ToUpperInvariant();
         RepairDocument document;
@@ -150,14 +151,15 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
                 await ApplyStockDeltaAsync(fromWarehouseId.Value, fromBinLocationId, instance.ItemId, oldStatus, -1, user, cancellationToken);
 
             var toDisplay = ExternalLocationDisplay(vendor.Name, targetExternalLocation);
-            AddHistory(instance.Id, MovementActionType.SendToRepair, LocationType.BinLocation, fromBinLocationId, fromDisplay, LocationType.RepairVendor, vendor.Id, toDisplay, oldStatus, ItemStatus.Repairing, nameof(RepairDocument), document.Id, document.DocumentNo, string.IsNullOrWhiteSpace(line.Note) ? request.Reason : line.Note, user);
-            AddInventoryTransaction(InventoryTransactionType.RepairSend, instance.ItemId, instance.Id, fromWarehouseId, fromBinLocationId, -1, ItemStatus.Repairing, nameof(RepairDocument), document.Id, document.DocumentNo, user);
+            AddHistory(instance.Id, MovementActionType.SendToRepair, LocationType.BinLocation, fromBinLocationId, fromDisplay, LocationType.RepairVendor, vendor.Id, toDisplay, oldStatus, ItemStatus.Repairing, nameof(RepairDocument), document.Id, document.DocumentNo, string.IsNullOrWhiteSpace(line.Note) ? request.Reason : line.Note, user, lifecycleBatchId);
+            AddInventoryTransaction(InventoryTransactionType.RepairSend, instance.ItemId, instance.Id, fromWarehouseId, fromBinLocationId, -1, ItemStatus.Repairing, nameof(RepairDocument), document.Id, document.DocumentNo, user, lifecycleBatchId);
 
             _db.RepairDocumentLogs.Add(new RepairDocumentLog
             {
                 RepairDocumentId = document.Id,
                 ItemInstanceId = instance.Id,
                 Action = "RepairSend",
+                LifecycleBatchId = lifecycleBatchId,
                 OldStatus = oldStatus.ToString(),
                 NewStatus = ItemStatus.Repairing.ToString(),
                 RepairVendorName = $"{vendor.PartyCode}-{vendor.Name}",
@@ -206,6 +208,7 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
 
         await using var transaction = await BeginOperationTransactionAsync(cancellationToken);
         var now = _clock.UtcNow;
+        var lifecycleBatchId = Guid.NewGuid();
         document.UpdatedAt = now; document.UpdatedBy = user.UserName;
 
         var processedInstances = new HashSet<int>(); var targetBinsInRequest = new HashSet<int>();
@@ -257,14 +260,15 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
                 await ApplyStockDeltaAsync(fromWarehouseId.Value, fromBinLocationId, instance.ItemId, oldStatus, -1, user, cancellationToken);
             await ApplyStockDeltaAsync(targetBin.WarehouseId, targetBin.Id, instance.ItemId, newStatus, 1, user, cancellationToken);
 
-            AddHistory(instance.Id, MovementActionType.ReceiveFromRepair, LocationType.RepairVendor, document.RepairVendorId, fromDisplay, LocationType.BinLocation, targetBin.Id, targetBin.FullPath, oldStatus, newStatus, nameof(RepairDocument), document.Id, document.DocumentNo, line.Note ?? request.ResultNote, user);
-            AddInventoryTransaction(InventoryTransactionType.RepairReceive, instance.ItemId, instance.Id, targetBin.WarehouseId, targetBin.Id, 1, newStatus, nameof(RepairDocument), document.Id, document.DocumentNo, user);
+            AddHistory(instance.Id, MovementActionType.ReceiveFromRepair, LocationType.RepairVendor, document.RepairVendorId, fromDisplay, LocationType.BinLocation, targetBin.Id, targetBin.FullPath, oldStatus, newStatus, nameof(RepairDocument), document.Id, document.DocumentNo, line.Note ?? request.ResultNote, user, lifecycleBatchId);
+            AddInventoryTransaction(InventoryTransactionType.RepairReceive, instance.ItemId, instance.Id, targetBin.WarehouseId, targetBin.Id, 1, newStatus, nameof(RepairDocument), document.Id, document.DocumentNo, user, lifecycleBatchId);
 
             _db.RepairDocumentLogs.Add(new RepairDocumentLog
             {
                 RepairDocumentId = document.Id,
                 ItemInstanceId = instance.Id,
                 Action = "RepairReceive",
+                LifecycleBatchId = lifecycleBatchId,
                 OldStatus = oldStatus.ToString(),
                 NewStatus = newStatus.ToString(),
                 RepairVendorName = document.RepairVendor?.Name,

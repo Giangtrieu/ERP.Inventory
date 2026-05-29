@@ -55,6 +55,7 @@ public class InventoryDbContext : DbContext
     public DbSet<ImportBatchRow> ImportBatchRows => Set<ImportBatchRow>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<LogErrorSystem> LogErrorSystems => Set<LogErrorSystem>();
     public DbSet<Translation> Translations => Set<Translation>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<UserWarehousePermission> UserWarehousePermissions => Set<UserWarehousePermission>();
@@ -114,10 +115,12 @@ public class InventoryDbContext : DbContext
         modelBuilder.Entity<CurrentItemLocation>().HasIndex(x => x.ItemInstanceId).IsUnique();
         modelBuilder.Entity<ItemMovementHistory>().HasIndex(x => x.ItemInstanceId);
         modelBuilder.Entity<ItemMovementHistory>().HasIndex(x => new { x.DocumentType, x.DocumentId });
+        modelBuilder.Entity<ItemMovementHistory>().HasIndex(x => new { x.DocumentType, x.DocumentId, x.ActionType, x.LifecycleBatchId });
         modelBuilder.Entity<StockBalance>().Property(x => x.Quantity).HasPrecision(18, 4);
         modelBuilder.Entity<StockBalance>().HasIndex(x => new { x.WarehouseId, x.ItemId, x.BinLocationId, x.Status }).IsUnique();
         modelBuilder.Entity<InventoryTransaction>().Property(x => x.QuantityDelta).HasPrecision(18, 4);
         modelBuilder.Entity<InventoryTransaction>().HasIndex(x => new { x.DocumentType, x.DocumentId });
+        modelBuilder.Entity<InventoryTransaction>().HasIndex(x => new { x.DocumentType, x.DocumentId, x.TransactionType, x.LifecycleBatchId });
     }
 
     private static void ConfigureQuantityInventory(ModelBuilder modelBuilder)
@@ -133,12 +136,22 @@ public class InventoryDbContext : DbContext
             .HasOne(x => x.Item).WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<QuantityInventoryDocument>().HasIndex(x => x.DocumentNo).IsUnique();
+        modelBuilder.Entity<QuantityInventoryDocument>().Property(x => x.OperatorUserId).HasMaxLength(100);
+        modelBuilder.Entity<QuantityInventoryDocument>().Property(x => x.OperatorUserCode).HasMaxLength(100);
+        modelBuilder.Entity<QuantityInventoryDocument>().Property(x => x.OperatorUserName).HasMaxLength(200);
+        modelBuilder.Entity<QuantityInventoryDocument>().Property(x => x.SenderCode).HasMaxLength(100);
+        modelBuilder.Entity<QuantityInventoryDocument>().Property(x => x.SenderName).HasMaxLength(200);
+        modelBuilder.Entity<QuantityInventoryDocument>().Property(x => x.SenderPhone).HasMaxLength(50);
+        modelBuilder.Entity<QuantityInventoryDocument>().Property(x => x.ReceiverCode).HasMaxLength(100);
+        modelBuilder.Entity<QuantityInventoryDocument>().Property(x => x.ReceiverName).HasMaxLength(200);
+        modelBuilder.Entity<QuantityInventoryDocument>().Property(x => x.ReceiverPhone).HasMaxLength(50);
         modelBuilder.Entity<QuantityInventoryDocument>()
             .HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<QuantityInventoryDocumentLine>().Property(x => x.Quantity).HasPrecision(18, 4);
         modelBuilder.Entity<QuantityInventoryDocumentLine>().Property(x => x.SnCode).HasMaxLength(100);
         modelBuilder.Entity<QuantityInventoryDocumentLine>().HasIndex(x => x.QuantityInventoryDocumentId);
+        modelBuilder.Entity<QuantityInventoryDocumentLine>().HasIndex(x => new { x.QuantityInventoryDocumentId, x.LifecycleBatchId });
         modelBuilder.Entity<QuantityInventoryDocumentLine>()
             .HasOne(x => x.QuantityInventoryDocument).WithMany(x => x.Lines).HasForeignKey(x => x.QuantityInventoryDocumentId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<QuantityInventoryDocumentLine>()
@@ -147,6 +160,7 @@ public class InventoryDbContext : DbContext
         modelBuilder.Entity<QuantityInventoryTransaction>().Property(x => x.QuantityDelta).HasPrecision(18, 4);
         modelBuilder.Entity<QuantityInventoryTransaction>().Property(x => x.SnCode).HasMaxLength(100);
         modelBuilder.Entity<QuantityInventoryTransaction>().HasIndex(x => new { x.DocumentNo, x.ItemId, x.SnCode });
+        modelBuilder.Entity<QuantityInventoryTransaction>().HasIndex(x => new { x.DocumentId, x.TransactionType, x.LifecycleBatchId });
         modelBuilder.Entity<QuantityInventoryTransaction>()
             .HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<QuantityInventoryTransaction>()
@@ -179,10 +193,13 @@ public class InventoryDbContext : DbContext
         // Document log indexes
         modelBuilder.Entity<BorrowDocumentLog>().HasIndex(x => x.BorrowDocumentId);
         modelBuilder.Entity<BorrowDocumentLog>().HasIndex(x => new { x.ItemInstanceId, x.Timestamp });
+        modelBuilder.Entity<BorrowDocumentLog>().HasIndex(x => new { x.BorrowDocumentId, x.Action, x.LifecycleBatchId });
         modelBuilder.Entity<InboundDocumentLog>().HasIndex(x => x.InboundDocumentId);
         modelBuilder.Entity<InboundDocumentLog>().HasIndex(x => new { x.ItemInstanceId, x.Timestamp });
+        modelBuilder.Entity<InboundDocumentLog>().HasIndex(x => new { x.InboundDocumentId, x.Action, x.LifecycleBatchId });
         modelBuilder.Entity<RepairDocumentLog>().HasIndex(x => x.RepairDocumentId);
         modelBuilder.Entity<RepairDocumentLog>().HasIndex(x => new { x.ItemInstanceId, x.Timestamp });
+        modelBuilder.Entity<RepairDocumentLog>().HasIndex(x => new { x.RepairDocumentId, x.Action, x.LifecycleBatchId });
         modelBuilder.Entity<AdjustmentDocumentLog>().HasIndex(x => x.AdjustmentDocumentId);
         modelBuilder.Entity<AdjustmentDocumentLog>().HasIndex(x => new { x.ItemInstanceId, x.Timestamp });
     }
@@ -204,6 +221,20 @@ public class InventoryDbContext : DbContext
             .HasForeignKey(x => x.RoleId);
         modelBuilder.Entity<ImportBatch>().HasIndex(x => x.BatchNo).IsUnique();
         modelBuilder.Entity<AuditLog>().HasIndex(x => new { x.EntityName, x.EntityId });
+        modelBuilder.Entity<LogErrorSystem>().ToTable("LogErrorSystem");
+        modelBuilder.Entity<LogErrorSystem>().HasIndex(x => x.ErrorCode).IsUnique();
+        modelBuilder.Entity<LogErrorSystem>().HasIndex(x => x.CreatedAt);
+        modelBuilder.Entity<LogErrorSystem>().HasIndex(x => x.IsResolved);
+        modelBuilder.Entity<LogErrorSystem>().Property(x => x.ErrorCode).HasMaxLength(40);
+        modelBuilder.Entity<LogErrorSystem>().Property(x => x.UserId).HasMaxLength(100);
+        modelBuilder.Entity<LogErrorSystem>().Property(x => x.UserName).HasMaxLength(200);
+        modelBuilder.Entity<LogErrorSystem>().Property(x => x.RequestPath).HasMaxLength(500);
+        modelBuilder.Entity<LogErrorSystem>().Property(x => x.HttpMethod).HasMaxLength(20);
+        modelBuilder.Entity<LogErrorSystem>().Property(x => x.Module).HasMaxLength(100);
+        modelBuilder.Entity<LogErrorSystem>().Property(x => x.Action).HasMaxLength(100);
+        modelBuilder.Entity<LogErrorSystem>().Property(x => x.ClientIp).HasMaxLength(100);
+        modelBuilder.Entity<LogErrorSystem>().Property(x => x.Browser).HasMaxLength(500);
+        modelBuilder.Entity<LogErrorSystem>().Property(x => x.ResolvedBy).HasMaxLength(200);
         modelBuilder.Entity<Translation>().HasIndex(x => new { x.EntityName, x.EntityId, x.FieldName, x.LanguageCode }).IsUnique();
         modelBuilder.Entity<UserWarehousePermission>().HasIndex(x => new { x.UserId, x.WarehouseId }).IsUnique();
     }

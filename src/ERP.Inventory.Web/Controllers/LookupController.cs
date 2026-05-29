@@ -54,9 +54,7 @@ public sealed class LookupController : Controller
     [HttpGet("Items")]
     public async Task<IActionResult> Items([FromQuery] string? keyword, CancellationToken cancellationToken)
     {
-        var query = _db.Items.AsNoTracking()
-            //.Include(x => x.Category)
-            .Where(x => x.IsActive);
+        var query = _db.Items.AsNoTracking().Where(x => x.IsActive);
 
         if (!string.IsNullOrWhiteSpace(keyword))
         {
@@ -65,16 +63,33 @@ public sealed class LookupController : Controller
         }
 
         var rows = await query
-            //.OrderBy(x => x.ItemCode)
             .Select(x => new
             {
                 id = x.Id,
-                //code = x.ItemCode,
-                //categoryId = x.CategoryId,
-                //categoryCode = x.Category != null ? x.Category.CategoryCode : string.Empty,
-                //categoryName = x.Category != null ? x.Category.Name : string.Empty,
                 text = x.ItemCode,
-                //isSerialManaged = x.IsSerialManaged
+            })
+            .ToArrayAsync(cancellationToken);
+
+        return Json(rows);
+    }
+
+    [HttpGet("Serials")]
+    public async Task<IActionResult> Serials([FromQuery] string? keyword, CancellationToken cancellationToken)
+    {
+        var query = _db.ItemInstances.AsNoTracking().Where(x => x.IsActive);
+        query = query.Where(x => _db.Items.Any(i => i.Id == x.ItemId));
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var key = keyword.Trim();
+            query = query.Where(x => x.SerialNumber.Contains(key) || x.MT.Contains(key));
+        }
+
+        var rows = await query
+            .Select(x => new
+            {
+                id = x.Id,
+                text = x.SerialNumber,
+                itemId = x.ItemId,
             })
             .ToArrayAsync(cancellationToken);
 
@@ -84,7 +99,12 @@ public sealed class LookupController : Controller
     [HttpGet("BinCodes")]
     public async Task<IActionResult> BinCodes([FromQuery] string? keyword, CancellationToken cancellationToken)
     {
-        var query = _db.BinLocations.AsNoTracking().Where(x => x.IsActive);
+        var query = _db.BinLocations .AsNoTracking() .Where(x => x.IsActive);
+        query = query.Where(x => !_db.CurrentItemLocations.Any(cl => cl.BinLocationId == x.Id));
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            query = query.Where(x => x.BinCode.Contains(keyword));
+        }
 
         var rows = await query
             .Select(x => new
@@ -92,6 +112,7 @@ public sealed class LookupController : Controller
                 id = x.Id,
                 text = x.BinCode,
             })
+            .OrderBy(x => x.text)
             .ToArrayAsync(cancellationToken);
 
         return Json(rows);
@@ -217,7 +238,28 @@ public sealed class LookupController : Controller
         }
 
         var rows = await query.OrderBy(x => x.PartyCode)
-            .Select(x => new { id = x.Id, text = x.PartyCode + " - " + x.Name, type = x.PartyType.ToString() })
+            .Select(x => new { id = x.Id, code = x.PartyCode, name = x.Name, type = x.PartyType.ToString() })
+            .ToArrayAsync(cancellationToken);
+        return Json(rows);
+    }
+    [HttpGet("DocumentNos")]
+    public async Task<IActionResult> DocumentNos([FromQuery] int? warehouseId, CancellationToken cancellationToken)
+    {
+        var user = _currentUserService.GetCurrentUser();
+        var query = _db.InboundDocuments.AsNoTracking();
+        if (warehouseId.HasValue)
+        {
+            query = user.CanAccessWarehouse(warehouseId.Value)
+                ? query.Where(x => x.WarehouseId == warehouseId.Value)
+                : query.Where(x => false);
+        }
+        else if (!user.IsAdmin)
+        {
+            query = query.Where(x => user.WarehouseIds.Contains(x.WarehouseId));
+        }
+
+        var rows = await query.OrderBy(x => x.DocumentNo)
+            .Select(x => new { id = x.Id, code = x.DocumentNo})
             .ToArrayAsync(cancellationToken);
         return Json(rows);
     }

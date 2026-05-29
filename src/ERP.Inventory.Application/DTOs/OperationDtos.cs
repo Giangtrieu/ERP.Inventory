@@ -293,9 +293,17 @@ public sealed class QuantityInventoryRequest
     public string DocumentNo { get; init; } = string.Empty;
     public int WarehouseId { get; init; }
     public DateTime DocumentDate { get; init; } = DateTime.UtcNow;
-    public string ItemCategoryCode { get; init; } = string.Empty;
-    public string ItemCode { get; init; } = string.Empty;
     public string ApprovedBy { get; init; } = string.Empty;
+    public string OperatorUserId { get; init; } = string.Empty;
+    public string OperatorUserCode { get; init; } = string.Empty;
+    public string OperatorUserName { get; init; } = string.Empty;
+    public string SenderCode { get; init; } = string.Empty;
+    public string SenderName { get; init; } = string.Empty;
+    public string SenderPhone { get; init; } = string.Empty;
+    public string ReceiverCode { get; init; } = string.Empty;
+    public string ReceiverName { get; init; } = string.Empty;
+    public string ReceiverPhone { get; init; } = string.Empty;
+    public string AdjustmentDirection { get; init; } = string.Empty;
     public string? Note { get; init; }
     /// <summary>Chủ sở hữu hàng — áp dụng cho tất cả ItemInstance trong operation này.</summary>
     public string? OwnerName { get; init; }
@@ -304,8 +312,11 @@ public sealed class QuantityInventoryRequest
 
 public sealed class QuantityInventoryLineRequest
 {
+    public string ItemCategoryCode { get; init; } = string.Empty;
+    public string ItemCode { get; init; } = string.Empty;
     public string SnCode { get; init; } = string.Empty;
     public string Status { get; init; } =string.Empty;
+    public string AdjustmentDirection { get; init; } = string.Empty;
     public decimal Quantity { get; init; }
     public string? Note { get; init; }
 }

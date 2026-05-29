@@ -27,7 +27,7 @@ window.OperationLineConfig = {
                 ['col-stt', '#'],
                 ['col-item-code', 'Item'],
                 ['col-serial', 'Serial'],
-                ['col-serial', 'New Serial'],
+                //['col-serial', 'New Serial'],
                 ['col-select', 'New Status'],
                 ['col-bin', 'Target Bin'],
                 //['col-note', 'Reason'],
@@ -38,7 +38,7 @@ window.OperationLineConfig = {
             ${tdStt(index)}
             ${tdItem()}
             ${tdSerial()}
-            <td class="col-serial"><input class="form-control form-control-sm" name="newSerialNumber"></td>
+            <!--<td class="col-serial"><input class="form-control form-control-sm" name="newSerialNumber"></td>-->
             <td class="col-select">${selectInline('newStatus', AppState.lookups.returnConditions, false, 'Normal')}</td>
             ${tdTargetBin()}
             <!--<td class="col-note"><input class="form-control form-control-sm" name="reason"></td>-->
