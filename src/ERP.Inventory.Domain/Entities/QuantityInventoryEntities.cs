@@ -65,5 +65,11 @@ public class QuantityInventoryTransaction
     public Guid? LifecycleBatchId { get; set; }
     public DateTime PostedAt { get; set; } = DateTime.UtcNow;
     public string PostedBy { get; set; } = string.Empty;
+    public string SenderCode { get; set; } = string.Empty;
+    public string SenderName { get; set; } = string.Empty;
+    public string SenderPhone { get; set; } = string.Empty;
+    public string ReceiverCode { get; set; } = string.Empty;
+    public string ReceiverName { get; set; } = string.Empty;
+    public string ReceiverPhone { get; set; } = string.Empty;
 }
 

@@ -23,54 +23,60 @@ public sealed class DashboardService : IDashboardService
             _db.CurrentItemLocations.AsNoTracking().Include(x => x.ItemInstance).Where(x => x.ItemInstance != null),
             warehouseId, user);
 
-        // Batch all status counts into a single query using GroupBy
-        //var statusCounts = await query
-        //    .GroupBy(x => x.ItemInstance!.Status)
-        //    .Select(g => new { Status = g.Key, Count = g.Count() })
-        //    .ToArrayAsync(cancellationToken);
+        var summary = await query
+        .GroupBy(_ => 1)
+        .Select(g => new
+        {
+            TotalItems = g.Count(),
 
-        var total = await query.CountAsync(cancellationToken);
+            InStock = g.Count(x =>
+                x.BinLocationId != null &&
+                (
+                    x.ItemInstance!.Status == ItemStatus.Normal ||
+                    x.ItemInstance.Status == ItemStatus.InStock ||
+                    x.ItemInstance.Status == ItemStatus.Scrapped ||
+                    x.ItemInstance.Status == ItemStatus.Damaged
+                )),
 
-        var inStock = await query.CountAsync(x => x.BinLocation != null &&
-            (x.ItemInstance!.Status == ItemStatus.Normal ||
-            x.ItemInstance.Status == ItemStatus.InStock ||
-            x.ItemInstance.Status == ItemStatus.Scrapped ||
-            x.ItemInstance.Status == ItemStatus.Damaged),
-            cancellationToken);
+            Repairing = g.Count(x =>
+                x.BinLocationId == null &&
+                x.ItemInstance!.Status == ItemStatus.Repairing),
 
-        var repairing = await query.CountAsync(x => x.BinLocation == null &&
-            x.ItemInstance!.Status == ItemStatus.Repairing,
-            cancellationToken);
+            LentOut = g.Count(x =>
+                x.BinLocationId == null &&
+                x.ItemInstance!.Status == ItemStatus.LentOut),
 
-        var lentOut = await query.CountAsync(x => x.BinLocation == null &&
-            x.ItemInstance!.Status == ItemStatus.LentOut,
-            cancellationToken);
+            DamagedOrLost = g.Count(x =>
+                x.ItemInstance!.Status == ItemStatus.Damaged ||
+                x.ItemInstance.Status == ItemStatus.Lost ||
+                x.ItemInstance.Status == ItemStatus.Scrapped)
+        })
+        .FirstOrDefaultAsync(cancellationToken);
 
-        var damagedOrLost = await query.CountAsync(x =>
-            x.ItemInstance!.Status == ItemStatus.Damaged ||
-            x.ItemInstance.Status == ItemStatus.Lost ||
-            x.ItemInstance.Status == ItemStatus.Scrapped,
-            cancellationToken);
-
-        // Overdue borrow count
         var now = DateTime.UtcNow;
-        var overdueQuery = _db.BorrowDocumentLines.AsNoTracking()
-            .Include(x => x.BorrowDocument)
-            .Include(x => x.FromBinLocation)
-            .Include(x => x.TargetBinLocation)
-            .Where(x => !x.IsReturned && x.BorrowDocument != null && x.BorrowDocument.DueDate < now);
 
-        overdueQuery = ApplyBorrowWarehouseScope(overdueQuery, warehouseId, user);
+        var overdueQuery = _db.BorrowDocumentLines
+            .AsNoTracking()
+            .Where(x =>
+                !x.IsReturned &&
+                x.BorrowDocument != null &&
+                x.BorrowDocument.DueDate < now);
+
+        overdueQuery = ApplyBorrowWarehouseScope(
+            overdueQuery,
+            warehouseId,
+            user);
+
         var overdue = await overdueQuery.CountAsync(cancellationToken);
 
         return new DashboardSummaryDto
         {
-            TotalItems = total,
-            InStock = inStock,
-            Repairing = repairing,
-            LentOut = lentOut,
+            TotalItems = summary?.TotalItems ?? 0,
+            InStock = summary?.InStock ?? 0,
+            Repairing = summary?.Repairing ?? 0,
+            LentOut = summary?.LentOut ?? 0,
             OverdueReturn = overdue,
-            DamagedOrLost = damagedOrLost
+            DamagedOrLost = summary?.DamagedOrLost ?? 0
         };
     }
 
@@ -278,21 +284,34 @@ public sealed class DashboardService : IDashboardService
             .Distinct()
             .CountAsync(cancellationToken);
 
-        var ownerRows = await query
-            .GroupJoin(
-                _db.ItemInstances.AsNoTracking().Where(i => i.TrackingType == ItemTrackingType.QuantityOnly),
-                balance => new { balance.ItemId, SerialNumber = balance.SnCode },
-                instance => new { instance.ItemId, SerialNumber = instance.SerialNumber ?? string.Empty },
-                (balance, instances) => new
-                {
-                    balance.Quantity,
-                    OwnerName = instances.Select(i => i.OwnerName).FirstOrDefault()
-                })
-            .GroupBy(x => x.OwnerName == null || x.OwnerName == string.Empty ? "TE" : x.OwnerName)
-            .Select(g => new { Label = g.Key, Value = g.Sum(x => x.Quantity) })
-            .OrderByDescending(x => x.Value)
-            .Take(10)
-            .ToArrayAsync(cancellationToken);
+        var ownerRows = await (
+             from balance in query
+             join instance in _db.ItemInstances.AsNoTracking()
+                 on new
+                 {
+                     balance.ItemId,
+                     SerialNumber = balance.SnCode ?? ""
+                 }
+                 equals new
+                 {
+                     instance.ItemId,
+                     SerialNumber = instance.SerialNumber ?? ""
+                 }
+                 into gj
+             from instance in gj.DefaultIfEmpty()
+             group balance.Quantity by
+                 (instance != null && !string.IsNullOrEmpty(instance.OwnerName)
+                     ? instance.OwnerName
+                     : "TE")
+                 into g
+             select new
+             {
+                 Label = g.Key,
+                 Value = g.Sum()
+             })
+             .OrderByDescending(x => x.Value)
+             .Take(10)
+             .ToArrayAsync(cancellationToken);
 
         var itemRows = await query
             .GroupBy(x => x.Item != null ? x.Item.ItemCode : "Unknown")
@@ -302,7 +321,7 @@ public sealed class DashboardService : IDashboardService
 
         var categoryRows = await query
             .GroupBy(x => x.Item != null && x.Item.Category != null
-                ? x.Item.Category.CategoryCode + " - " + x.Item.Category.Name
+                ? x.Item.Category.CategoryCode
                 : "Unknown")
             .Select(g => new { Label = g.Key, Value = g.Sum(x => x.Quantity) })
             .OrderByDescending(x => x.Value)

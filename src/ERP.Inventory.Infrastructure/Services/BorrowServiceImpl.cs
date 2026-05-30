@@ -59,12 +59,17 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
 
         if (!string.IsNullOrWhiteSpace(request.DepartmentOwner))
         {
-            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, ExternalPartyType.Department, "Owner", "", user.UserName, now, cancellationToken);
+            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, "", ExternalPartyType.DepartmentOwner, "Owner", "", user.UserName, now, cancellationToken);
         }
 
         if (!string.IsNullOrWhiteSpace(request.ApprovedBy))
         {
-            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, ExternalPartyType.Department, "Owner", "", user.UserName, now, cancellationToken);
+            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, "", ExternalPartyType.Approver, "App", "", user.UserName, now, cancellationToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.BorrowDepartment))
+        {
+            await GetOrCreatePartyByNameAsync(request.BorrowDepartment, "", ExternalPartyType.Department, "DEP", "", user.UserName, now, cancellationToken);
         }
 
         var processedInstances = new HashSet<int>();
@@ -296,12 +301,17 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
 
         if (!string.IsNullOrWhiteSpace(request.DepartmentOwner))
         {
-            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, ExternalPartyType.Department, "Owner", "", user.UserName, now, cancellationToken);
+            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, "", ExternalPartyType.Department, "Owner", "", user.UserName, now, cancellationToken);
         }
 
         if (!string.IsNullOrWhiteSpace(request.ApprovedBy))
         {
-            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, ExternalPartyType.Department, "Owner", "", user.UserName, now, cancellationToken);
+            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, "", ExternalPartyType.Department, "Owner", "", user.UserName, now, cancellationToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.BorrowDepartment))
+        {
+            await GetOrCreatePartyByNameAsync(request.BorrowDepartment, "", ExternalPartyType.Department, "DEP", "", user.UserName, now, cancellationToken);
         }
 
         var targetBinsInRequest = new HashSet<int>();

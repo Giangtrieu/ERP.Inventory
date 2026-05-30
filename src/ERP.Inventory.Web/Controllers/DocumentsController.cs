@@ -400,7 +400,7 @@ public sealed class DocumentsController : Controller
     {
         var doc = await Scope(_db.QuantityInventoryDocuments.AsNoTracking()
             .Include(x => x.Warehouse)
-            .Include(x => x.Lines).ThenInclude(x => x.Item)
+            .Include(x => x.Lines).ThenInclude(x => x.Item)!.ThenInclude(x => x.Category)
             .AsQueryable(), x => x.WarehouseId)
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 
@@ -419,6 +419,14 @@ public sealed class DocumentsController : Controller
                 status = x.StatusAfter.ToString(),
                 statusText = LocalizationCatalog.Text(language, x.StatusAfter.ToString()),
                 quantityDelta = x.QuantityDelta,
+                receiver =string.IsNullOrWhiteSpace(x.ReceiverCode) && string.IsNullOrWhiteSpace(x.ReceiverName) ? null
+                            : $"{x.ReceiverCode}-{x.ReceiverName}",
+
+                sender =string.IsNullOrWhiteSpace(x.SenderCode) && string.IsNullOrWhiteSpace(x.SenderName) ? null
+                            : $"{x.SenderCode}-{x.SenderName}",
+                department = "TE",
+                oldLocation = x.TransactionType.ToString() == "Receive" ? x.Warehouse.Name : "",
+                receiverPhone = x.ReceiverPhone ?? x.SenderPhone,
                 performedBy = x.PostedBy
             })
             .ToListAsync(cancellationToken);
@@ -440,7 +448,7 @@ public sealed class DocumentsController : Controller
                 doc.PostedAt,
                 doc.Note
             },
-            lines = doc.Lines.Select(x => new { item = x.Item?.ItemCode, snCode = x.SnCode, status = x.Status, quantity = x.Quantity, note = x.Note }),
+            lines = doc.Lines.Select(x => new { itemCategory = x.Item?.Category?.CategoryCode , item =  x.Item?.ItemCode, status = x.Status, quantity = x.Quantity, note = x.Note, location = x.QuantityInventoryDocument?.DocumentType.ToString() == "Receive" ? x.QuantityInventoryDocument.Warehouse?.Name : "", }),
             history
         };
     }

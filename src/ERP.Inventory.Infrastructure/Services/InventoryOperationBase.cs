@@ -68,14 +68,14 @@ public abstract class InventoryOperationBase
        => string.IsNullOrWhiteSpace(documentNo) ? Task.FromResult<BorrowDocument?>(null)
            : _db.BorrowDocuments.AsNoTracking().FirstOrDefaultAsync(x => x.DocumentNo == documentNo.Trim(), ct);
 
-    protected async Task<ExternalParty> GetOrCreatePartyByNameAsync(string name, ExternalPartyType type,string codePrefix, string phone, string userName, DateTime now,CancellationToken cancellationToken)
+    protected async Task<ExternalParty> GetOrCreatePartyByNameAsync(string name, string code, ExternalPartyType type,string codePrefix, string phone, string userName, DateTime now,CancellationToken cancellationToken)
     {
         var party = await FindPartyByNameAsync(name, type, cancellationToken);
         if (party != null)return party;
 
         party = new ExternalParty
         {
-            PartyCode = _documentNumbers.Next(codePrefix, now),
+            PartyCode = string.IsNullOrEmpty(code) ? _documentNumbers.Next(codePrefix, now) : code,
             Name = name,
             PartyType = type,
             Phone = phone,

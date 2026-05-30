@@ -85,12 +85,16 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
 
         if (!string.IsNullOrWhiteSpace(request.DepartmentOwner))
         {
-            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, ExternalPartyType.Department, "Owner","", user.UserName, now, cancellationToken);
+            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, "", ExternalPartyType.DepartmentOwner, "OWNER","", user.UserName, now, cancellationToken);
         }
 
         if (!string.IsNullOrWhiteSpace(request.ApprovedBy))
         {
-            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, ExternalPartyType.Department, "Owner", "", user.UserName, now, cancellationToken);
+            await GetOrCreatePartyByNameAsync(request.DepartmentOwner, "", ExternalPartyType.Approver, "APP", "", user.UserName, now, cancellationToken);
+        }
+        if (!string.IsNullOrWhiteSpace(request.ReceiverDepartment))
+        {
+            await GetOrCreatePartyByNameAsync(request.ReceiverDepartment, "", ExternalPartyType.Department, "DEP", "", user.UserName, now, cancellationToken);
         }
 
         var oldDocument = await FindInboundDocumentByCodeAsync(request.DocumentNo.Trim(), cancellationToken);

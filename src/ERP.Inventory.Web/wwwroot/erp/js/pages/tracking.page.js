@@ -65,7 +65,7 @@ async function loadTrackingPage(page = 1, pageSize = currentTrackingPageSize) {
     const data = result.data || { items: [], totalCount: 0, page: 1 };
 
     if (!data.items.length) {
-        $('#trackingResult').html(UI.empty('No data found'));
+        $('#trackingResult').html(UI.empty('No data'));
         return;
     }
 

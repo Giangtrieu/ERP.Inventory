@@ -632,49 +632,97 @@ function renderDocumentDetail(detail, docType) {
       <div class="table-wrap report-scroll-wrap"><table class="data-table-detail-history"><thead><tr><th>${UI.t('Time')}</th><th>${UI.t('Action')}</th><th>${UI.t('By')}</th><th>${UI.t('Reason')}</th></tr></thead>
         <tbody>${detail.audit.map(x => `<tr><td class="text-muted small">${UI.formatDate(x.timestamp)}</td><td><span class="badge text-bg-light">${UI.esc(UI.auditAction(x.action))}</span></td><td>${UI.esc(x.operator || '-')}</td><td class="small text-muted">${UI.esc(UI.t(x.reason || '-'))}</td></tr>`).join('')}</tbody>
       </table></div>` : '';
-    const historyHtml = detail.history && detail.history.length ? `
-      <div class="form-section-title mt-3">${UI.t('History & Timeline')}</div>
-      <div class="table-wrap report-scroll-wrap"><table class="data-table-detail-history"><thead><tr><th>${UI.t('Time')}</th><th>${UI.t('Action')}</th><th>${UI.t('PN/SN')}</th><th>${UI.t('Party')}</th><th>${UI.t('Status')}</th><th>${UI.t('Location')}</th><th>${UI.t('By')}</th></tr></thead>
-        <tbody>${detail.history.map(x => {
-          const party = x.borrower || x.receiver || x.repairVendor || x.performedBy || '-';
-          const dept = x.borrowDepartment || x.receiverDepartment || '';
-          const phone = x.borrowerPhone || x.receiverPhone || '';
-          const owner = x.departmentOwner || '';
-          const partyDetail = [dept, phone, owner].filter(Boolean).join(' · ');
-          return `<tr>
-          <td class="text-muted small">${UI.formatDate(x.timestamp)}</td>
-          <td><span class="badge text-bg-secondary">${UI.esc(x.actionTypeText || UI.t(x.actionType || '-'))}</span></td>
-          <td><span class="link-item-tracking fw-semibold" data-key="${UI.esc(x.serialNumber)}">${UI.esc(x.itemCode || '-')}</span><br/><small class="text-muted">${UI.esc(x.serialNumber || x.snCode || '')}</small></td>
-          <td class="small"><span class="fw-semibold">${UI.esc(party)}</span>${partyDetail ? `<br/><small class="text-muted">${UI.esc(partyDetail)}</small>` : ''}</td>
-          <td class="small">${UI.badge(x.oldStatus || x.status, x.oldStatusText)} <i class="bi bi-arrow-right text-muted"></i> ${UI.badge(x.status || x.newStatus, x.newStatusText)}</td>
-          <td class="small text-muted">${UI.esc(x.oldLocation || '\u2014')} <i class="bi bi-arrow-right"></i> ${UI.esc(x.newLocation || '\u2014')}</td>
-          <td class="text-muted small">${UI.esc(x.performedBy || '-')}</td>
-        </tr>`;}).join('')}</tbody>
-      </table></div>
-    ` : '';
+    if (docType.startsWith('quantity-') ) {
+        const historyHtml = detail.history && detail.history.length ? `
+          <div class="form-section-title mt-3">${UI.t('History & Timeline')}</div>
+          <div class="table-wrap report-scroll-wrap"><table class="data-table-detail-history"><thead><tr><th>${UI.t('Time')}</th><th>${UI.t('Action')}</th><th>${UI.t('PN')}</th><th>${UI.t('Party')}</th><th>${UI.t('Qty')}</th><th>${UI.t('Location')}</th><th>${UI.t('By')}</th></tr></thead>
+            <tbody>${detail.history.map(x => {
+                const party = x.borrower || x.receiver || x.repairVendor || x.sender || x.performedBy || '-';
+                const dept = x.borrowDepartment || x.receiverDepartment || x.department || '';
+                const phone = x.borrowerPhone || x.receiverPhone || '';
+                const owner = x.departmentOwner || '';
+                const partyDetail = [dept, phone, owner].filter(Boolean).join(' · ');
+                return `<tr>
+              <td class="text-muted small">${UI.formatDate(x.timestamp)}</td>
+              <td><span class="badge text-bg-secondary">${UI.esc(x.actionTypeText || UI.t(x.actionType || '-'))}</span></td>
+              <td><span class="link-item-tracking fw-semibold" data-key="${UI.esc(x.serialNumber)}">${UI.esc(x.itemCode || '-')}</span><br/><small class="text-muted">${UI.esc(x.serialNumber || x.snCode || '')}</small></td>
+              <td class="small"><span class="fw-semibold">${UI.esc(party)}</span>${partyDetail ? `<br/><small class="text-muted">${UI.esc(partyDetail)}</small>` : ''}</td>
+              <td class="small">${UI.esc(x.quantityDelta)}</td>
+              <td class="small text-muted">${UI.esc(x.oldLocation || '\u2014')}</td>
+              <td class="text-muted small">${UI.esc(x.performedBy || '-')}</td>
+            </tr>`;
+            }).join('')}</tbody>
+          </table></div>
+        ` : '';
 
-    return `
-  ${actionBar}
-  <div class="audit-footer">
-   <div class="row g-3 mb-3">
-    <div class="col-md-6">${UI.t('Document No')}: <b>${UI.esc(h.documentNo || '-')}</b></div>
-    <div class="col-md-6">${UI.t('Document Date')}: <b>${UI.formatDate(h.documentDate)}</b></div>
-    <div class="col-md-6">${UI.t('Party')}: <b>${UI.esc(h.party || '-')}</b></div>
-    <div class="col-md-6">${UI.t('Warehouse')}: <b>${UI.esc(h.warehouse || '-')}</b></div>
-    <div class="col-md-6">${UI.t('CreatedBy')}: <b>${UI.esc(h.createdBy || '-')}</b></div>
-    <div class="col-md-6">${UI.t('ApprovedBy')}: <b>${UI.esc(h.approvedBy || '-')}</b></div>
-    </div>
-  </div>${extraRows}
-  <div class="form-section-title mt-3">${UI.t('Line Items')}</div>
-  <div class="table-wrap report-scroll-wrap"><table class="data-table-detail"><thead><tr><th class="px-3">${UI.t('Item')}</th><th>${UI.t('SN')}</th><th style="min-width: 120px;">${UI.t('Status')}</th><th>${UI.t('Location')}</th></tr></thead>
-    <tbody>${lines.map(l =>
-        `<tr><td class="px-3"><span class="link-item-tracking" data-key="${UI.esc(l.serial)}">${UI.esc(l.item || '-')}</span></td><td><span class="link-item-tracking" data-key="${UI.esc(l.serial)}">${UI.esc(l.serial || l.barcode || l.snCode || '-')}</span></td><td>${UI.badge(l.condition || l.result || l.newStatus || l.status || '', l.conditionText || l.resultText || '')}${l.returned ? ' <span class="badge text-bg-success ms-1"><i class="bi bi-check-circle"></i></span>' : ''}</td><td>${UI.esc(l.targetBin || l.to || l.bin || l.fromBin || '-')}</td></tr>`).join('')}
-    </tbody>
-  </table></div>
-  ${auditHtml}
-  ${historyHtml}
-  <div class="form-section-title mt-3">${UI.t('Attachments')}</div>
-  <div id="documentAttachments">${UI.loading()}</div>`;
+        return `
+              ${actionBar}
+              <div class="audit-footer">
+               <div class="row g-3 mb-3">
+                <div class="col-md-6">${UI.t('Document No')}: <b>${UI.esc(h.documentNo || '-')}</b></div>
+                <div class="col-md-6">${UI.t('Document Date')}: <b>${UI.formatDate(h.documentDate)}</b></div>
+                <div class="col-md-6">${UI.t('Party')}: <b>${UI.esc(h.party || '-')}</b></div>
+                <div class="col-md-6">${UI.t('Warehouse')}: <b>${UI.esc(h.warehouse || '-')}</b></div>
+                <div class="col-md-6">${UI.t('CreatedBy')}: <b>${UI.esc(h.createdBy || '-')}</b></div>
+                <div class="col-md-6">${UI.t('ApprovedBy')}: <b>${UI.esc(h.approvedBy || '-')}</b></div>
+                </div>
+              </div>${extraRows}
+              <div class="form-section-title mt-3">${UI.t('Line Items')}</div>
+              <div class="table-wrap report-scroll-wrap"><table class="data-table-detail"><thead><tr><th class="px-3">${UI.t('Item')}</th><th>${UI.t('Category Code')}</th><th style="min-width: 120px;">${UI.t('Qty')}</th><th>${UI.t('Location')}</th></tr></thead>
+                <tbody>${lines.map(l =>
+                    `<tr><td class="px-3"><span class="link-item-tracking" data-key="${UI.esc(l.serial)}">${UI.esc(l.item || '-')}</span></td><td>${UI.esc(l.itemCategory || '-')}</span></td><td>${l.quantity || ''}</td><td>${UI.esc(l.location || '-')}</td></tr>`).join('')}
+                </tbody>
+              </table></div>
+              ${auditHtml}
+              ${historyHtml}
+              <div class="form-section-title mt-3">${UI.t('Attachments')}</div>
+              <div id="documentAttachments">${UI.loading()}</div>`;
+        } else {
+            const historyHtml = detail.history && detail.history.length ? `
+          <div class="form-section-title mt-3">${UI.t('History & Timeline')}</div>
+          <div class="table-wrap report-scroll-wrap"><table class="data-table-detail-history"><thead><tr><th>${UI.t('Time')}</th><th>${UI.t('Action')}</th><th>${UI.t('PN/SN')}</th><th>${UI.t('Party')}</th><th>${UI.t('Status')}</th><th>${UI.t('Location')}</th><th>${UI.t('By')}</th></tr></thead>
+            <tbody>${detail.history.map(x => {
+                const party = x.borrower || x.receiver || x.repairVendor || x.performedBy || '-';
+                const dept = x.borrowDepartment || x.receiverDepartment || '';
+                const phone = x.borrowerPhone || x.receiverPhone || '';
+                const owner = x.departmentOwner || '';
+                const partyDetail = [dept, phone, owner].filter(Boolean).join(' · ');
+                return `<tr>
+              <td class="text-muted small">${UI.formatDate(x.timestamp)}</td>
+              <td><span class="badge text-bg-secondary">${UI.esc(x.actionTypeText || UI.t(x.actionType || '-'))}</span></td>
+              <td><span class="link-item-tracking fw-semibold" data-key="${UI.esc(x.serialNumber)}">${UI.esc(x.itemCode || '-')}</span><br/><small class="text-muted">${UI.esc(x.serialNumber || x.snCode || '')}</small></td>
+              <td class="small"><span class="fw-semibold">${UI.esc(party)}</span>${partyDetail ? `<br/><small class="text-muted">${UI.esc(partyDetail)}</small>` : ''}</td>
+              <td class="small">${UI.badge(x.oldStatus || x.status, x.oldStatusText)} <i class="bi bi-arrow-right text-muted"></i> ${UI.badge(x.status || x.newStatus, x.newStatusText)}</td>
+              <td class="small text-muted">${UI.esc(x.oldLocation || '\u2014')} <i class="bi bi-arrow-right"></i> ${UI.esc(x.newLocation || '\u2014')}</td>
+              <td class="text-muted small">${UI.esc(x.performedBy || '-')}</td>
+            </tr>`;
+            }).join('')}</tbody>
+          </table></div>
+        ` : '';
+
+        return `
+          ${actionBar}
+          <div class="audit-footer">
+           <div class="row g-3 mb-3">
+            <div class="col-md-6">${UI.t('Document No')}: <b>${UI.esc(h.documentNo || '-')}</b></div>
+            <div class="col-md-6">${UI.t('Document Date')}: <b>${UI.formatDate(h.documentDate)}</b></div>
+            <div class="col-md-6">${UI.t('Party')}: <b>${UI.esc(h.party || '-')}</b></div>
+            <div class="col-md-6">${UI.t('Warehouse')}: <b>${UI.esc(h.warehouse || '-')}</b></div>
+            <div class="col-md-6">${UI.t('CreatedBy')}: <b>${UI.esc(h.createdBy || '-')}</b></div>
+            <div class="col-md-6">${UI.t('ApprovedBy')}: <b>${UI.esc(h.approvedBy || '-')}</b></div>
+            </div>
+          </div>${extraRows}
+          <div class="form-section-title mt-3">${UI.t('Line Items')}</div>
+          <div class="table-wrap report-scroll-wrap"><table class="data-table-detail"><thead><tr><th class="px-3">${UI.t('Item')}</th><th>${UI.t('SN')}</th><th style="min-width: 120px;">${UI.t('Status')}</th><th>${UI.t('Location')}</th></tr></thead>
+            <tbody>${lines.map(l =>
+                    `<tr><td class="px-3"><span class="link-item-tracking" data-key="${UI.esc(l.serial)}">${UI.esc(l.item || '-')}</span></td><td><span class="link-item-tracking" data-key="${UI.esc(l.serial)}">${UI.esc(l.serial || l.barcode || l.snCode || '-')}</span></td><td>${UI.badge(l.condition || l.result || l.newStatus || l.status || '', l.conditionText || l.resultText || '')}${l.returned ? ' <span class="badge text-bg-success ms-1"><i class="bi bi-check-circle"></i></span>' : ''}</td><td>${UI.esc(l.targetBin || l.to || l.bin || l.fromBin || '-')}</td></tr>`).join('')}
+            </tbody>
+          </table></div>
+          ${auditHtml}
+          ${historyHtml}
+          <div class="form-section-title mt-3">${UI.t('Attachments')}</div>
+          <div id="documentAttachments">${UI.loading()}</div>`;
+    }
 }
 
 function buildDocumentActionButtons(type, id, compact = false) {

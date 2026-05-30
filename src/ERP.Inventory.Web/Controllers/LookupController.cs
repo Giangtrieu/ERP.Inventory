@@ -264,6 +264,18 @@ public sealed class LookupController : Controller
         return Json(rows);
     }
 
+    [HttpGet("Phones")]
+    public async Task<IActionResult> Phones(CancellationToken cancellationToken)
+    {
+        var user = _currentUserService.GetCurrentUser();
+        var query = _db.ExternalParties.AsNoTracking();
+       
+        var rows = await query
+            .Select(x => new { id = x.Id, text = x.Phone })
+            .ToArrayAsync(cancellationToken);
+        return Json(rows);
+    }
+
     [HttpGet("DocumentPeriodType")]
     public IActionResult DocumentPeriodType() => Json(LocalizationCatalog.EnumOptions<DocumentPeriodType>(Language()));
 

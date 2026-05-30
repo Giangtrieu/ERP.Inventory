@@ -1688,7 +1688,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 
         if (document == null)
-            return ServiceResult<DocumentMutationResultDto>.Fail("Không tìm thấy phiếu mượn.");
+            return ServiceResult<DocumentMutationResultDto>.Fail("Borrow document not found.");
 
         var latestLog = await _db.BorrowDocumentLogs
             .Where(x => x.BorrowDocumentId == id)
@@ -1702,7 +1702,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             .ToList();
 
         if (latestLog == null || latestLog.Action != "BorrowReturn")
-            return ServiceResult<DocumentMutationResultDto>.Fail("Phiếu này chưa có lần trả nào.");
+            return ServiceResult<DocumentMutationResultDto>.Fail("This document has no return records yet.");
 
         // ====================== XÁC ĐỊNH LẦN TRẢ GẦN NHẤT CHÍNH XÁC HƠN ======================
 
@@ -2464,22 +2464,47 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             return new List<string>();
         }
 
-        var maxPerInstance = await _db.ItemMovementHistories
-            .Where(x => x.DocumentType == documentType && x.DocumentId == documentId && ids.Contains(x.ItemInstanceId))
-            .GroupBy(x => x.ItemInstanceId)
-            .Select(g => new { ItemInstanceId = g.Key, LastId = g.Max(x => x.Id) })
+        var currentDocumentMax = await _db.ItemMovementHistories
+         .Where(x => x.DocumentType == documentType
+                  && x.DocumentId == documentId
+                  && ids.Contains(x.ItemInstanceId))
+         .Join(_db.ItemInstances,
+               history => history.ItemInstanceId,
+               instance => instance.Id,
+               (history, instance) => new
+               {
+                   history.ItemInstanceId,
+                   SerialNumber = instance.SerialNumber,
+                   history.PerformedAt,
+                   history.Id
+               })
+         .GroupBy(x => new { x.ItemInstanceId, x.SerialNumber })
+         .Select(g => new
+         {
+             ItemInstanceId = g.Key.ItemInstanceId,
+             SerialNumber = g.Key.SerialNumber,
+             LastPerformedAt = g.Max(x => x.PerformedAt),
+             LastId = g.Max(x => x.Id)
+         })
+         .ToListAsync(cancellationToken);
+
+        var laterHistories = await _db.ItemMovementHistories
+            .Where(x => ids.Contains(x.ItemInstanceId)
+                     && !(x.DocumentType == documentType && x.DocumentId == documentId))
+            .Select(x => new
+            {
+                x.ItemInstanceId,
+                x.PerformedAt,
+                x.Id
+            })
             .ToListAsync(cancellationToken);
 
-        var laterCandidates = await _db.ItemMovementHistories
-            .Where(x => ids.Contains(x.ItemInstanceId) && !(x.DocumentType == documentType && x.DocumentId == documentId))
-            .Select(x => new { x.ItemInstanceId, x.Id })
-            .ToListAsync(cancellationToken);
-
-        return maxPerInstance
-            .Where(item => laterCandidates.Any(x =>
-                x.ItemInstanceId == item.ItemInstanceId &&
-                (x.Id > item.LastId)))
-            .Select(item => $"Item instance {item.ItemInstanceId} has downstream operations.")
+        return currentDocumentMax
+         .Where(current => laterHistories.Any(later =>
+             later.ItemInstanceId == current.ItemInstanceId &&
+             (later.PerformedAt > current.LastPerformedAt ||
+              (later.PerformedAt == current.LastPerformedAt && later.Id > current.LastId))))
+         .Select(item => $"Item instance {item.SerialNumber} has downstream operations.")
             .ToList();
     }
 

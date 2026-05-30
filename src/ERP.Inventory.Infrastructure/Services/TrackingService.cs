@@ -65,6 +65,7 @@ public sealed class TrackingService : ITrackingService
                 WarehouseName = x.Warehouse != null ? x.Warehouse.Name  : null,
                 BinCode = x.BinLocation != null  ? x.BinLocation.BinCode : null,
                 ExternalPartyName = x.ExternalParty != null ? x.ExternalParty.Name: null,
+                ExternalLocationText = x.ExternalLocationText != null ? x.ExternalLocationText: null,
                 x.UpdatedLocationAt,
                 x.UpdatedLocationBy,
                 x.ReferenceDocumentId,
@@ -81,8 +82,7 @@ public sealed class TrackingService : ITrackingService
                 Barcode =  x.Barcode,
                 Status = x.Status,
                 HolderName = x.HolderName,
-                LocationPath = x.WarehouseName != null ? x.BinCode != null  ? $"{x.WarehouseName} / {x.BinCode}"
-                                : x.WarehouseName  : x.ExternalPartyName ?? "Unknown",
+                LocationPath = GetLocationPath(x.BinCode, x.ExternalLocationText, x.ExternalPartyName, x.WarehouseName),
                 UpdatedAt = x.UpdatedLocationAt,
                 UpdatedBy = x.UpdatedLocationBy,
                 CanMove = x.Status == ItemStatus.Normal ||  x.Status == ItemStatus.Damaged ||  
@@ -366,6 +366,28 @@ public sealed class TrackingService : ITrackingService
         return item.Translations
             .FirstOrDefault(x => x.LanguageCode == languageCode && x.FieldName == "DefaultName")
             ?.Value ?? item.DefaultName;
+    }
+
+    private static string GetLocationPath(string? binFullPath, string? externalLocationText,string? externalPartyName, string? warehouseName)
+    {
+        if (!string.IsNullOrWhiteSpace(binFullPath))
+        {
+            return binFullPath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(externalLocationText))
+        {
+            return !string.IsNullOrWhiteSpace(externalPartyName)
+                ? $"{externalPartyName} - {externalLocationText}"
+                : externalLocationText;
+        }
+
+        if (!string.IsNullOrWhiteSpace(externalPartyName))
+        {
+            return externalPartyName;
+        }
+
+        return warehouseName ?? "Unknown";
     }
 
     private static string CurrentLocationDisplay(CurrentItemLocation location)

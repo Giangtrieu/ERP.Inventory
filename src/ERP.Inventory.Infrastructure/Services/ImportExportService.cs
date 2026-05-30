@@ -2259,9 +2259,9 @@ public sealed class ImportExportService : IImportService, IExportService
             // ── Phase 5: Dashboard Quantity Summary labels (vi) ──
             ["Quantity Inventory Summary"] = "Tổng hợp tồn kho số lượng",
             ["Total Quantity"]             = "Tổng số lượng",
-            ["Active SNs"]                 = "Lô đang có hàng",
+            ["Active SNs"]                 = "PN",
             ["Owners"]                     = "Số chủ sở hữu",
-            ["Total SN Lots"]              = "Tổng số lô",
+            ["Total SN Lots"]              = "Tổng số PN",
             ["Quantity by Owner"]          = "Số lượng theo chủ",
             ["Quantity by Item"]           = "Số lượng theo mặt hàng",
 
@@ -2398,7 +2398,7 @@ public sealed class ImportExportService : IImportService, IExportService
             // ── Phase 5: Dashboard labels (en) ──
             ["Quantity Inventory Summary"] = "Quantity Inventory Summary",
             ["Total Quantity"]             = "Total Quantity",
-            ["Active SNs"]                 = "Active SN Lots",
+            ["Active SNs"]                 = "PN",
             ["Owners"]                     = "Owners",
             ["Total SN Lots"]              = "Total SN Lots",
             ["Quantity by Owner"]          = "Quantity by Owner",
@@ -2627,7 +2627,7 @@ public sealed class ImportExportService : IImportService, IExportService
             // ── Phase 5: Dashboard labels (zh) ──
             ["Quantity Inventory Summary"] = "数量库存汇总",
             ["Total Quantity"]             = "总数量",
-            ["Active SNs"]                 = "有库存批次",
+            ["Active SNs"]                 = "PN",
             ["Owners"]                     = "所有人数",
             ["Total SN Lots"]              = "总批次数",
             ["Quantity by Owner"]          = "按所有人汇总",

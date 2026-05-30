@@ -51,6 +51,7 @@ Router.register('quantity-inventory', async function () {
     $('.qty-nav-item').removeClass('active');
     $(this).addClass('active');
     qtySelectedItem = null;
+    $('#drawer').removeClass('open right-drawer-detail');
     switchQtyView(view);
   });
 
@@ -190,6 +191,7 @@ async function loadQuantityInventory(page = 1, pageSize = AppState.pageSize || 2
     <div class="table-wrap">
       <table class="data-table"><thead><tr>
         <th class="px-3">${UI.t('Item')}</th>
+        <th>${UI.t('Category Code')}</th>
         <th>${UI.t('Warehouse')}</th>
         <th>${UI.t('Quantity')}</th>
         <th>${UI.t('Last Updated')}</th>
@@ -197,6 +199,7 @@ async function loadQuantityInventory(page = 1, pageSize = AppState.pageSize || 2
       </tr></thead>
       <tbody>${qtyBalanceRows.map(r => `<tr>
         <td class="px-3 fw-semibold">${UI.esc(r.itemCode)}<div class="small text-muted">${UI.esc(r.itemName)}</div></td>
+        <td>${UI.esc(r.itemCategoryCode)}</td>
         <td>${UI.esc(r.warehouseCode)}</td>
         <td class="fw-bold">${UI.esc(r.quantity)}</td>
         <td class="text-muted small">${UI.formatDate(r.lastUpdatedAt)}</td>
@@ -386,6 +389,7 @@ async function loadQuantityTransactions() {
       <table class="data-table"><thead><tr>
         <th class="px-3">${UI.t('Time')}</th>
         <th >${UI.t('Document No')}</th>
+        <th >${UI.t('Category Code')}</th>
         <th>${UI.t('Operation')}</th>
         <th>${UI.t('Item')}</th>
         <th>${UI.t('Qty')}</th>
@@ -394,6 +398,7 @@ async function loadQuantityTransactions() {
       <tbody>${rows.map(r => `<tr>
         <td class="px-3 small text-muted">${UI.formatDate(r.postedAt)}</td>
         <td>${UI.t(r.documentNo)}</td>
+        <td>${UI.t(r.itemCategoryCode)}</td>
         <td>${UI.t(r.transactionType)}</td>
         <td>${UI.esc(r.itemCode)}</td>
         <td class="${r.quantityDelta < 0 ? 'text-danger' : 'text-success'} fw-bold">${r.quantityDelta > 0 ? '+' : ''}${UI.esc(r.quantityDelta)}</td>

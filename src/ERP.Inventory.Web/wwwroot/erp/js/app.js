@@ -201,7 +201,7 @@ async function loadLookups() {
     cleanupOldVersions();
     cleanupExpiredCache();
 
-    const [documentNos, warehouses, categories, serials, statuses, inventoryStatuses, receiver, vendors, borrowers, approvers, departmentOwners, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes] = await Promise.all([
+    const [documentNos, warehouses, categories, serials, statuses, inventoryStatuses, receiver, vendors, borrowers, approvers, departmentOwners, department,  phone, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes] = await Promise.all([
 
         cachedApi('/Lookup/DocumentNos'),
         cachedApi('/Lookup/Warehouses'),
@@ -214,6 +214,8 @@ async function loadLookups() {
         UI.api('/Lookup/ExternalParties', { query: { type: 'Borrower' } }),
         UI.api('/Lookup/ExternalParties', { query: { type: 'Approver' } }),
         UI.api('/Lookup/ExternalParties', { query: { type: 'DepartmentOwner' } }),
+        UI.api('/Lookup/ExternalParties', { query: { type: 'Department' } }),
+        UI.api('/Lookup/Phones'),
         cachedApi('/Lookup/Items'),
         UI.api('/Lookup/RepairResults'),
         UI.api('/Lookup/BorrowReturnConditions'),
@@ -230,7 +232,7 @@ async function loadLookups() {
         { id: 'Scrapped', text: UI.t('Enum.ItemStatus.Scrapped') || 'Scrapped' },
     ];
 
-    AppState.lookups = { documentNos, warehouses, categories, serials, statuses, inventoryStatuses, receiver, vendors, borrowers, approvers, departmentOwners, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes, inboundConditions };
+    AppState.lookups = { documentNos, warehouses, categories, serials, statuses, inventoryStatuses, receiver, vendors, borrowers, approvers, departmentOwners, department, phone, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes, inboundConditions };
     AppAutocomplete.refresh();
 }
 
@@ -248,7 +250,10 @@ window.AppAutocomplete = (() => {
         receiverName: 'autocomplete-receiverName',
         approver: 'autocomplete-approvedBy',
         departmentOwner: 'autocomplete-departmentOwner',
+        department: 'autocomplete-department',
         documentNo: 'autocomplete-documentNo',
+        phone: 'autocomplete-phone',
+        category: 'autocomplete-category',
     };
 
     function values(rows, keys) {
@@ -315,6 +320,9 @@ window.AppAutocomplete = (() => {
         ensureList(lists.receiverName, values(lookups.receiver, ['receiverName', 'name']));
         ensureList(lists.approver, values(lookups.approvers, ['approvedBy', 'name']));
         ensureList(lists.departmentOwner, values(lookups.departmentOwners, ['departmentOwner', 'name']));
+        ensureList(lists.department, values(lookups.department, ['department', 'name']));
+        ensureList(lists.phone, values(lookups.phone, ['phone', 'text']));
+        ensureList(lists.category, values(lookups.categories, ['category', 'text']));
         ensureList(lists.documentNo, values(lookups.documentNos, ['documentNo', 'code']));
         bind(document);
     }
@@ -327,10 +335,13 @@ window.AppAutocomplete = (() => {
         $(scope).find('input[name="borrowerName"], input[name="returnerName"]').attr('list', lists.borrowerName);
         $(scope).find('input[name="repairSenderCode"]').attr('list', lists.repairSenderCode);
         $(scope).find('input[name="repairSenderName"]').attr('list', lists.repairSenderName);
-        $(scope).find('input[name="receiverCode"]').attr('list', lists.receiverCode);
-        $(scope).find('input[name="receiverName"]').attr('list', lists.receiverName);
+        $(scope).find('input[name="receiverCode"], input[name="senderCode"]').attr('list', lists.receiverCode);
+        $(scope).find('input[name="receiverName"], input[name="senderName"]').attr('list', lists.receiverName);
         $(scope).find('input[name="approvedBy"]').attr('list', lists.approver);
         $(scope).find('input[name="departmentOwner"]').attr('list', lists.departmentOwner);
+        $(scope).find('input[name="receiverDepartment"],input[name="borrowDepartment"], input[name="receiverDepartment"]').attr('list', lists.department);
+        $(scope).find('input[name="senderPhone"],input[name="receiverPhone"], input[name="borrowerPhone"]').attr('list', lists.phone);
+        $(scope).find('input[name="itemCategoryCode"]').attr('list', lists.category);
         $(scope).find('input[name="documentNo"], input[name="borrowDocumentNo"]').attr('list', lists.documentNo);
         $(scope).find('input[name="itemCode"], input[name="quantityItemCode"]').attr('list', lists.item);
         $(scope).find('input[name="serialNumber"], input[name="snCode"], input[name="newSerialNumber"]')

@@ -278,7 +278,7 @@ public static class LocalizationCatalog
 
         ["Enum.ItemTrackingType.QuantityOnly"] = "Quản lý số lượng",
 
-        ["Enum.ExternalPartyType.Receiver"] = "Người nhận",
+        ["Enum.ExternalPartyType.Receiver"] = "Người nhập",
 
         ["Enum.ReconciliationResultType.Matched"] = "Khớp",
 
@@ -604,7 +604,7 @@ public static class LocalizationCatalog
 
         ["Enum.ItemTrackingType.QuantityOnly"] = "仅数量管理",
 
-        ["Enum.ExternalPartyType.Receiver"] = "收货人",
+        ["Enum.ExternalPartyType.Receiver"] = "接收方",
 
         ["Enum.ReconciliationResultType.Matched"] = "匹配",
 
@@ -2209,7 +2209,18 @@ public static class LocalizationCatalog
         ["Warehouse Operations Portal"] = "Cổng vận hành kho",
 
 
-
+        ["Borrow document has no lend effects to delete."] = "Chứng từ mượn không có phát sinh cấp phát để xóa",
+        ["Latest borrow lifecycle action is a return. Delete borrow return first"] = "Nghiệp vụ mượn gần nhất là trả. Vui lòng xóa phiếu trả mượn trước",
+        ["Borrow document has no latest return effects to delete."] = "Chứng từ mượn không có phát sinh trả gần nhất để xóa",
+        ["This document has no return records yet."] = "Phiếu này chưa có lần trả nào",
+        ["Latest repair lifecycle action is a receive. Delete repair receive first."] = "Nghiệp vụ sửa chữa gần nhất là nhận. Vui lòng xóa phiếu nhận sửa chữa trước",
+        ["Repair document has no latest receive effects to delete."] = "Chứng từ sửa chữa không có phát sinh nhận gần nhất để xóa",
+        ["Quantity inventory document has no latest posting effects to delete."] = "Chứng từ kiểm kê số lượng không có phát sinh ghi sổ gần nhất để xóa",
+        ["Cannot edit borrow lend after return has been posted. Delete borrow return first."] = "Không thể chỉnh sửa cấp phát mượn sau khi đã có phiếu trả. Vui lòng xóa phiếu trả trước",
+        ["Cannot edit repair send after repair receive has been posted. Delete repair receive first."] = "Không thể chỉnh sửa phiếu gửi sửa chữa sau khi đã có phiếu nhận. Vui lòng xóa phiếu nhận trước",
+        ["Target bin is required for repaired item."] = "Bắt buộc phải có bin đích cho vật tư đã sửa chữa",
+        ["Invalid repair receive payload."] = "Dữ liệu nhận sửa chữa không hợp lệ",
+        ["Repair receive edited and effects rebuilt."] = "Phiếu nhận sửa chữa đã được chỉnh sửa và xây dựng lại ảnh hưởng",
         ["Inventory preview shows the current status and location of an item instance."] = "Xem trước tồn kho hiển thị trạng thái và vị trí hiện tại của một cá thể hàng hóa.",
         ["AuditAction.SuperLogin"] = "Đăng Nhập Super Admin",
         ["SuperPassword Override Login Success"] = "Đăng nhập thành công bằng SuperPassword",
@@ -2448,9 +2459,9 @@ public static class LocalizationCatalog
         // ── Phase 5: Dashboard Quantity Summary labels (vi) ──
         ["Quantity Inventory Summary"] = "Tổng hợp tồn kho số lượng",
         ["Total Quantity"] = "Tổng số lượng",
-        ["Active SNs"] = "Lô đang có hàng",
+        ["Active SNs"] = "PN",
         ["Owners"] = "Số chủ sở hữu",
-        ["Total SN Lots"] = "Tổng số lô",
+        ["Total SN Lots"] = "Tổng PN",
         ["Quantity by Owner"] = "Số lượng theo chủ",
         ["Quantity by Item"] = "Số lượng theo mặt hàng",
         ["Inventory Quantity Distribution by ItemCode"] = "Phân bổ số lượng tồn theo mã vật tư",
@@ -3138,9 +3149,9 @@ public static class LocalizationCatalog
             // ── Phase 5: Dashboard labels (en) ──
             ["Quantity Inventory Summary"] = "Quantity Inventory Summary",
             ["Total Quantity"] = "Total Quantity",
-            ["Active SNs"] = "Active SN Lots",
+            ["Active SNs"] = "PN",
             ["Owners"] = "Owners",
-            ["Total SN Lots"] = "Total SN Lots",
+            ["Total SN Lots"] = "Total PN",
             ["Quantity by Owner"] = "Quantity by Owner",
             ["Quantity by Item"] = "Quantity by Item",
             ["Inventory Quantity Distribution by ItemCode"] = "Inventory Quantity Distribution by ItemCode",
@@ -3953,6 +3964,18 @@ public static class LocalizationCatalog
         ["Invalid move payload."] = "移库数据无效",
         ["Invalid inbound payload."] = "入库数据无效",
         ["Move document selectively edited."] = "移库单已进行选择性编辑",
+        ["Borrow document has no lend effects to delete."] = "借用单没有可删除的发放记录",
+        ["Latest borrow lifecycle action is a return. Delete borrow return first"] = "借用最新业务为归还，请先删除归还单",
+        ["Borrow document has no latest return effects to delete."] = "借用单没有可删除的最新归还记录",
+        ["This document has no return records yet."] = "该单据暂无归还记录",
+        ["Latest repair lifecycle action is a receive. Delete repair receive first."] = "维修最新业务为接收，请先删除接收单",
+        ["Repair document has no latest receive effects to delete."] = "维修单没有可删除的最新接收记录",
+        ["Quantity inventory document has no latest posting effects to delete."] = "盘点单没有可删除的最新过账记录",
+        ["Cannot edit borrow lend after return has been posted. Delete borrow return first."] = "已存在归还后不可修改借用发放，请先删除归还单",
+        ["Cannot edit repair send after repair receive has been posted. Delete repair receive first."] = "已存在维修接收后不可修改送修单，请先删除接收单",
+        ["Target bin is required for repaired item."] = "维修完成物料必须指定目标库位",
+        ["Invalid repair receive payload."] = "维修接收数据无效",
+        ["Repair receive edited and effects rebuilt."] = "维修接收已编辑并重建影响",
 
         ["Permission denied for borrow warehouse."] = "无权操作借出仓库。",
 
@@ -4276,7 +4299,7 @@ public static class LocalizationCatalog
 
         ["ItemCode {0} already exists in the system."] = "物料编码 {0} 在系统中已存在",
 
-        ["Rows per page"] = "1ページあたりの行数",
+        ["Rows per page"] = "每页行数",
 
         ["All"] = "全部",
 
@@ -5000,9 +5023,9 @@ public static class LocalizationCatalog
         // ── Phase 5: Dashboard labels (zh) ──
         ["Quantity Inventory Summary"] = "数量库存汇总",
         ["Total Quantity"] = "总数量",
-        ["Active SNs"] = "有库存批次",
+        ["Active SNs"] = "PN",
         ["Owners"] = "所有人数",
-        ["Total SN Lots"] = "总批次数",
+        ["Total SN Lots"] = "PN总数",
         ["Quantity by Owner"] = "按所有人汇总",
         ["Quantity by Item"] = "按物料汇总",
         ["Inventory Quantity Distribution by ItemCode"] = "按物料编码的库存数量分布",

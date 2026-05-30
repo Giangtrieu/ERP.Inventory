@@ -327,6 +327,7 @@ public sealed class QuantityStockBalanceDto
     public int WarehouseId { get; init; }
     public string WarehouseCode { get; init; } = string.Empty;
     public int ItemId { get; init; }
+    public string ItemCategoryCode { get; init; } = string.Empty;
     public string ItemCode { get; init; } = string.Empty;
     public string ItemName { get; init; } = string.Empty;
     public string SnCode { get; init; } = string.Empty;
@@ -342,6 +343,7 @@ public sealed class QuantityInventoryTransactionDto
     public string TransactionType { get; init; } = string.Empty;
     public string DocumentNo { get; init; } = string.Empty;
     public DateTime PostedAt { get; init; }
+    public string ItemCategoryCode { get; init; } = string.Empty;
     public string ItemCode { get; init; } = string.Empty;
     public string SnCode { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
