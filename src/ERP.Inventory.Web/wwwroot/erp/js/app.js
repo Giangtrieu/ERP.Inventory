@@ -28,12 +28,29 @@ $(async function () {
   // Language switch
   $('#languageSelect').on('change', async function () {
     const lang = $(this).val();
+    const previousLang = AppState.lang || 'vi';
+    const draft = UI.captureLanguageSwitchDraft();
+    UI.storeLanguageSwitchDraft(draft);
     AppState.lang = lang;
-    await UI.api('/App/Language', { method: 'POST', data: { language: lang } });
-    await loadResources(lang);
-    await loadLookups();
-    renderMenu();
-    Router.go(Router.current || AppConfig.defaultRoute);
+    try {
+      await UI.api('/App/Language', { method: 'POST', data: { language: lang } });
+      await loadResources(lang);
+      await loadLookups();
+      renderMenu();
+
+      if (draft.drawerOpen || draft.hasFileSelection) {
+        UI.clearLanguageSwitchDraft();
+        return;
+      }
+
+      await Promise.resolve(Router.go(Router.current || AppConfig.defaultRoute));
+      await UI.restoreLanguageSwitchDraft(draft);
+    } catch (err) {
+      UI.clearLanguageSwitchDraft();
+      AppState.lang = previousLang;
+      $('#languageSelect').val(previousLang);
+        UI.showError(UI.resultError(err.responseJSON || { message: 'Request failed.' }));
+    }
   });
 
   // Notifications

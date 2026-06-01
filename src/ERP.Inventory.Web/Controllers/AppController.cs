@@ -58,14 +58,18 @@ public sealed class AppController : Controller
     {
         var language = NormalizeLanguage(request.Language);
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
-        var user = await _db.SystemUsers.FirstOrDefaultAsync(x => x.Id == userId, cancellationToken);
-            if (user == null)
+        var isSuper = string.Equals(User.FindFirstValue("AuthMode"), "Super", StringComparison.OrdinalIgnoreCase);
+        if (!isSuper)
         {
-            return NotFound();
-        }
+            var user = await _db.SystemUsers.FirstOrDefaultAsync(x => x.Id == userId, cancellationToken);
+            if (user == null)
+            {
+                return NotFound();
+            }
 
-        user.PreferredLanguage = language;
-        await _db.SaveChangesAsync(cancellationToken);
+            user.PreferredLanguage = language;
+            await _db.SaveChangesAsync(cancellationToken);
+        }
 
         var claims = User.Claims.Where(x => x.Type != "language").ToList();
         claims.Add(new Claim("language", language));

@@ -16,7 +16,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
-SuperAdminSecurity.SuperAdminPassword = builder.Configuration["SuperAdminPassword"] ?? SuperAdminSecurity.SuperAdminPassword;
+//SuperAdminSecurity.SuperAdminPassword = builder.Configuration["SuperAdminPassword"] ?? string.Empty;
 
 // Add services to the container.
 var dataProtectionPath = Path.Combine(builder.Environment.ContentRootPath, "App_Data", "DataProtectionKeys");
@@ -88,8 +88,12 @@ using (var scope = app.Services.CreateScope())
 
     try
     {
-        // Auto migrate database
-        await db.Database.MigrateAsync();
+        //var runStartupMigrations = builder.Configuration.GetValue<bool?>("RunStartupMigrations")
+        //    ?? app.Environment.IsDevelopment();
+        //if (runStartupMigrations)
+        //{
+            await db.Database.MigrateAsync();
+        //}
 
         // Seed security data
         if (builder.Configuration.GetValue<bool>("SeedSecurityData", true))

@@ -84,7 +84,7 @@ window.UI = {
       [/^BinCode (.+) not found\.$/, `BinCode {0} not found.`],
       [/^Serial (.+) already exists for item (.+)\.$/, `Serial {0} already exists for item {1}.`],
       [/^DocumentNo (.+) already exists\.$/, 'DocumentNo {0} already exists.'],
-      [/^Insufficient quantity for item (.+) SN (.+)\.$/, 'Insufficient quantity for item {0} SN {1}.'],
+      [/^Insufficient quantity for item (.+)\.$/, 'Insufficient quantity for item {0}.'],
       [/^Item instance (.+) has downstream operations\.$/, 'Item instance {0} has downstream operations.'],
       [/^Item instance (.+) has downstream operations after (.+)\.$/, 'Item instance {0} has downstream operations after {1}.'],
       [/^Quantity item (.+)\/(.+) has later quantity transactions\.$/, 'Quantity item {0}/{1} has later quantity transactions.'],
@@ -93,6 +93,7 @@ window.UI = {
         [/^Item (.+)\/(.+) is duplicated in this adjustment document\.$/, 'Item {0}/{1} is duplicated in this adjustment document.'],
         [/^Current location for item instance (.+) does not exist\.$/, 'Current location for item instance {0} does not exist.'],
         [/^Item instance (.+)\/(.+) cannot be moved\.$/, 'Item instance {0}/{1} cannot be moved.'],
+        [/^Successfully updated (.+) items$/, 'Successfully updated {0} items'],
 
     ];
     for (const [pattern, key] of patterns) {
@@ -241,6 +242,103 @@ window.UI = {
     return $.ajax(ajax);
   },
 
+  captureLanguageSwitchDraft() {
+    const fields = [];
+    const counts = {};
+    let hasFileSelection = false;
+
+    const keyFor = el => {
+      const container = el.closest('#app, #drawerBody');
+      const containerId = container ? container.id : 'document';
+      const name = el.getAttribute('name') || el.getAttribute('data-name') || el.id;
+      if (!name) return null;
+      const countKey = `${containerId}|${name}`;
+      counts[countKey] = (counts[countKey] || 0) + 1;
+      return { containerId, name, index: counts[countKey] - 1 };
+    };
+
+    $('#app, #drawerBody').find('input, select, textarea').each(function () {
+      const el = this;
+      const type = (el.type || '').toLowerCase();
+      if (el.name === '__RequestVerificationToken' || type === 'password') return;
+      if (type === 'file') {
+        if (el.files && el.files.length) hasFileSelection = true;
+        return;
+      }
+
+      const key = keyFor(el);
+      if (!key) return;
+      fields.push({
+        ...key,
+        type,
+        value: type === 'checkbox' || type === 'radio' ? el.checked : $(el).val()
+      });
+    });
+
+    return {
+      route: window.Router ? Router.current : null,
+      hash: window.location.hash,
+      fields,
+      hasFileSelection,
+      drawerOpen: $('#drawer').hasClass('open'),
+      activeQuantityView: $('.qty-nav-item.active').data('view') || null,
+      operationLineCount: $('#operationLineBody tr').length || 0,
+      quantityLineCount: $('#quantityLineBody tr').length || 0
+    };
+  },
+
+  storeLanguageSwitchDraft(draft) {
+    if (!draft) return;
+    try { sessionStorage.setItem('erp.languageSwitchDraft.v1', JSON.stringify(draft)); } catch { }
+  },
+
+  clearLanguageSwitchDraft() {
+    try { sessionStorage.removeItem('erp.languageSwitchDraft.v1'); } catch { }
+  },
+
+  async restoreLanguageSwitchDraft(draft) {
+    if (!draft) {
+      try { draft = JSON.parse(sessionStorage.getItem('erp.languageSwitchDraft.v1') || 'null'); } catch { draft = null; }
+    }
+    if (!draft || !Array.isArray(draft.fields)) return;
+
+    if (draft.route === 'quantity-inventory' && draft.activeQuantityView && typeof window.switchQtyView === 'function') {
+      $('.qty-nav-item').removeClass('active');
+      $(`.qty-nav-item[data-view="${draft.activeQuantityView}"]`).addClass('active');
+      await window.switchQtyView(draft.activeQuantityView);
+    }
+
+    while (draft.operationLineCount > 0 && $('#operationLineBody tr').length < draft.operationLineCount && $('#btnAddOperationLine').length) {
+      $('#btnAddOperationLine').trigger('click');
+    }
+    while (draft.quantityLineCount > 0 && $('#quantityLineBody tr').length < draft.quantityLineCount && $('#btnAddQuantityLine').length) {
+      $('#btnAddQuantityLine').trigger('click');
+    }
+
+    draft.fields.forEach(field => {
+      const root = field.containerId === 'drawerBody' ? '#drawerBody' : '#app';
+      const escapedName = String(field.name).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      let el = $(root).find(`[name="${escapedName}"], [data-name="${escapedName}"]`).eq(field.index);
+      if (!el.length) {
+        const byId = document.getElementById(field.name);
+        if (byId && $(byId).closest(root).length) el = $(byId);
+      }
+      if (!el.length) return;
+      if (field.type === 'checkbox' || field.type === 'radio') {
+        el.prop('checked', !!field.value);
+      } else {
+        el.val(field.value == null ? '' : field.value);
+      }
+      el.trigger('input').trigger('change');
+    });
+
+    if (typeof window.updateQuantityLineIndex === 'function') window.updateQuantityLineIndex();
+    if (typeof window.refreshOperationRowAvailability === 'function' && window.currentOperationType) {
+      window.refreshOperationRowAvailability(window.currentOperationType);
+    }
+    this.clearLanguageSwitchDraft();
+  },
+
   upload(url, formData) {
     const token = $('meta[name="request-verification-token"]').attr('content');
     const ajax = {
@@ -254,16 +352,21 @@ window.UI = {
     if (token) ajax.headers = { 'RequestVerificationToken': token };
     return $.ajax(ajax);
   },
-
+    showError(msg) {
+        const html = `<div class="alert alert-danger"> <strong>${UI.t('An error occurred while processing the operation.')}
+                    </strong><br/>${msg}</div> `;
+        return UI.confirm(UI.t('Error message'), '', html, null, UI.t('Close'), false);
+    },
   toast(msg) { $('#toastLite').text(msg).fadeIn(120).delay(2200).fadeOut(180); },
 
-  confirm(title, text, summary, onConfirm, confirmLabel) {
+    confirm(title, text, summary, onConfirm, confirmLabel, showConfirm = true) {
     $('#swalTitle').text(this.t(title));
     $('#swalText').text(this.t(text));
     $('#swalSummary').html(summary);
     $('#swalCancel').text(this.t('Cancel'));
     $('#swalConfirm').text(this.t(confirmLabel || 'Confirm Save & Post')).prop('disabled', false);
-    $('#swalConfirm').show();
+        $('#swalConfirm').show();
+        if (!showConfirm) $('#swalCancel').hide();
     $('#swalLite').css('display', 'flex');
     $('#swalConfirm').off('click').on('click', function () {
       const btn = $(this);

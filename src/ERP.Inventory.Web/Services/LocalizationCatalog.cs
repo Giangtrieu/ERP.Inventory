@@ -179,6 +179,16 @@ public static class LocalizationCatalog
         ["Unresolved"] = "Chưa xử lý",
         ["Mark resolved"] = "Đánh dấu đã xử lý",
         ["Mark this system error as resolved?"] = "Đánh dấu lỗi hệ thống này là đã xử lý?",
+        ["An error occurred while processing the operation."] = "Đã xảy ra lỗi trong quá trình thực hiện thao tác.",
+        ["Delete is blocked by downstream dependency."] = "Không thể xóa do có nghiệp vụ phụ thuộc phía sau.",
+        ["Rebuild is blocked by downstream dependency."] = "Không thể xây dựng lại do có nghiệp vụ phụ thuộc phía sau.",
+        ["Effects rebuilt."] = "Đã xây dựng lại ảnh hưởng.",
+        ["Import failed"] = "Import thất bại",
+        ["Uploaded"] = "Đã tải lên",
+        ["Validated"] = "Đã kiểm tra",
+        ["Session created but documentId is missing."] = "Phiên đã được tạo nhưng thiếu documentId.",
+        ["No quantity inventory data"] = "Không có dữ liệu tồn kho số lượng",
+        ["recon.importsummary"] = "✓ {0} đã thêm, {1} đã cập nhật, {2} chưa khớp ERP",
         ["Resolution notes"] = "Ghi chú xử lý",
         ["Stack Trace"] = "Stack trace",
         ["Payload JSON"] = "Payload JSON",
@@ -256,7 +266,7 @@ public static class LocalizationCatalog
 
         ["DocumentNo {0} already exists."] = "Mã chứng từ {0} đã tồn tại.",
 
-        ["Insufficient quantity for item {0} SN {1}."] = "Không đủ số lượng cho vật tư {0}, SN {1}.",
+        ["Insufficient quantity for item {0}."] = "Không đủ số lượng cho vật tư {0}.",
 
         ["Enum.QuantityInventoryDocumentType.Receive"] = "Nhập",
 
@@ -343,6 +353,15 @@ public static class LocalizationCatalog
         ["Unresolved"] = "Unresolved",
         ["Mark resolved"] = "Mark resolved",
         ["Mark this system error as resolved?"] = "Mark this system error as resolved?",
+        ["Delete is blocked by downstream dependency."] = "Delete is blocked by downstream dependency.",
+        ["Rebuild is blocked by downstream dependency."] = "Rebuild is blocked by downstream dependency.",
+        ["Effects rebuilt."] = "Effects rebuilt.",
+        ["Import failed"] = "Import failed",
+        ["Uploaded"] = "Uploaded",
+        ["Validated"] = "Validated",
+        ["Session created but documentId is missing."] = "Session created but documentId is missing.",
+        ["No quantity inventory data"] = "No quantity inventory data",
+        ["recon.importsummary"] = "✓ {0} inserted, {1} updated, {2} unresolved",
         ["Resolution notes"] = "Resolution notes",
         ["Stack Trace"] = "Stack Trace",
         ["Payload JSON"] = "Payload JSON",
@@ -420,7 +439,7 @@ public static class LocalizationCatalog
 
         ["DocumentNo {0} already exists."] = "DocumentNo {0} already exists.",
 
-        ["Insufficient quantity for item {0} SN {1}."] = "Insufficient quantity for item {0} SN {1}.",
+        ["Insufficient quantity for item {0}."] = "Insufficient quantity for item {0}.",
 
         ["Enum.QuantityInventoryDocumentType.Receive"] = "Receive",
 
@@ -507,6 +526,16 @@ public static class LocalizationCatalog
         ["Unresolved"] = "未处理",
         ["Mark resolved"] = "标记为已处理",
         ["Mark this system error as resolved?"] = "将此系统错误标记为已处理？",
+        ["An error occurred while processing the operation."] = "操作过程中发生错误",
+        ["Delete is blocked by downstream dependency."] = "存在后续依赖，无法删除。",
+        ["Rebuild is blocked by downstream dependency."] = "存在后续依赖，无法重建。",
+        ["Effects rebuilt."] = "影响已重建。",
+        ["Import failed"] = "导入失败",
+        ["Uploaded"] = "已上传",
+        ["Validated"] = "已校验",
+        ["Session created but documentId is missing."] = "会话已创建，但缺少 documentId。",
+        ["No quantity inventory data"] = "暂无数量库存数据",
+        ["recon.importsummary"] = "✓ 已新增 {0} 条，已更新 {1} 条，ERP 未匹配 {2} 条",
         ["Resolution notes"] = "处理备注",
         ["Stack Trace"] = "堆栈跟踪",
         ["Payload JSON"] = "Payload JSON",
@@ -584,7 +613,7 @@ public static class LocalizationCatalog
 
         ["DocumentNo {0} already exists."] = "单据号 {0} 已存在。",
 
-        ["Insufficient quantity for item {0} SN {1}."] = "物料 {0}，SN {1} 数量不足。",
+        ["Insufficient quantity for item {0}."] = "物料 {0} 数量不足。",
 
         ["Enum.QuantityInventoryDocumentType.Receive"] = "入库",
 
@@ -1773,12 +1802,14 @@ public static class LocalizationCatalog
         ["Invalid borrow return payload."] = "Dữ liệu trả mượn không hợp lệ",
         ["Document edited and effects rebuilt."] = "Đã chỉnh sửa chứng từ và xây dựng lại ảnh hưởng",
         ["Document updated."] = "Đã cập nhật chứng từ",
+        ["Update"] = "Cập nhật",
         ["Borrow return updated."] = "Đã cập nhật phiếu trả mượn",
         ["Repair receive updated."] = "Đã cập nhật phiếu nhận sửa chữa",
         ["Dependency Warning"] = "Cảnh báo phụ thuộc",
         ["Review dependency impact before continuing."] = "Xem xét ảnh hưởng phụ thuộc trước khi tiếp tục",
         ["Close"] = "Đóng",
         ["Blocked reason"] = "Lý do bị chặn",
+        ["Successfully updated {0} items"] = "Đã cập nhật thành công {0} mặt hàng",
         ["Item instance {0} has downstream operations."] = "Cá thể vật tư {0} có nghiệp vụ phát sinh phía sau",
         ["Item instance {0} has downstream operations after {1}."] = "Cá thể vật tư {0} có nghiệp vụ phát sinh phía sau sau bước {1}",
         ["Quantity item {0}/{1} has later quantity transactions."] = "Mã số lượng {0}/{1} có giao dịch tồn phát sinh sau đó",
@@ -4208,6 +4239,7 @@ public static class LocalizationCatalog
         ["Viewer"] = "查看者",
 
         ["Scan or enter an item to see current status and location."] = "扫描或输入物料以查看当前状态和位置.",
+        ["Keyword is required."] = "请输入关键词.",
 
         ["Location"] = "位置",
 
@@ -4868,12 +4900,14 @@ public static class LocalizationCatalog
         ["Invalid borrow return payload."] = "借还数据无效",
         ["Document edited and effects rebuilt."] = "单据已编辑并重建影响",
         ["Document updated."] = "单据已更新",
+        ["Update"] = "更新",
         ["Borrow return updated."] = "借还单已更新",
         ["Repair receive updated."] = "维修收回单已更新",
         ["Dependency Warning"] = "依赖警告",
         ["Review dependency impact before continuing."] = "继续之前请检查依赖影响",
         ["Close"] = "关闭",
         ["Blocked reason"] = "阻塞原因",
+        ["Successfully updated {0} items"] = "已成功更新 {0} 个物料",
         ["Item instance {0} has downstream operations."] = "物料实例 {0} 存在下游操作",
         ["Item instance {0} has downstream operations after {1}."] = "物料实例 {0} 在步骤 {1} 之后存在下游操作",
         ["Quantity item {0}/{1} has later quantity transactions."] = "数量物料 {0}/{1} 存在更晚的数量交易",

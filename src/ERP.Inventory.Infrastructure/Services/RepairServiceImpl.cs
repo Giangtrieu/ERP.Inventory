@@ -151,7 +151,8 @@ public sealed class RepairServiceImpl : InventoryOperationBase, IRepairService
                 await ApplyStockDeltaAsync(fromWarehouseId.Value, fromBinLocationId, instance.ItemId, oldStatus, -1, user, cancellationToken);
 
             var toDisplay = ExternalLocationDisplay(vendor.Name, targetExternalLocation);
-            AddHistory(instance.Id, MovementActionType.SendToRepair, LocationType.BinLocation, fromBinLocationId, fromDisplay, LocationType.RepairVendor, vendor.Id, toDisplay, oldStatus, ItemStatus.Repairing, nameof(RepairDocument), document.Id, document.DocumentNo, string.IsNullOrWhiteSpace(line.Note) ? request.Reason : line.Note, user, lifecycleBatchId);
+            AddHistory(instance.Id, MovementActionType.SendToRepair, LocationType.BinLocation, fromBinLocationId, fromDisplay, LocationType.RepairVendor, 
+                vendor.Id, toDisplay, oldStatus, ItemStatus.Repairing, nameof(RepairDocument), document.Id, document.DocumentNo, string.IsNullOrWhiteSpace(line.Note) ? request.Reason : line.Note, user, lifecycleBatchId);
             AddInventoryTransaction(InventoryTransactionType.RepairSend, instance.ItemId, instance.Id, fromWarehouseId, fromBinLocationId, -1, ItemStatus.Repairing, nameof(RepairDocument), document.Id, document.DocumentNo, user, lifecycleBatchId);
 
             _db.RepairDocumentLogs.Add(new RepairDocumentLog

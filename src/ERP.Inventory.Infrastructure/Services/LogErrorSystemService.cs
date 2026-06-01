@@ -5,11 +5,17 @@ namespace ERP.Inventory.Infrastructure.Services;
 
 public static class SuperAdminSecurity
 {
-    public static string SuperAdminPassword = "foxcon168";
+    public static string SuperAdminPassword = "PBKDF2$100000$q8tKn5PqrJL6zfW+bB42rg==$TcVQAKQJNtpQ3J9lTUrNBlc0WvBS+f6vo/78uaaYJn0="; 
 
-    public static bool Verify(string? password)
-        => !string.IsNullOrWhiteSpace(SuperAdminPassword)
-           && string.Equals(password, SuperAdminPassword, StringComparison.Ordinal);
+    public static string Verify(string? password)
+    {
+        if (string.IsNullOrWhiteSpace(password) || string.IsNullOrWhiteSpace(SuperAdminPassword)) return "";
+
+
+        return SuperAdminPassword;
+    }
+        //=> !string.IsNullOrWhiteSpace(SuperAdminPassword) 
+        //   && string.Equals(password, SuperAdminPassword, StringComparison.Ordinal);
 }
 
 public sealed record LogErrorContext(

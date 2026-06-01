@@ -147,8 +147,8 @@ window.ReconciliationPage = (() => {
             warehouseId: parseInt($('[name="warehouseId"]').val()) || 0
           })
         });
-        if (res?.success) { UI.toast(res.message); hideModal(); loadLists(); }
-        else UI.toast(res?.message || 'Failed');
+        if (res?.success) { UI.toast(UI.msg(res.message)); hideModal(); loadLists(); }
+        else UI.showError(UI.msg(res?.message || 'Request failed.'));
       }
     });
   }
@@ -217,14 +217,14 @@ window.ReconciliationPage = (() => {
           </select>
         </div>
         <div class="mb-3">
-          <label class="form-label fw-semibold">Excel (.xlsx / .csv) *</label>
+          <label class="form-label fw-semibold">${t('File')} (.xlsx / .csv) *</label>
           <input type="file" class="form-control" id="imp-file" accept=".xlsx,.csv">
         </div>`,
       confirmText: t('Upload'),
       onConfirm: async () => {
         const file = document.getElementById('imp-file')?.files?.[0];
         const mode = $('#imp-mode').val();
-        if (!file) { UI.toast(t('File is required.')); return false; }
+          if (!file) { UI.showError(t('File is required.')); return false; }
         const fd = new FormData();
         fd.append('listId', listId);
         fd.append('importMode', mode);
@@ -232,9 +232,12 @@ window.ReconciliationPage = (() => {
         const res = await UI.upload('/Reconciliation/ImportList', fd);
         if (res?.success) {
           const d = res.data;
-          UI.toast(`✓ ${d.inserted} inserted, ${d.updated} updated, ${d.unresolvedInERP} unresolved`);
+          UI.toast(t('recon.importsummary')
+            .replace('{0}', d.inserted)
+            .replace('{1}', d.updated)
+            .replace('{2}', d.unresolvedInERP));
           hideModal(); loadLists();
-        } else UI.toast(res?.message || 'Import failed');
+        } else UI.showError(UI.msg(res?.message || 'Import failed'));
       }
     });
   }
@@ -306,7 +309,7 @@ window.ReconciliationPage = (() => {
   }
 
   function showNewSessionModal() {
-    if (!_lists.length) { UI.toast(t('recon.nolists')); return; }
+      if (!_lists.length) { UI.showError(t('recon.nolists')); return; }
     const opts = _lists.map(l => `<option value="${l.id}">${esc(l.listCode)} — ${esc(l.warehouseName)}</option>`).join('');
     showModal({
       title: t('recon.newsession'),
@@ -324,18 +327,19 @@ window.ReconciliationPage = (() => {
             note: $('#ns-note').val()?.trim()
           })
         });
-        if (res?.success) { UI.toast(res.message); hideModal(); loadSessions(); }
-        else UI.toast(res?.message || 'Failed');
+        if (res?.success) { UI.toast(UI.msg(res.message)); hideModal(); loadSessions(); }
+        else UI.showError(UI.msg(res?.message || 'Request failed.'));
       }
     });
   }
 
   async function runSession(id) {
-    if (!confirm(t('recon.confirmrun'))) return;
-    UI.toast(t('recon.running'));
-    const res = await UI.api(`/Reconciliation/RunSession/${id}`, { method: 'POST', data: '{}' });
-    if (res?.success) { UI.toast(res.message); loadSessions(); }
-    else UI.toast(res?.message || 'Failed');
+    UI.confirm(t('Confirm'), t('recon.confirmrun'), '', async function () {
+      UI.toast(t('recon.running'));
+      const res = await UI.api(`/Reconciliation/RunSession/${id}`, { method: 'POST', data: '{}' });
+      if (res?.success) { UI.toast(UI.msg(res.message)); loadSessions(); }
+      else UI.showError(UI.msg(res?.message || 'Request failed.'));
+    });
   }
 
   async function createAndRunSession(listId) {
@@ -343,11 +347,11 @@ window.ReconciliationPage = (() => {
     const create = await UI.api('/Reconciliation/CreateSession', {
       method: 'POST', data: JSON.stringify({ referenceListId: listId, note: '' })
     });
-    if (!create?.success) { UI.toast(create?.message || 'Failed'); return; }
+      if (!create?.success) { UI.showError(UI.msg(create?.message || 'Request failed.')); return; }
     const sessionId = create.data?.id;
     const run = await UI.api(`/Reconciliation/RunSession/${sessionId}`, { method: 'POST', data: '{}' });
-    if (run?.success) { UI.toast(run.message); viewResults(sessionId); }
-    else UI.toast(run?.message || 'Failed');
+    if (run?.success) { UI.toast(UI.msg(run.message)); viewResults(sessionId); }
+    else UI.showError(UI.msg(run?.message || 'Request failed.'));
   }
 
   // ── TAB: Results ──────────────────────────────────────────────────────────

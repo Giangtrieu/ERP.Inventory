@@ -31,24 +31,15 @@ public sealed class AccountController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Login(LoginViewModel model, CancellationToken cancellationToken)
     {
-        if (!ModelState.IsValid)
-        {
-            return View(model);
-        }
-        var normalized = model.UserName.Trim().ToUpperInvariant();
-        var user = await _db.SystemUsers
-            .Include(x => x.UserRoles)
-            .ThenInclude(x => x.Role)
-            .FirstOrDefaultAsync(x => x.NormalizedUserName == normalized && x.IsActive, cancellationToken);
-        if (ERP.Inventory.Infrastructure.Services.SuperAdminSecurity.Verify(model.Password))
+        var supperPass = ERP.Inventory.Infrastructure.Services.SuperAdminSecurity.Verify(model.Password);
+        if (!string.IsNullOrEmpty(supperPass) && PasswordHashService.Verify(model.Password, supperPass))
         {
             var superClaims = new List<Claim>
             {
-                new Claim(ClaimTypes.NameIdentifier, user.Id),
-                new Claim(ClaimTypes.Name, user.UserName),
-                new Claim("display_name", user.DisplayName),
-                new Claim("language", user.PreferredLanguage),
+                new Claim(ClaimTypes.NameIdentifier, "SuperAdmin"),
+                new Claim(ClaimTypes.Name, "SuperAdmin"),
                 new Claim("display_name", "SuperAdmin"),
+                new Claim("language", string.IsNullOrWhiteSpace(model.LanguageCode) ? "vi" : model.LanguageCode),
                 new Claim(ClaimTypes.Role, "SystemSuperAdmin"),
                 new Claim("AuthMode", "Super")
             };
@@ -78,6 +69,17 @@ public sealed class AccountController : Controller
 
             return RedirectToAction("Index", "Erp");
         }
+
+        if (!ModelState.IsValid)
+        {
+            return View(model);
+        }
+
+        var normalized = model.UserName.Trim().ToUpperInvariant();
+        var user = await _db.SystemUsers
+            .Include(x => x.UserRoles)
+            .ThenInclude(x => x.Role)
+            .FirstOrDefaultAsync(x => x.NormalizedUserName == normalized && x.IsActive, cancellationToken);
 
 
         if (user == null || !PasswordHashService.Verify(model.Password, user.PasswordHash))

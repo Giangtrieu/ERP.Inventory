@@ -96,7 +96,7 @@ public sealed class InventoryCheckService : InventoryOperationBase
 
         // Lấy danh sách SerialNumber đã scan trong phiên này để tránh duplicate
         var alreadyScannedInstanceIds = (await _db.InventoryCheckLines
-            .Where(x => x.InventoryCheckDocumentId == document.Id && x.Result != InventoryCheckLineResult.Missing&& x.ItemInstanceId.HasValue)
+            .Where(x => x.InventoryCheckDocumentId == document.Id && x.Result != InventoryCheckLineResult.Missing && x.ItemInstanceId.HasValue)
             .Select(x => x.ItemInstanceId!.Value)
             .ToListAsync(cancellationToken)).ToHashSet();
 
@@ -107,10 +107,8 @@ public sealed class InventoryCheckService : InventoryOperationBase
             var actualBin = (await FindBinByCodeAsync(line.BinCode, cancellationToken))!;
             var instance = await FindInstanceByCodeAsync(line.ItemCode, line.SerialNumber, cancellationToken);
 
-            if(await _db.InventoryCheckLines.FirstOrDefaultAsync(x => x.InventoryCheckDocumentId == document.Id && x.ActualBinLocationId == actualBin.Id, cancellationToken) != null)
-            {
-                return ServiceResult<ScanBatchResultDto>.Fail($"BinCode is duplicated in this document.");
-            }
+            // INV-002 fix: duplicate validation is now item/serial-based via alreadyScannedInstanceIds,
+            // not bin-based. Multiple serials in the same bin are now allowed.
 
             if (instance == null)
             {
@@ -152,6 +150,7 @@ public sealed class InventoryCheckService : InventoryOperationBase
                     CreatedAt = now, CreatedBy = user.UserName
                 });
                 await ApplyStockDeltaAsync(warehouse.Id, actualBin.Id, item.Id, ItemStatus.Normal, 1, user, cancellationToken);
+                AddInventoryTransaction(InventoryTransactionType.InventoryCheck, item.Id, newInstance.Id, warehouse.Id, actualBin.Id, 1, ItemStatus.Normal, nameof(InventoryCheckDocument), document.Id, document.DocumentNo, user);
 
                 _db.InventoryCheckLines.Add(new InventoryCheckLine
                 {
@@ -189,7 +188,7 @@ public sealed class InventoryCheckService : InventoryOperationBase
                     });
                     // Đảm bảo status = InStock nếu đang ở trạng thái lệch
                     if (instance.Status != ItemStatus.InStock && instance.Status != ItemStatus.Normal)
-                        instance.Status = ItemStatus.InStock;
+                        instance.Status = ItemStatus.Normal;
                     matched++;
                 }
                 else
@@ -223,7 +222,9 @@ public sealed class InventoryCheckService : InventoryOperationBase
                         var bin = await FindBinByIdAsync(oldBinId, cancellationToken);
 
                         await ApplyStockDeltaAsync(warehouse.Id, actualBin.Id, instance.ItemId, instance.Status, 1, user, cancellationToken);
-                        AddHistory(instance.Id, MovementActionType.MoveLocation, LocationType.BinLocation, oldBinId, $"Bin {bin?.FullPath}", LocationType.BinLocation, actualBin.Id, actualBin.FullPath, instance.Status, instance.Status, nameof(InventoryCheckDocument), document.Id, document.DocumentNo, "Inventory check: wrong location corrected", user);
+                        AddHistory(instance.Id, MovementActionType.MoveLocation, LocationType.BinLocation, oldBinId, $"Bin {bin?.FullPath}", LocationType.BinLocation,
+                            actualBin.Id, actualBin.FullPath, instance.Status, instance.Status, nameof(InventoryCheckDocument), document.Id, document.DocumentNo, "Inventory check: wrong location corrected", user);
+                        AddInventoryTransaction(InventoryTransactionType.InventoryCheck, instance.ItemId, instance.Id, warehouse.Id, actualBin.Id, 0, instance.Status, nameof(InventoryCheckDocument), document.Id, document.DocumentNo, user);
                     }
                     wrongLocation++;
                 }
@@ -283,6 +284,7 @@ public sealed class InventoryCheckService : InventoryOperationBase
         foreach (var missingLoc in allInStockLocations)
         {
             var missingInstance = missingLoc.ItemInstance!;
+            var oldStatus = missingInstance.Status;
 
             _db.InventoryCheckLines.Add(new InventoryCheckLine
             {
@@ -307,10 +309,11 @@ public sealed class InventoryCheckService : InventoryOperationBase
             missingLoc.UpdatedLocationAt = now;
             missingLoc.UpdatedLocationBy = user.UserName;
 
-            if(missingInstance.Status  == ItemStatus.Normal || missingInstance.Status == ItemStatus.InStock) missingInstance.Status = ItemStatus.Lost;
+            if(missingInstance.Status == ItemStatus.Normal || missingInstance.Status == ItemStatus.InStock) missingInstance.Status = ItemStatus.Lost;
             var bin = await FindBinByIdAsync(oldBinId, cancellationToken);
 
-            AddHistory(missingInstance.Id, MovementActionType.InventoryCheck, LocationType.BinLocation, oldBinId, $"Bin {bin?.FullPath}", null, null, "Unknown", ItemStatus.InStock, ItemStatus.Lost, nameof(InventoryCheckDocument), documentId, document.DocumentNo, "Missing: not found during inventory check", user);
+            AddHistory(missingInstance.Id, MovementActionType.InventoryCheck, LocationType.BinLocation, oldBinId, $"Bin {bin?.FullPath}", null, null, "Unknown", oldStatus, missingInstance.Status, nameof(InventoryCheckDocument), documentId, document.DocumentNo, "Missing: not found during inventory check", user);
+            AddInventoryTransaction(InventoryTransactionType.InventoryCheck, missingInstance.ItemId, missingInstance.Id, oldWarehouseId, oldBinId, -1, missingInstance.Status, nameof(InventoryCheckDocument), documentId, document.DocumentNo, user);
         }
 
         // Finalize document

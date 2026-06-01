@@ -388,16 +388,16 @@ $(document).on('click', '.btn-delete-structure', function(){ hardDeleteStructure
 async function toggleMaster(id, active){
   const endpoint = masterEndpoint($('#app [name="entity"]').val());
   const result = await UI.api(`/Management/${endpoint}/${id}/${active ? 'Deactivate' : 'Restore'}`, { method:'POST', data:{} });
-  UI.toast(result.success ? UI.t(active ? 'Record deactivated.' : 'Record restored.') : UI.resultError(result));
+    result.success ? UI.toast(UI.t(active ? 'Record deactivated.' : 'Record restored.')) : UI.showError(UI.resultError(result));
   await loadLookups();
   await loadMasterData();
 }
 
 function hardDeleteMaster(id){
   const endpoint = masterEndpoint($('#app [name="entity"]').val());
-  UI.confirm('Hard Delete', 'This permanently removes unused trash data only.', `<div>ID: <b>${id}</b></div>`, async function(){
+  UI.confirm(UI.t('Hard Delete'), UI.t('This permanently removes unused trash data only.'), `<div>ID: <b>${id}</b></div>`, async function(){
     const result = await UI.api(`/Management/${endpoint}/${id}`, { method:'DELETE', data:{} });
-    UI.toast(result.success ? UI.t('Record deleted.') : UI.resultError(result));
+      result.success ? UI.toast(UI.t('Record deleted.')) : UI.showError(UI.resultError(result));
     await loadLookups();
     await loadMasterData();
   });
@@ -405,15 +405,15 @@ function hardDeleteMaster(id){
 
 async function toggleStructure(id, active){
   const result = await UI.api(`/Management/WarehouseStructure/${id}/${active ? 'Deactivate' : 'Restore'}`, { method:'POST', data:{} });
-  UI.toast(result.success ? UI.t(active ? 'Record deactivated.' : 'Record restored.') : UI.resultError(result));
+    result.success ? UI.toast(UI.t(active ? 'Record deactivated.' : 'Record restored.')) : UI.showError(UI.resultError(result));
   await loadLookups();
   await loadWarehouseStructure();
 }
 
 function hardDeleteStructure(id){
-  UI.confirm('Hard Delete', 'This permanently removes unused trash data only.', `<div>ID: <b>${id}</b></div>`, async function(){
+  UI.confirm(UI.t('Hard Delete'), UI.t('This permanently removes unused trash data only.'), `<div>ID: <b>${id}</b></div>`, async function(){
     const result = await UI.api(`/Management/WarehouseStructure/${id}`, { method:'DELETE', data:{} });
-    UI.toast(result.success ? UI.t('Record deleted.') : UI.resultError(result));
+      result.success ? UI.toast(UI.t('Record deleted.')) : UI.showError(UI.resultError(result));
     await loadLookups();
     await loadWarehouseStructure();
   });
@@ -449,19 +449,32 @@ Router.register('system-errors', async function(){
     `<div class="card mb-3"><div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-3"><div class="form-section-title mb-0">${UI.t('Error Management')}</div><button class="btn btn-outline-secondary btn-sm" id="btnReloadErrors"><i class="bi bi-arrow-clockwise"></i></button></div>
       <div class="row g-3 mb-3">
-        <div class="col-md-5">${UI.input('Keyword','text','','errorKeyword')}</div>
-        <div class="col-md-4">${UI.select('Status','errorResolved',[{id:'',text:UI.t('All')},{id:'false',text:UI.t('Unresolved')},{id:'true',text:UI.t('Resolved')}])}</div>
-        <div class="col-md-3 d-flex align-items-end"><label class="form-label w-100"><span class="fw-semibold small"><span class="fw-semibold small"></span><button class="btn btn-primary w-100" id="btnReloadErrorsList">${UI.t('Load')}</button></label></div>
+        <div class="col-md-7">${UI.input('Keyword','text','','errorKeyword')}</div>
+        <div class="col-md-2">${UI.select('Status','errorResolved',[{id:'',text:UI.t('All')},{id:'false',text:UI.t('Unresolved')},{id:'true',text:UI.t('Resolved')}])}</div>
+        <div class="col-md-3 d-flex align-items-end">
+        <label class="form-label w-50"><span class="fw-semibold small"><span class="fw-semibold small"></span><button class="btn btn-primary w-75" id="btnReloadErrorsList">${UI.t('Load')}</button></label>
+        <label class="form-label w-50"><span class="fw-semibold small"><span class="fw-semibold small"></span><button class="btn btn-primary w-75" id="btnMigrateDocument">${UI.t('Update')}</button></label>
+        </div>
       </div>
       <div id="systemErrors">${UI.loading()}</div>
     </div></div>`);
 
   $('#btnReloadErrorsList, #btnReloadErrors').on('click', () => loadSystemErrors(1));
+  $('#btnMigrateDocument').on('click', async () => { await migrateDocumentNoItemInstance(); await loadSystemErrors(1);});
   $('#app [name="errorKeyword"], #app [name="errorResolved"]').on('change input', UI.debounce(() => {
     loadSystemErrors(1);
   }, 300));
   await loadSystemErrors(1);
 });
+
+async function migrateDocumentNoItemInstance() {
+    const result = await UI.api('/System/MigrateDocumentNoItemInstance', {method: 'POST'});
+    if (!result.success) {
+        UI.showError(UI.resultError(result));
+        return;
+    }
+    UI.toast(UI.msg(result.message));
+}
 
 async function loadSystemErrors(page = 1, pageSize = AppState.pageSize || 25){
   const resolvedValue = $('#app [name="errorResolved"]').val();
@@ -553,7 +566,7 @@ async function loadSystemErrors(page = 1, pageSize = AppState.pageSize || 25){
 async function openSystemErrorDetail(id){
   const result = await UI.api(`/SystemErrors/${id}`, { method: 'POST', data: {} });
   if (!result.success) {
-    UI.toast(UI.resultError(result));
+      UI.showError(UI.resultError(result));
     return;
   }
 
@@ -595,9 +608,9 @@ $(document).on('click', '.btn-system-error-detail', function(){
 
 $(document).on('click', '.btn-system-error-resolve', function(){
   const id = $(this).data('id');
-  UI.confirm('Mark resolved', 'Mark this system error as resolved?', `<div>ID: <b>${UI.esc(id)}</b></div>`, async function(){
+  UI.confirm(UI.t('Mark resolved'), UI.t('Mark this system error as resolved?'), `<div>ID: <b>${UI.esc(id)}</b></div>`, async function(){
     const result = await UI.api(`/SystemErrors/${id}/Resolve`, { method: 'POST', data: { notes: '' } });
-    UI.toast(result.success ? UI.t('Saved') : UI.resultError(result));
+      result.success ? UI.toast(UI.t('Saved')) : UI.showError(UI.resultError(result));
     if (result.success) await loadSystemErrors(1);
   }, 'Mark resolved');
 });
@@ -606,7 +619,7 @@ $(document).on('click', '#btnResolveSystemError', async function(){
   const id = $(this).data('id');
   const notes = $('#drawerBody [name="systemErrorNotes"]').val() || '';
   const result = await UI.api(`/SystemErrors/${id}/Resolve`, { method: 'POST', data: { notes } });
-  UI.toast(result.success ? UI.t('Saved') : UI.resultError(result));
+    result.success ? UI.toast(UI.t('Saved')) : UI.showError(UI.resultError(result));
   if (result.success) {
     $('#drawer').removeClass('open right-drawer-detail');
     await loadSystemErrors(1);
@@ -638,7 +651,7 @@ $(document).on('click', '#btnSaveUser', async function(){
     roleIds: checkedValues('roleIds').map(Number),
     warehouseIds: checkedValues('warehouseIds').map(Number)
   }});
-  UI.toast(result.success ? UI.t('Saved') : UI.resultError(result));
+    result.success ? UI.toast(UI.t('Saved')) : UI.showError(UI.resultError(result));
   if(result.success){
     $('#drawer').removeClass('open');
     await loadUsers();
@@ -648,14 +661,14 @@ $(document).on('click', '.btn-edit-user', function(){ openUserForm($(this).data(
 $(document).on('click', '.btn-toggle-user', async function(){
   const active = $(this).data('active') === true || $(this).data('active') === 'true';
   const result = await UI.api(`/Management/User/${$(this).data('id')}/${active ? 'Deactivate' : 'Restore'}`, { method:'POST', data:{} });
-  UI.toast(result.success ? UI.t(active ? 'Record deactivated.' : 'Record restored.') : UI.resultError(result));
+    result.success ? UI.toast(UI.t(active ? 'Record deactivated.' : 'Record restored.')) : UI.showError(UI.resultError(result));
   await loadUsers();
 });
 $(document).on('click', '.btn-delete-user', function(){
   const id = $(this).data('id');
-  UI.confirm('Hard Delete', 'This permanently removes unused trash data only.', `<div>ID: <b>${UI.esc(id)}</b></div>`, async function(){
+  UI.confirm(UI.t('Hard Delete'), UI.t('This permanently removes unused trash data only.'), `<div>ID: <b>${UI.esc(id)}</b></div>`, async function(){
     const result = await UI.api(`/Management/User/${id}`, { method:'DELETE', data:{} });
-    UI.toast(result.success ? UI.t('Record deleted.') : UI.resultError(result));
+      result.success ? UI.toast(UI.t('Record deleted.')) : UI.showError(UI.resultError(result));
     await loadUsers();
   });
 });
@@ -751,7 +764,7 @@ function saveButton(id, rowId){
 }
 
 async function afterSave(result, route){
-  UI.toast(result.success ? UI.t('Saved') : UI.resultError(result));
+    result.success ? UI.toast(UI.t('Saved')) : UI.showError(UI.resultError(result));
   if(!result.success) return;
   $('#drawer').removeClass('open');
   await loadLookups();
@@ -759,7 +772,7 @@ async function afterSave(result, route){
 }
 
 async function afterMasterSave(result){
-  UI.toast(result.success ? UI.t('Saved') : UI.resultError(result));
+    result.success ? UI.toast(UI.t('Saved')) : UI.showError(UI.resultError(result));
   if(!result.success) return;
   $('#drawer').removeClass('open');
   await loadLookups();
@@ -768,7 +781,7 @@ async function afterMasterSave(result){
 }
 
 async function afterStructureSave(result){
-  UI.toast(result.success ? UI.t('Saved') : UI.resultError(result));
+    result.success ? UI.toast(UI.t('Saved')) : UI.showError(UI.resultError(result));
   if(!result.success) return;
   $('#drawer').removeClass('open');
   await loadLookups();

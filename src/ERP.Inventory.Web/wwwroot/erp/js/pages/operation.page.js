@@ -163,7 +163,7 @@ function wireOperationEvents(type, vm) {
     });
 
     $('#btnOperationPost').on('click', function () {
-        UI.confirm('Confirm Save & Post', 'This operation will be posted immediately.', operationSummary(type), async function () {
+        UI.confirm(UI.t('Confirm Save & Post'), UI.t('This operation will be posted immediately.'), operationSummary(type), async function () {
             await postOperation(type);
         });
     });
@@ -327,7 +327,7 @@ async function postOperation(type) {
     try {
         await uploadOperationAttachments(result.data ? result.data.documentType : '', result.data ? result.data.documentId : 0);
     } catch (err) {
-        showOperationValidation([{ label: 'Attachments', message: err.message || 'Attachment upload failed.' }]);
+        showOperationValidation([{ label: UI.t('Attachments'), message: err.message || UI.t('Attachment upload failed.') }]);
         return;
     }
     UI.toast(`${UI.msg(result.message || (editor && editor.type === type ? 'Document updated.' : 'Posted'))} ${result.data ? result.data.documentNo : ''}`);
@@ -357,7 +357,7 @@ async function postInventoryCheckSession(payload) {
     const documentId = sessionResult.data && sessionResult.data.documentId;
     const documentNo = sessionResult.data && sessionResult.data.documentNo;
     if (!documentId) {
-        showOperationValidation([{ label: 'System', message: 'Session created but documentId is missing.' }]);
+        showOperationValidation([{ label: UI.t('System'), message: UI.t('Session created but documentId is missing.') }]);
         return;
     }
 
@@ -645,7 +645,7 @@ function renderDocumentDetail(detail, docType) {
                 return `<tr>
               <td class="text-muted small">${UI.formatDate(x.timestamp)}</td>
               <td><span class="badge text-bg-secondary">${UI.esc(x.actionTypeText || UI.t(x.actionType || '-'))}</span></td>
-              <td><span class="link-item-tracking fw-semibold" data-key="${UI.esc(x.serialNumber)}">${UI.esc(x.itemCode || '-')}</span><br/><small class="text-muted">${UI.esc(x.serialNumber || x.snCode || '')}</small></td>
+              <td><span >${UI.esc(x.itemCode || '-')}</span><br/><small class="text-muted">${UI.esc(x.serialNumber || x.snCode || '')}</small></td>
               <td class="small"><span class="fw-semibold">${UI.esc(party)}</span>${partyDetail ? `<br/><small class="text-muted">${UI.esc(partyDetail)}</small>` : ''}</td>
               <td class="small">${UI.esc(x.quantityDelta)}</td>
               <td class="small text-muted">${UI.esc(x.oldLocation || '\u2014')}</td>
@@ -670,7 +670,7 @@ function renderDocumentDetail(detail, docType) {
               <div class="form-section-title mt-3">${UI.t('Line Items')}</div>
               <div class="table-wrap report-scroll-wrap"><table class="data-table-detail"><thead><tr><th class="px-3">${UI.t('Item')}</th><th>${UI.t('Category Code')}</th><th style="min-width: 120px;">${UI.t('Qty')}</th><th>${UI.t('Location')}</th></tr></thead>
                 <tbody>${lines.map(l =>
-                    `<tr><td class="px-3"><span class="link-item-tracking" data-key="${UI.esc(l.serial)}">${UI.esc(l.item || '-')}</span></td><td>${UI.esc(l.itemCategory || '-')}</span></td><td>${l.quantity || ''}</td><td>${UI.esc(l.location || '-')}</td></tr>`).join('')}
+                    `<tr><td class="px-3"><span>${UI.esc(l.item || '-')}</span></td><td>${UI.esc(l.itemCategory || '-')}</span></td><td>${l.quantity || ''}</td><td>${UI.esc(l.location || '-')}</td></tr>`).join('')}
                 </tbody>
               </table></div>
               ${auditHtml}
@@ -771,7 +771,7 @@ function populateOperationEditor(type, payload) {
 
 async function openDocumentEditor(type, id) {
     const result = await UI.api('/Documents/EditModel', { query: { type, id } });
-    if (!result.success || !result.data) { UI.toast(UI.resultError(result)); return; }
+    if (!result.success || !result.data) { UI.showError(UI.resultError(result)); return; }
     AppState.documentEditor = {
         id,
         type,
@@ -789,12 +789,12 @@ async function openDocumentEditor(type, id) {
 
 async function showDocumentDependencies(type, id, action) {
     const result = await UI.api('/Documents/Dependencies', { query: { type, id, action: action || 'Delete' } });
-    if (!result.success || !result.data) { UI.toast(UI.resultError(result)); return null; }
+    if (!result.success || !result.data) { UI.showError(UI.resultError(result)); return null; }
     const d = result.data;
     const html = d.reasons && d.reasons.length
         ? `<div class="alert alert-warning small mb-0"><div class="fw-semibold mb-2">${UI.t('Blocked reason')}</div><ul class="mb-0 ps-3">${d.reasons.map(x => `<li>${UI.esc(UI.msg(x))}</li>`).join('')}</ul></div>`
         : `<div class="alert alert-success small mb-0">${UI.t('No blocking dependency found.')}</div>`;
-    UI.confirm(UI.t('Dependency Warning'), UI.t('Review dependency impact before continuing.'), html, null, 'Close');
+    UI.confirm(UI.t('Dependency Warning'), UI.t('Review dependency impact before continuing.'), html, null, UI.t('Close'));
     $('#swalConfirm').hide();
     $('#swalCancel').text(UI.t('Close'));
     return d;
@@ -802,48 +802,48 @@ async function showDocumentDependencies(type, id, action) {
 
 async function performDocumentDelete(type, id) {
     const dep = await UI.api('/Documents/Dependencies', { query: { type, id, action: 'Delete' } });
-    if (!dep.success || !dep.data) { UI.toast(UI.resultError(dep)); return; }
+    if (!dep.success || !dep.data) { UI.showError(UI.resultError(dep)); return; }
     const summary = dep.data.reasons && dep.data.reasons.length
         ? `<div class="alert alert-warning small"><div class="fw-semibold mb-2">${UI.t('Blocked reason')}</div><ul class="mb-0 ps-3">${dep.data.reasons.map(x => `<li>${UI.esc(UI.msg(x))}</li>`).join('')}</ul></div>`
         : `<div>${UI.t('Document will be reversed and deleted transactionally.')}</div>`;
     if (!dep.data.canProceed) {
-        UI.confirm('Dependency Warning', 'Delete is blocked by downstream dependency.', summary, null, 'Close');
+        UI.confirm(UI.t('Dependency Warning'), UI.t('Delete is blocked by downstream dependency.'), summary, null, UI.t('Close'));
         $('#swalConfirm').hide();
         $('#swalCancel').text(UI.t('Close'));
         return;
     }
-    UI.confirm('Delete', 'This document will be reversed and deleted.', summary, async function () {
+    UI.confirm(UI.t('Delete'), UI.t('This document will be reversed and deleted.'), summary, async function () {
         const result = await UI.api('/Documents/Delete', { method: 'POST', query: { type, id }, data: {} });
-        UI.toast(result.success ? UI.msg(result.message || 'Document deleted.') : UI.resultError(result));
+        result.success ? UI.toast(UI.msg(result.message || 'Document deleted.')) : UI.showError(UI.resultError(result));
         if (result.success) {
             AppState.documentEditor = null;
             $('#drawer').removeClass('open right-drawer-detail');
             if (window.currentOperationType) loadOperationDocuments(window.currentOperationType);
             if (typeof loadQuantityDocuments === 'function') loadQuantityDocuments();
         }
-    }, 'Delete');
+    }, UI.t('Delete'));
 }
 
 async function performDocumentRebuild(type, id) {
     const dep = await UI.api('/Documents/Dependencies', { query: { type, id, action: 'Rebuild' } });
-    if (!dep.success || !dep.data) { UI.toast(UI.resultError(dep)); return; }
+    if (!dep.success || !dep.data) { UI.showError(UI.resultError(dep)); return; }
     const summary = dep.data.reasons && dep.data.reasons.length
         ? `<div class="alert alert-warning small"><div class="fw-semibold mb-2">${UI.t('Blocked reason')}</div><ul class="mb-0 ps-3">${dep.data.reasons.map(x => `<li>${UI.esc(UI.msg(x))}</li>`).join('')}</ul></div>`
         : `<div>${UI.t('Current persisted payload will be replayed to rebuild effects.')}</div>`;
     if (!dep.data.canProceed) {
-        UI.confirm('Dependency Warning', 'Rebuild is blocked by downstream dependency.', summary, null, 'Close');
+        UI.confirm(UI.t('Dependency Warning'), UI.t('Rebuild is blocked by downstream dependency.'), summary, null, UI.t('Close'));
         $('#swalConfirm').hide();
         $('#swalCancel').text(UI.t('Close'));
         return;
     }
-    UI.confirm('Rebuild Effects', 'This will reverse and replay the current document effects.', summary, async function () {
+    UI.confirm(UI.t('Rebuild Effects'), UI.t('This will reverse and replay the current document effects.'), summary, async function () {
         const result = await UI.api('/Documents/Rebuild', { method: 'POST', query: { type, id }, data: {} });
-        UI.toast(result.success ? UI.msg(result.message || 'Effects rebuilt.') : UI.resultError(result));
+        result.success ? UI.toast(UI.msg(result.message || 'Effects rebuilt.')) : UI.showError(UI.resultError(result));
         if (result.success) {
             if (window.currentOperationType) loadOperationDocuments(window.currentOperationType);
             if (typeof loadQuantityDocuments === 'function') loadQuantityDocuments();
         }
-    }, 'Rebuild Effects');
+    }, UI.t('Rebuild Effects'));
 }
 
 $(document).on('click', '.btn-doc-edit', function () {

@@ -502,7 +502,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
 
             if (type == QuantityInventoryDocumentType.Issue && (balance == null || balance.Quantity < line.Quantity))
             {
-                errors.Add($"Insufficient quantity for item {item.ItemCode} SN {snCode}.");
+                errors.Add($"Insufficient quantity for item {item.ItemCode}.");
                 continue;
             }
 
@@ -867,7 +867,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         }
 
         if (type == QuantityInventoryDocumentType.Issue && balance.Quantity < line.Quantity)
-            return $"Insufficient quantity for item {item.ItemCode} SN {snCode}.";
+            return $"Insufficient quantity for item {item.ItemCode}.";
 
         if (type != QuantityInventoryDocumentType.Adjust)
             balance.Quantity += delta;
@@ -1084,7 +1084,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         }
 
         if (type == QuantityInventoryDocumentType.Issue && balance.Quantity < line.Quantity)
-            return $"Insufficient quantity for item {item.ItemCode} SN {snCode}.";
+            return $"Insufficient quantity for item {item.ItemCode}.";
 
         if (type != QuantityInventoryDocumentType.Adjust)
             balance.Quantity += delta;

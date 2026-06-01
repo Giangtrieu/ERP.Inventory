@@ -354,7 +354,7 @@ async function loadQtyHistoryPanel() {
           { id: 'quantity-receive', text: UI.t('Receive') },
           { id: 'quantity-issue', text: UI.t('Issue') },
           { id: 'quantity-adjust', text: UI.t('Adjust') }
-        ], '')}</div>
+        ], 'quantity-receive')}</div>
         <div class="col-md-4">${UI.input('Keyword','text','','qtyDocKeyword')}</div>
         <div class="col-md-2">${UI.input('From Date', 'date', firstDay(), 'qtyDocFromDate')}</div>
         <div class="col-md-2">${UI.input('To Date', 'date', today(), 'qtyDocToDate')}</div>
@@ -472,7 +472,7 @@ async function postQuantityInventory() {
   };
 
   const opLabel = { receive: UI.t('Receive'), issue: UI.t('Issue'), adjust: UI.t('Adjust') }[operation];
-  UI.confirm('Confirm Save & Post', 'This operation will be posted immediately.',
+  UI.confirm(UI.t('Confirm Save & Post'), UI.t('This operation will be posted immediately.'),
     `${UI.t('Operation')}: <b>${opLabel}</b><br>${UI.t('Item')}: <b>${UI.esc(itemCodes)}</b><br>${UI.t('Rows')}: <b>${lines.length}</b>`,
     async function () {
       const apiOp = operation.charAt(0).toUpperCase() + operation.slice(1);

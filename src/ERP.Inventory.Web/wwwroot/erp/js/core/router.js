@@ -22,9 +22,10 @@ window.Router = {
     $('#drawer').removeClass('open right-drawer-detail');
 
 
-      const page = this.pages[screen] || this.pages['operation'];
-      this.updatePrintButton(screen);
-    if (page) page(screen);
+    const page = this.pages[screen] || this.pages['operation'];
+    this.updatePrintButton(screen);
+    if (page) return page(screen);
+    return null;
     },
     updatePrintButton(type) {
         const canShow = AppConfig.canPrintPDF.includes(type);

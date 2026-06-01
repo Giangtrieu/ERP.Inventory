@@ -426,7 +426,7 @@ public sealed class DocumentsController : Controller
                             : $"{x.SenderCode}-{x.SenderName}",
                 department = "TE",
                 oldLocation = x.TransactionType.ToString() == "Receive" ? x.Warehouse.Name : "",
-                receiverPhone = x.ReceiverPhone ?? x.SenderPhone,
+                receiverPhone = string.IsNullOrWhiteSpace(x.ReceiverPhone)  ? x.SenderPhone : x.ReceiverPhone,
                 performedBy = x.PostedBy
             })
             .ToListAsync(cancellationToken);

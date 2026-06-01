@@ -117,9 +117,9 @@ $(document).on('click', '#btnSaveInventoryItem', async function () {
 });
 
 function hardDeleteInventoryItem(id) {
-    UI.confirm('Hard Delete', 'Only permanently delete items with no transaction history.', `<div>ID: <b>${id}</b></div>`, async function () {
+    UI.confirm(UI.t('Hard Delete'), UI.t('Only permanently delete items with no transaction history.'), `<div>ID: <b>${id}</b></div>`, async function () {
         const result = await UI.api(`/Management/ItemInstanceDelete/${id}`, { method: 'DELETE', data: {id} });
-        UI.toast(result.success ? UI.t('Record deleted.') : UI.resultError(result));
+        result.success ? UI.toast(UI.t('Record deleted.')) : UI.showError(UI.resultError(result));
         await loadLookups();
         await loadInventoryList(AppState.inventoryPage || 1, AppState.inventoryPageSize || AppState.pageSize || 25);
     });
@@ -149,8 +149,11 @@ async function openInventoryItemForm(id) {
 }
 
 async function afterInventoryItemSave(result) {
-  UI.toast(result.success ? UI.t('Saved') : UI.resultError(result));
-  if (!result.success) return;
+    if (!result.success) {
+        UI.resultError(UI.resultError(result));
+        return;
+    }
+  UI.toast(UI.t('Saved'));
   $('#drawer').removeClass('open');
   await loadInventoryList(AppState.inventoryPage || 1, AppState.inventoryPageSize || AppState.pageSize || 25);
 }

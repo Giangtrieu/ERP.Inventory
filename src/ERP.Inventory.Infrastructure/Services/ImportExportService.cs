@@ -20,27 +20,55 @@ public sealed class ImportExportService : IImportService, IExportService
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     private readonly InventoryDbContext _db;
     private readonly IDocumentNumberService _documentNumbers;
+    private readonly IInboundService _inboundService;
     private readonly IQuantityInventoryService _quantityInventoryService;
     private readonly IInventoryOperationService _moveLocationService;
     private readonly IBorrowService _borrowService;
     private readonly IRepairService _repairService;
+    private readonly InventoryCheckService _inventoryCheckService;
 
     public ImportExportService(
         InventoryDbContext db,
         IDocumentNumberService documentNumbers,
+        IInboundService inboundService,
         IQuantityInventoryService quantityInventoryService,
         IInventoryOperationService moveLocationService,
         IBorrowService borrowService,
-        IRepairService repairService)
+        IRepairService repairService,
+        InventoryCheckService inventoryCheckService)
     {
         _db = db;
         _documentNumbers = documentNumbers;
+        _inboundService = inboundService;
         _quantityInventoryService = quantityInventoryService;
         _moveLocationService = moveLocationService;
         _borrowService = borrowService;
         _repairService = repairService;
+        _inventoryCheckService = inventoryCheckService;
     }
 
+    private sealed class InventoryCheckImportContext
+    {
+        public Dictionary<string, Warehouse> Warehouses { get; }
+        public Dictionary<string, Item> ItemsByCode { get; }
+        public Dictionary<string, ItemInstance> InstancesBySerial { get; }
+        public Dictionary<int, CurrentItemLocation> LocationsByInstanceId { get; }
+        public Dictionary<(int WarehouseId, string BinCode), BinLocation> Bins { get; }
+
+        public InventoryCheckImportContext(
+            Dictionary<string, Warehouse> warehouses,
+            Dictionary<string, Item> itemsByCode,
+            Dictionary<string, ItemInstance> instancesBySerial,
+            Dictionary<int, CurrentItemLocation> locationsByInstanceId,
+            Dictionary<(int WarehouseId, string BinCode), BinLocation> bins)
+        {
+            Warehouses = warehouses;
+            ItemsByCode = itemsByCode;
+            InstancesBySerial = instancesBySerial;
+            LocationsByInstanceId = locationsByInstanceId;
+            Bins = bins;
+        }
+    }
     public async Task<ServiceResult<int>> UploadAsync(string importType, string fileName, Stream fileStream, CurrentUserContext user, CancellationToken cancellationToken = default)
     {
         importType = NormalizeImportType(importType);
@@ -201,7 +229,7 @@ public sealed class ImportExportService : IImportService, IExportService
 
     private static bool RequiresOuterImportTransaction(string importType)
     {
-        return importType is "ItemMaster" or "WarehouseStructure" or "Inbound" or "InventoryCheck" or "RepairSend" or "BorrowLend";
+        return importType is "ItemMaster" or "WarehouseStructure" or "Inbound" or "RepairSend" or "BorrowLend";
     }
 
     public async Task<ServiceResult<IReadOnlyCollection<ImportBatchDto>>> ListAsync(CurrentUserContext user, CancellationToken cancellationToken = default)
@@ -251,7 +279,8 @@ public sealed class ImportExportService : IImportService, IExportService
             headers = ImportHeaders["Inbound"];
         }
 
-        var bytes = SimpleExcel.CreateWorkbook(headers, TemplateRows(importType), $"{importType}Template");
+        var localizedHeaders = headers.Select(header => ExcelText(user, header)).ToArray();
+        var bytes = SimpleExcel.CreateWorkbook(localizedHeaders, TemplateRows(importType), $"{importType}Template");
         return Task.FromResult(bytes);
     }
 
@@ -773,17 +802,28 @@ public sealed class ImportExportService : IImportService, IExportService
 
         var itemCode = Value(row, "ItemCode");
         var serial = Value(row, "SerialNumber");
-        if (string.IsNullOrWhiteSpace(itemCode) && string.IsNullOrWhiteSpace(serial))
+        if (string.IsNullOrWhiteSpace(itemCode))
         {
-            errors.Add("ItemCode or SerialNumber is required.");
+            errors.Add("ItemCode is required.");
         }
 
-        var binCode = Value(row, "BinCode");
-        if (string.IsNullOrWhiteSpace(binCode) && warehouse != null)
+        if (string.IsNullOrWhiteSpace(serial))
         {
-            var actualBin = Value(row, "ActualBinCode");
-            if (string.IsNullOrWhiteSpace(actualBin))
-                errors.Add("BinCode or ActualBinCode is required.");
+            errors.Add("SerialNumber is required.");
+        }
+
+        var binCode = NullIfEmpty(Value(row, "BinCode")) ?? NullIfEmpty(Value(row, "ActualBinCode"));
+        if (string.IsNullOrWhiteSpace(binCode))
+        {
+            errors.Add("BinCode or ActualBinCode is required.");
+        }
+        else if (warehouse != null)
+        {
+            var bin = await FindBinAsync(warehouse.Id, binCode, cancellationToken);
+            if (bin == null)
+            {
+                errors.Add("BinCode does not exist in the checked warehouse.");
+            }
         }
     }
 
@@ -1185,6 +1225,63 @@ public sealed class ImportExportService : IImportService, IExportService
 
     public async Task<int> ConfirmInboundAsync(IReadOnlyCollection<Dictionary<string, string>> rows, CurrentUserContext user, CancellationToken cancellationToken)
     {
+        var count = 0;
+        foreach (var group in rows.GroupBy(x => NullIfEmpty(Value(x, "DocumentNo")) ?? "auto", StringComparer.OrdinalIgnoreCase))
+        {
+            var first = group.First();
+            var warehouse = await FindWarehouseAsync(Value(first, "WarehouseCode"), cancellationToken)
+                ?? throw new InvalidOperationException("Warehouse not found.");
+
+            var mixedWarehouse = group
+                .Select(x => Value(x, "WarehouseCode"))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Skip(1)
+                .Any();
+            if (mixedWarehouse)
+            {
+                throw new InvalidOperationException($"Inbound document {group.Key} contains multiple warehouses.");
+            }
+
+            var request = new InboundRequest
+            {
+                DocumentNo = group.Key,
+                WarehouseCode = warehouse.WarehouseCode,
+                WarehouseId = warehouse.Id,
+                DocumentDate = DateTime.Parse(Value(first, "DocumentDate")),
+                SourcePartyer = NullIfEmpty(Value(first, "SourcePartyCode")),
+                ReceiverCode = Value(first, "PartyCode"),
+                ReceiverName = Value(first, "Name"),
+                ReceiverPhone = Value(first, "Phone"),
+                ReceiverDepartment = Value(first, "Department"),
+                ApprovedBy = user.UserName,
+                Note = NullIfEmpty(Value(first, "Note")),
+                OwnerName = NullIfEmpty(Value(first, "OwnerName")),
+                Lines = group.Select(row => new InboundLineRequest
+                {
+                    ItemCode = Value(row, "ItemCode"),
+                    SerialNumber = NullIfEmpty(Value(row, "SerialNumber")),
+                    MT = NullIfEmpty(Value(row, "MT")),
+                    Quantity = 1,
+                    BinCode = Value(row, "BinCode"),
+                    Condition = NullIfEmpty(Value(row, "Condition")),
+                    Note = NullIfEmpty(Value(row, "Note"))
+                }).ToArray()
+            };
+
+            var result = await _inboundService.CreateInboundAsync(request, user, cancellationToken);
+            if (!result.Success)
+            {
+                throw new InvalidOperationException($"Inbound failed: {string.Join("; ", result.Errors)}");
+            }
+
+            count += request.Lines.Count;
+        }
+
+        return count;
+    }
+
+    private async Task<int> ConfirmInboundBulkLegacyAsync(IReadOnlyCollection<Dictionary<string, string>> rows, CurrentUserContext user, CancellationToken cancellationToken)
+    {
         {
             var now = DateTime.UtcNow;
             var count = 0;
@@ -1460,43 +1557,528 @@ public sealed class ImportExportService : IImportService, IExportService
         }
     }
 
+    //private async Task<int> ConfirmInventoryCheckAsync(IReadOnlyCollection<Dictionary<string, string>> rows, CurrentUserContext user, CancellationToken cancellationToken)
+    //{
+    //    var count = 0;
+    //    DateTime now = DateTime.UtcNow;
+    //    var listDocument = new List<InventoryCheckDocument>();
+    //    foreach (var group in rows.GroupBy(x => Value(x, "WarehouseCode")))
+    //    {
+    //        var warehouse = await FindWarehouseAsync(group.Key, cancellationToken) ?? throw new InvalidOperationException("Warehouse not found.");
+    //        var document = new InventoryCheckDocument { DocumentNo = _documentNumbers.Next("CHK", now), DocumentDate = now, WarehouseId = warehouse.Id, SessionStatus = "Finalized", CountMethod = "Excel", ResponsibleStaff = user.UserName, CreatedBy = user.UserName, ApprovedBy = user.UserName, ApprovedAt = DateTime.UtcNow, PostedAt = DateTime.UtcNow };
+    //        _db.InventoryCheckDocuments.Add(document);
+    //        await _db.SaveChangesAsync(cancellationToken);
+    //        foreach (var row in group)
+    //        {
+    //            var instance = await FindInstanceAsync(row, cancellationToken);
+    //            var binCode = NullIfEmpty(Value(row, "BinCode")) ?? NullIfEmpty(Value(row, "ActualBinCode"));
+    //            var actualBin = binCode != null ? await FindBinAsync(warehouse.Id, binCode, cancellationToken) : null;
+    //            var current = instance == null ? null : await _db.CurrentItemLocations.FirstOrDefaultAsync(x => x.ItemInstanceId == instance.Id, cancellationToken);
+
+    //            // Auto-determine result like manual flow
+    //            InventoryCheckLineResult result;
+    //            if (instance == null && actualBin != null)
+    //            {
+    //                var item = await FindItemByCodeAsync(Value(row, "ItemCode"), cancellationToken);
+    //                if (item == null)
+    //                {
+    //                    _db.InventoryCheckLines.Add(new InventoryCheckLine
+    //                    {
+    //                        InventoryCheckDocumentId = document.Id,
+    //                        SystemBinLocationId = null,
+    //                        ActualBinLocationId = actualBin?.Id,
+    //                        Result = InventoryCheckLineResult.Extra,
+    //                        Note = Value(row, "Note"),
+    //                        CreatedAt = now,
+    //                        CreatedBy = user.UserName
+    //                    });
+    //                    count++;
+    //                    continue;
+    //                }
+    //                var newInstance = new ItemInstance
+    //                {
+    //                    ItemId = item.Id,
+    //                    SerialNumber = Value(row, "SerialNumber").Trim(),
+    //                    Barcode = Value(row, "SerialNumber").Trim(),
+    //                    Status = ItemStatus.Normal,
+    //                    CreatedAt = now,
+    //                    CreatedBy = user.UserName
+    //                };
+    //                _db.ItemInstances.Add(newInstance);
+    //                await _db.SaveChangesAsync(cancellationToken);
+
+    //                _db.CurrentItemLocations.Add(new CurrentItemLocation
+    //                {
+    //                    ItemInstanceId = newInstance.Id,
+    //                    LocationType = LocationType.BinLocation,
+    //                    WarehouseId = warehouse.Id,
+    //                    BinLocationId = actualBin?.Id,
+    //                    ReferenceDocumentType = nameof(InventoryCheckDocument),
+    //                    ReferenceDocumentId = document.Id,
+    //                    ReferenceDocumentNo = document.DocumentNo,
+    //                    UpdatedLocationAt = now,
+    //                    UpdatedLocationBy = user.UserName,
+    //                    CreatedAt = now,
+    //                    CreatedBy = user.UserName
+    //                });
+    //                await ApplyStockDeltaAsync(warehouse.Id, actualBin?.Id, item.Id, ItemStatus.Normal, 1, user, cancellationToken);
+
+    //                _db.InventoryCheckLines.Add(new InventoryCheckLine
+    //                {
+    //                    InventoryCheckDocumentId = document.Id,
+    //                    ItemInstanceId = newInstance.Id,
+    //                    SystemBinLocationId = null,
+    //                    ActualBinLocationId = actualBin?.Id,
+    //                    Result = InventoryCheckLineResult.Extra,
+    //                    Note = Value(row, "Note") ?? $"Extra item found at {actualBin?.BinCode}.",
+    //                    CreatedAt = now,
+    //                    CreatedBy = user.UserName
+    //                });
+    //                //result = InventoryCheckLineResult.Extra;
+    //                //_db.InventoryCheckLines.Add(new InventoryCheckLine { InventoryCheckDocumentId = document.Id, ItemInstanceId = instance?.Id, SystemBinLocationId = current?.BinLocationId, ActualBinLocationId = actualBin?.Id, Result = result, Note = Value(row, "Note"), CreatedBy = user.UserName });
+    //            }
+    //            else if (current == null)
+    //            {
+    //                continue;
+    //                //result = InventoryCheckLineResult.Missing;
+    //                //_db.InventoryCheckLines.Add(new InventoryCheckLine { InventoryCheckDocumentId = document.Id, ItemInstanceId = instance?.Id, SystemBinLocationId = current?.BinLocationId, ActualBinLocationId = actualBin?.Id, Result = result, Note = Value(row, "Note"), CreatedBy = user.UserName });
+    //            }
+    //            else if (current.BinLocationId == actualBin?.Id)
+    //            {
+    //                if (instance.Status != ItemStatus.InStock && instance.Status != ItemStatus.Normal)
+    //                    instance.Status = ItemStatus.Normal;
+    //                result = InventoryCheckLineResult.Matched;
+    //                _db.InventoryCheckLines.Add(new InventoryCheckLine { InventoryCheckDocumentId = document.Id, ItemInstanceId = instance?.Id, SystemBinLocationId = current?.BinLocationId, ActualBinLocationId = actualBin?.Id, Result = result, Note = Value(row, "Note"), CreatedBy = user.UserName });
+    //            }
+
+    //            else
+    //            {
+    //                var oldBinId = current?.BinLocationId;
+    //                _db.InventoryCheckLines.Add(new InventoryCheckLine
+    //                {
+    //                    InventoryCheckDocumentId = document.Id,
+    //                    ItemInstanceId = instance.Id,
+    //                    SystemBinLocationId = current?.BinLocationId,
+    //                    ActualBinLocationId = actualBin?.Id,
+    //                    Result = InventoryCheckLineResult.WrongLocation,
+    //                    Note = Value(row, "Note") ?? $"Found at {actualBin?.BinCode} instead of expected location.",
+    //                    CreatedAt = now,
+    //                    CreatedBy = user.UserName
+    //                });
+
+    //                if (current != null)
+    //                {
+    //                    var fromWarehouseId = current.WarehouseId;
+    //                    if (oldBinId.HasValue && fromWarehouseId.HasValue)
+    //                        await ApplyStockDeltaAsync(fromWarehouseId.Value, oldBinId, instance.ItemId, instance.Status, -1, user, cancellationToken);
+
+    //                    current.LocationType = LocationType.BinLocation;
+    //                    current.WarehouseId = warehouse.Id;
+    //                    current.BinLocationId = actualBin?.Id;
+    //                    current.ReferenceDocumentType = nameof(InventoryCheckDocument);
+    //                    current.ReferenceDocumentId = document.Id;
+    //                    current.ReferenceDocumentNo = document.DocumentNo;
+    //                    current.UpdatedLocationAt = now;
+    //                    current.UpdatedLocationBy = user.UserName;
+
+    //                    var bin = await FindBinIdAsync(warehouse.Id, oldBinId, cancellationToken);
+
+    //                    await ApplyStockDeltaAsync(warehouse.Id, actualBin.Id, instance.ItemId, instance.Status, 1, user, cancellationToken);
+    //                    AddHistory(instance.Id, MovementActionType.MoveLocation, LocationType.BinLocation, oldBinId, $"Bin {bin?.FullPath}", LocationType.BinLocation, actualBin.Id, actualBin.FullPath,
+    //                        instance.Status, instance.Status, nameof(InventoryCheckDocument), document.Id, document.DocumentNo, "Inventory check: wrong location corrected", user);
+    //                    //AddHistory(instance.Id, MovementActionType.MoveLocation, oldBinId, $"Bin {bin?.FullPath}", LocationType.BinLocation, actualBin.Id, actualBin.FullPath, instance.Status, instance.Status, nameof(InventoryCheckDocument), document.Id, document.DocumentNo, "Inventory check: wrong location corrected", user);
+    //                    //    result = InventoryCheckLineResult.WrongLocation;
+    //                    //_db.InventoryCheckLines.Add(new InventoryCheckLine { InventoryCheckDocumentId = document.Id, ItemInstanceId = instance?.Id, SystemBinLocationId = current?.BinLocationId, ActualBinLocationId = actualBin?.Id, Result = result, Note = Value(row, "Note"), CreatedBy = user.UserName });
+    //                }
+    //            }
+    //            count++;
+    //        }
+    //        listDocument.Add(document);
+
+
+    //    }
+
+    //    await _db.SaveChangesAsync(cancellationToken);
+
+    //    foreach (var doc in listDocument)
+    //    {
+    //        var listCheckedItemInstanceIds = await _db.InventoryCheckLines.Where(x => x.InventoryCheckDocumentId == doc.Id).Select(x => x.ItemInstanceId).ToListAsync(cancellationToken);
+    //        var listallInStockLocations = await _db.CurrentItemLocations.Where(x => x.WarehouseId == doc.WarehouseId && x.LocationType == LocationType.BinLocation && !listCheckedItemInstanceIds.Contains(x.ItemInstanceId)
+    //        && (x.ItemInstance.Status == ItemStatus.InStock || x.ItemInstance.Status == ItemStatus.Normal || x.ItemInstance.Status == ItemStatus.Damaged || x.ItemInstance.Status == ItemStatus.Scrapped)).ToListAsync(cancellationToken);
+    //        foreach (var missingLoc in listallInStockLocations)
+    //        {
+    //            var missingInstance = missingLoc.ItemInstance!;
+
+    //            _db.InventoryCheckLines.Add(new InventoryCheckLine
+    //            {
+    //                InventoryCheckDocumentId = doc.Id,
+    //                ItemInstanceId = missingInstance.Id,
+    //                SystemBinLocationId = missingLoc.BinLocationId,
+    //                ActualBinLocationId = null,
+    //                Result = InventoryCheckLineResult.Missing,
+    //                Note = "Item not found during inventory check — marked Lost.",
+    //                CreatedAt = now,
+    //                CreatedBy = user.UserName
+    //            });
+
+    //            var oldBinId = missingLoc.BinLocationId;
+    //            var oldWarehouseId = missingLoc.WarehouseId;
+    //            if (oldBinId.HasValue && oldWarehouseId.HasValue)
+    //                await ApplyStockDeltaAsync(oldWarehouseId.Value, oldBinId, missingInstance.ItemId, missingInstance.Status, -1, user, cancellationToken);
+
+    //            missingLoc.BinLocationId = null;
+    //            missingLoc.ReferenceDocumentType = nameof(InventoryCheckDocument);
+    //            missingLoc.ReferenceDocumentId = doc.Id;
+    //            missingLoc.ReferenceDocumentNo = doc.DocumentNo;
+    //            missingLoc.UpdatedLocationAt = now;
+    //            missingLoc.UpdatedLocationBy = user.UserName;
+
+    //            if (missingInstance.Status == ItemStatus.Normal || missingInstance.Status == ItemStatus.InStock) missingInstance.Status = ItemStatus.Lost;
+    //            var bin = await FindBinIdAsync(doc.WarehouseId, oldBinId, cancellationToken);
+
+    //            AddHistory(missingInstance.Id, MovementActionType.InventoryCheck, LocationType.BinLocation, oldBinId, $"Bin {bin?.FullPath}", null, null, "Unknown", ItemStatus.InStock, ItemStatus.Lost, nameof(InventoryCheckDocument), doc.Id, doc.DocumentNo, "Missing: not found during inventory check", user);
+    //        }
+            
+    //    }
+
+    //    await _db.SaveChangesAsync(cancellationToken);
+    //    return count;
+    //}
     private async Task<int> ConfirmInventoryCheckAsync(IReadOnlyCollection<Dictionary<string, string>> rows, CurrentUserContext user, CancellationToken cancellationToken)
     {
         var count = 0;
         foreach (var group in rows.GroupBy(x => Value(x, "WarehouseCode")))
         {
             var warehouse = await FindWarehouseAsync(group.Key, cancellationToken) ?? throw new InvalidOperationException("Warehouse not found.");
-            var document = new InventoryCheckDocument { DocumentNo = _documentNumbers.Next("CHK", DateTime.UtcNow), DocumentDate = DateTime.UtcNow, WarehouseId = warehouse.Id, CountMethod = "Excel", ResponsibleStaff = user.UserName, CreatedBy = user.UserName, ApprovedBy = user.UserName, ApprovedAt = DateTime.UtcNow, PostedAt = DateTime.UtcNow };
-            _db.InventoryCheckDocuments.Add(document);
-            await _db.SaveChangesAsync(cancellationToken);
-            foreach (var row in group)
+
+            var sessionDate = DateTime.UtcNow;
+            var session = await _inventoryCheckService.CreateSessionAsync(new InventoryCheckSessionRequest
             {
-                var instance = await FindInstanceAsync(row, cancellationToken);
-                var binCode = NullIfEmpty(Value(row, "BinCode")) ?? NullIfEmpty(Value(row, "ActualBinCode"));
-                var actualBin = binCode != null ? await FindBinAsync(warehouse.Id, binCode, cancellationToken) : null;
-                var current = instance == null ? null : await _db.CurrentItemLocations.AsNoTracking().FirstOrDefaultAsync(x => x.ItemInstanceId == instance.Id, cancellationToken);
+                WarehouseId = warehouse.Id,
+                WarehouseCode = warehouse.WarehouseCode,
+                SessionDate = sessionDate,
+                DocumentPeriodType = DocumentPeriodType.Month,
+                CountMethod = "Excel",
+                ResponsibleStaff = user.UserName,
+                Note = NullIfEmpty(Value(group.First(), "Note"))
+            }, user, cancellationToken);
 
-                // Auto-determine result like manual flow
-                InventoryCheckLineResult result;
-                if (instance == null)
-                    result = InventoryCheckLineResult.Extra;
-                else if (current == null)
-                    result = InventoryCheckLineResult.Missing;
-                else if (current.BinLocationId == actualBin?.Id)
-                    result = InventoryCheckLineResult.Matched;
-                else
-                    result = InventoryCheckLineResult.WrongLocation;
-
-                _db.InventoryCheckLines.Add(new InventoryCheckLine { InventoryCheckDocumentId = document.Id, ItemInstanceId = instance?.Id, SystemBinLocationId = current?.BinLocationId, ActualBinLocationId = actualBin?.Id, Result = result, Note = Value(row, "Note"), CreatedBy = user.UserName });
-                count++;
+            if (!session.Success || session.Data == null)
+            {
+                throw new InvalidOperationException(session.Message);
             }
-        }
 
-        await _db.SaveChangesAsync(cancellationToken);
+            var scanLines = group.Select(row => new InventoryCheckLineRequest
+            {
+                ItemCode = Value(row, "ItemCode"),
+                SerialNumber = Value(row, "SerialNumber"),
+                BinCode = NullIfEmpty(Value(row, "BinCode")) ?? NullIfEmpty(Value(row, "ActualBinCode")) ?? string.Empty,
+                Note = NullIfEmpty(Value(row, "Note"))
+            }).ToArray();
+
+            var scan = await _inventoryCheckService.ScanBatchAsync(new InventoryCheckScanRequest
+            {
+                DocumentId = session.Data.DocumentId,
+                Lines = scanLines
+            }, user, cancellationToken);
+
+            if (!scan.Success)
+            {
+                throw new InvalidOperationException(scan.Message);
+            }
+
+            var finalize = await _inventoryCheckService.FinalizeAsync(session.Data.DocumentId, user, cancellationToken);
+            if (!finalize.Success)
+            {
+                throw new InvalidOperationException(finalize.Message);
+            }
+
+            count += scanLines.Length;
+        }
         return count;
     }
 
+    private async Task<InventoryCheckImportContext> BuildImportContextAsync(IReadOnlyCollection<Dictionary<string, string>> rows, CancellationToken cancellationToken)
+    {
+        var warehouseCodes = rows
+            .Select(x => Value(x, "WarehouseCode"))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct()
+            .ToArray();
+
+        var itemCodes = rows
+            .Select(x => Value(x, "ItemCode"))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct()
+            .ToArray();
+
+        var serials = rows
+            .Select(x => Value(x, "SerialNumber"))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct()
+            .ToArray();
+
+        var warehouses = await _db.Warehouses
+            .Where(x => warehouseCodes.Contains(x.WarehouseCode))
+            .ToDictionaryAsync(x => x.WarehouseCode, cancellationToken);
+
+        var items = await _db.Items
+            .Where(x => itemCodes.Contains(x.ItemCode))
+            .ToDictionaryAsync(x => x.ItemCode, cancellationToken);
+
+        var instances = await _db.ItemInstances
+            .Where(x => serials.Contains(x.SerialNumber))
+            .ToDictionaryAsync(x => x.SerialNumber!, cancellationToken);
+
+        var instanceIds = instances.Values
+            .Select(x => x.Id)
+            .ToArray();
+
+        var locations = await _db.CurrentItemLocations
+            .Include(x => x.ItemInstance)
+            .Where(x => instanceIds.Contains(x.ItemInstanceId))
+            .ToDictionaryAsync(x => x.ItemInstanceId, cancellationToken);
+
+        var warehouseIds = warehouses.Values
+            .Select(x => x.Id)
+            .ToArray();
+
+        var bins = await _db.BinLocations
+            .Where(x => warehouseIds.Contains(x.WarehouseId))
+            .ToDictionaryAsync(
+                x => (x.WarehouseId, x.BinCode),
+                cancellationToken);
+
+        return new InventoryCheckImportContext(warehouses, items, instances, locations, bins);
+    }
+    private async Task ProcessExtraAsync( InventoryCheckDocument document, Warehouse warehouse, BinLocation actualBin, Item item, string serial, string? note, DateTime now, CurrentUserContext user, CancellationToken cancellationToken)
+    {
+        var instance = new ItemInstance
+        {
+            ItemId = item.Id,
+            SerialNumber = serial,
+            Barcode = serial,
+            Status = ItemStatus.Normal,
+            CreatedAt = now,
+            CreatedBy = user.UserName
+        };
+
+        _db.ItemInstances.Add(instance);
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        _db.CurrentItemLocations.Add(new CurrentItemLocation
+        {
+            ItemInstanceId = instance.Id,
+            LocationType = LocationType.BinLocation,
+            WarehouseId = warehouse.Id,
+            BinLocationId = actualBin.Id,
+            ReferenceDocumentType = nameof(InventoryCheckDocument),
+            ReferenceDocumentId = document.Id,
+            ReferenceDocumentNo = document.DocumentNo,
+            UpdatedLocationAt = now,
+            UpdatedLocationBy = user.UserName,
+            CreatedAt = now,
+            CreatedBy = user.UserName
+        });
+
+        await ApplyStockDeltaAsync(
+            warehouse.Id,
+            actualBin.Id,
+            item.Id,
+            ItemStatus.Normal,
+            1,
+            user,
+            cancellationToken);
+
+        _db.InventoryCheckLines.Add(new InventoryCheckLine
+        {
+            InventoryCheckDocumentId = document.Id,
+            ItemInstanceId = instance.Id,
+            ActualBinLocationId = actualBin.Id,
+            Result = InventoryCheckLineResult.Extra,
+            Note = note,
+            CreatedAt = now,
+            CreatedBy = user.UserName
+        });
+    }
+    private void ProcessMatched( InventoryCheckDocument document,ItemInstance instance, CurrentItemLocation current, BinLocation actualBin, string? note, DateTime now,CurrentUserContext user)
+    {
+        if (instance.Status != ItemStatus.Normal &&
+            instance.Status != ItemStatus.InStock)
+        {
+            instance.Status = ItemStatus.Normal;
+        }
+
+        _db.InventoryCheckLines.Add(new InventoryCheckLine
+        {
+            InventoryCheckDocumentId = document.Id,
+            ItemInstanceId = instance.Id,
+            SystemBinLocationId = current.BinLocationId,
+            ActualBinLocationId = actualBin.Id,
+            Result = InventoryCheckLineResult.Matched,
+            Note = note,
+            CreatedAt = now,
+            CreatedBy = user.UserName
+        });
+    }
+
+    private async Task ProcessWrongLocationAsync(
+    InventoryCheckDocument document,
+    Warehouse warehouse,
+    ItemInstance instance,
+    CurrentItemLocation current,
+    BinLocation actualBin,
+    DateTime now,
+    CurrentUserContext user,
+    CancellationToken cancellationToken)
+    {
+        var oldBinId = current.BinLocationId;
+
+        if (oldBinId.HasValue && current.WarehouseId.HasValue)
+        {
+            await ApplyStockDeltaAsync(
+                current.WarehouseId.Value,
+                oldBinId,
+                instance.ItemId,
+                instance.Status,
+                -1,
+                user,
+                cancellationToken);
+        }
+
+        current.BinLocationId = actualBin.Id;
+        current.WarehouseId = warehouse.Id;
+        current.UpdatedLocationAt = now;
+        current.UpdatedLocationBy = user.UserName;
+
+        await ApplyStockDeltaAsync(
+            warehouse.Id,
+            actualBin.Id,
+            instance.ItemId,
+            instance.Status,
+            1,
+            user,
+            cancellationToken);
+
+        _db.InventoryCheckLines.Add(new InventoryCheckLine
+        {
+            InventoryCheckDocumentId = document.Id,
+            ItemInstanceId = instance.Id,
+            SystemBinLocationId = oldBinId,
+            ActualBinLocationId = actualBin.Id,
+            Result = InventoryCheckLineResult.WrongLocation,
+            CreatedAt = now,
+            CreatedBy = user.UserName
+        });
+    }
+
+    private async Task ProcessMissingAsync(
+    InventoryCheckDocument document,
+    CurrentItemLocation location,
+    DateTime now,
+    CurrentUserContext user,
+    CancellationToken cancellationToken)
+{
+    var instance = location.ItemInstance!;
+
+    _db.InventoryCheckLines.Add(new InventoryCheckLine
+    {
+        InventoryCheckDocumentId = document.Id,
+        ItemInstanceId = instance.Id,
+        SystemBinLocationId = location.BinLocationId,
+        Result = InventoryCheckLineResult.Missing,
+        Note = "Item not found during inventory check — marked Lost.",
+        CreatedAt = now,
+        CreatedBy = user.UserName
+    });
+
+    if (location.BinLocationId.HasValue &&
+        location.WarehouseId.HasValue)
+    {
+        await ApplyStockDeltaAsync(
+            location.WarehouseId.Value,
+            location.BinLocationId,
+            instance.ItemId,
+            instance.Status,
+            -1,
+            user,
+            cancellationToken);
+    }
+
+    location.BinLocationId = null;
+
+    if (instance.Status is ItemStatus.Normal or ItemStatus.InStock)
+    {
+        instance.Status = ItemStatus.Lost;
+    }
+}
+
     private async Task<int> ConfirmBorrowLendAsync(IReadOnlyCollection<Dictionary<string, string>> rows, CurrentUserContext user, CancellationToken cancellationToken)
+    {
+        var count = 0;
+        foreach (var group in rows.GroupBy(x => NullIfEmpty(Value(x, "DocumentNo")), StringComparer.OrdinalIgnoreCase))
+        {
+            var firstRow = group.First();
+            var documentNo = group.Key ?? _documentNumbers.Next("BRW", DateTime.UtcNow);
+            var warehouse = await FindWarehouseAsync(Value(firstRow, "WarehouseCode"), cancellationToken)
+                ?? throw new InvalidOperationException("Warehouse not found.");
+            var borrowerCode = Value(firstRow, "BorrowerCode");
+            var borrowerName = NullIfEmpty(Value(firstRow, "BorrowerName")) ?? borrowerCode;
+            var borrowDate = DateTime.TryParse(Value(firstRow, "BorrowDate"), out var parsedBorrowDate) && parsedBorrowDate != default
+                ? parsedBorrowDate
+                : DateTime.UtcNow;
+            var dueDate = DateTime.TryParse(Value(firstRow, "DueDate"), out var parsedDueDate) && parsedDueDate != default
+                ? parsedDueDate
+                : borrowDate.AddDays(30);
+
+            var mixedWarehouse = group
+                .Select(x => Value(x, "WarehouseCode"))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Skip(1)
+                .Any();
+            if (mixedWarehouse)
+            {
+                throw new InvalidOperationException($"Borrow document {documentNo} contains multiple warehouses.");
+            }
+
+            var request = new BorrowLendRequest
+            {
+                DocumentNo = documentNo,
+                WarehouseId = warehouse.Id,
+                WarehouseCode = warehouse.WarehouseCode,
+                Borrower = borrowerCode,
+                BorrowerCode = borrowerCode,
+                BorrowerName = borrowerName,
+                BorrowDate = borrowDate,
+                DueDate = dueDate,
+                Purpose = Value(firstRow, "Purpose"),
+                BorrowDepartment = Value(firstRow, "BorrowDepartment"),
+                ApprovedBy = user.UserName,
+                BorrowerPhone = Value(firstRow, "BorrowerPhone"),
+                DepartmentOwner = Value(firstRow, "DepartmentOwner"),
+                Lines = group.Select(row => new BorrowLendLineRequest
+                {
+                    ItemCode = Value(row, "ItemCode"),
+                    SerialNumber = Value(row, "SerialNumber"),
+                    TargetExternalLocation = NullIfEmpty(Value(row, "TargetExternalLocation")),
+                    Note = NullIfEmpty(Value(row, "Note"))
+                }).ToArray()
+            };
+
+            var result = await _borrowService.LendAsync(request, user, cancellationToken);
+            if (!result.Success)
+            {
+                throw new InvalidOperationException($"BorrowLend failed: {string.Join("; ", result.Errors)}");
+            }
+
+            count += request.Lines.Count;
+        }
+
+        return count;
+    }
+
+    private async Task<int> ConfirmBorrowLendBulkLegacyAsync(IReadOnlyCollection<Dictionary<string, string>> rows, CurrentUserContext user, CancellationToken cancellationToken)
     {
         var count = 0;
         foreach (var group in rows.GroupBy(x => Value(x, "DocumentNo")))
@@ -1531,6 +2113,7 @@ public sealed class ImportExportService : IImportService, IExportService
 
             foreach (var row in group)
             {
+                var lifecycleBatchId = Guid.NewGuid();
                 var instance = await FindInstanceAsync(row, cancellationToken) ?? throw new InvalidOperationException("Item instance not found.");
                 var current = await _db.CurrentItemLocations.FirstAsync(x => x.ItemInstanceId == instance.Id, cancellationToken);
                 var oldStatus = instance.Status;
@@ -1576,8 +2159,10 @@ public sealed class ImportExportService : IImportService, IExportService
                     Note = "Excel import"
                 });
 
-                AddHistory(instance.Id, MovementActionType.Lend, fromDisplay, $"{borrowerCode} - {targetExt}", oldStatus, ItemStatus.LentOut, nameof(BorrowDocument), document.Id, document.DocumentNo, user);
-                AddTransaction(InventoryTransactionType.BorrowLend, instance.ItemId, instance.Id, current.WarehouseId, null, -1, ItemStatus.LentOut, nameof(BorrowDocument), document.Id, document.DocumentNo, user);
+                AddHistory(instance.Id, MovementActionType.Lend, LocationType.BinLocation, current.BinLocationId, fromDisplay, LocationType.Borrower, borrower.Id,
+                    $"{borrowerCode} - {targetExt}", oldStatus, ItemStatus.LentOut, nameof(BorrowDocument), document.Id, document.DocumentNo, "", user, lifecycleBatchId);
+                //AddHistory(instance.Id, MovementActionType.Lend, fromDisplay, $"{borrowerCode} - {targetExt}", oldStatus, ItemStatus.LentOut, nameof(BorrowDocument), document.Id, document.DocumentNo, user);
+                AddTransaction(InventoryTransactionType.BorrowLend, instance.ItemId, instance.Id, current.WarehouseId, null, -1, ItemStatus.LentOut, nameof(BorrowDocument), document.Id, document.DocumentNo, user, lifecycleBatchId);
                 count++;
             }
         }
@@ -1589,12 +2174,70 @@ public sealed class ImportExportService : IImportService, IExportService
     private async Task<int> ConfirmRepairSendAsync(IReadOnlyCollection<Dictionary<string, string>> rows, CurrentUserContext user, CancellationToken cancellationToken)
     {
         var count = 0;
+        foreach (var group in rows.GroupBy(x => NullIfEmpty(Value(x, "DocumentNo")), StringComparer.OrdinalIgnoreCase))
+        {
+            var firstRow = group.First();
+            var documentNo = group.Key ?? _documentNumbers.Next("REP", DateTime.UtcNow);
+            var sendDate = DateTime.UtcNow;
+            var expectedReturnDate = DateTime.TryParse(Value(firstRow, "ExpectedReturnDate"), out var parsedExpectedReturnDate)
+                ? parsedExpectedReturnDate
+                : (DateTime?)null;
+
+            var request = new RepairSendRequest
+            {
+                DocumentNo = documentNo,
+                RepairSenderCode = Value(firstRow, "RepairVendorCode"),
+                RepairSenderName = Value(firstRow, "RepairVendorName"),
+                SendDate = sendDate,
+                ExpectedReturnDate = expectedReturnDate,
+                Reason = Value(firstRow, "Reason"),
+                Lines = group.Select(row => new RepairSendLineRequest
+                {
+                    ItemCode = Value(row, "ItemCode"),
+                    SerialNumber = Value(row, "SerialNumber"),
+                    TargetExternalLocation = NullIfEmpty(Value(row, "TargetExternalLocation")),
+                    Note = NullIfEmpty(Value(row, "Note"))
+                }).ToArray()
+            };
+
+            var result = await _repairService.SendToRepairAsync(request, user, cancellationToken);
+            if (!result.Success)
+            {
+                throw new InvalidOperationException($"RepairSend failed: {string.Join("; ", result.Errors)}");
+            }
+
+            count += request.Lines.Count;
+        }
+
+        return count;
+    }
+
+    private async Task<int> ConfirmRepairSendBulkLegacyAsync(IReadOnlyCollection<Dictionary<string, string>> rows, CurrentUserContext user, CancellationToken cancellationToken)
+    {
+        var count = 0;
         // Group by DocumentNo — supports find-or-create append (Phase 1 pattern)
         foreach (var group in rows.GroupBy(x => NullIfEmpty(Value(x, "DocumentNo"))))
         {
             var firstRow = group.First();
             var vendorCode = Value(firstRow, "RepairVendorCode").Trim().ToUpperInvariant();
             var vendor = await _db.ExternalParties.FirstAsync(x => x.PartyCode == vendorCode && x.PartyType == ExternalPartyType.RepairVendor, cancellationToken);
+            if (vendor == null)
+            {
+                vendor = new ExternalParty
+                {
+                    PartyCode = vendorCode,
+                    ContactName = Value(firstRow, "RepairVendorName"),
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = user.UserName,
+                    Email = "",
+                    IsActive = true,
+                    Phone = "",
+                    PartyType = ExternalPartyType.RepairVendor,
+                    Name = Value(firstRow, "RepairVendorName"),
+                };
+                _db.ExternalParties.Add(vendor);
+                await _db.SaveChangesAsync(cancellationToken);
+            }
 
             // Find-or-create document
             RepairDocument document;
@@ -1625,6 +2268,7 @@ public sealed class ImportExportService : IImportService, IExportService
 
             foreach (var row in group)
             {
+                var lifecycleBatchId = Guid.NewGuid();
                 var instance = await FindInstanceAsync(row, cancellationToken) ?? throw new InvalidOperationException("Item instance not found.");
                 var current = await _db.CurrentItemLocations.FirstAsync(x => x.ItemInstanceId == instance.Id, cancellationToken);
                 var oldStatus = instance.Status;
@@ -1648,8 +2292,10 @@ public sealed class ImportExportService : IImportService, IExportService
                     await ApplyStockDeltaAsync(fromWarehouseId.Value, fromBinLocationId, instance.ItemId, oldStatus, -1, user, cancellationToken);
                 }
 
-                AddHistory(instance.Id, MovementActionType.SendToRepair, fromDisplay, $"{vendor.Name} - {targetExternalLocation}", oldStatus, ItemStatus.Repairing, nameof(RepairDocument), document.Id, document.DocumentNo, user);
-                AddTransaction(InventoryTransactionType.RepairSend, instance.ItemId, instance.Id, current.WarehouseId, null, -1, ItemStatus.Repairing, nameof(RepairDocument), document.Id, document.DocumentNo, user);
+                AddHistory(instance.Id, MovementActionType.SendToRepair, LocationType.BinLocation, fromBinLocationId, fromDisplay, LocationType.RepairVendor, vendor.Id,
+                    $"{vendor.Name} - {targetExternalLocation}", oldStatus, ItemStatus.Repairing, nameof(RepairDocument), document.Id, document.DocumentNo, "", user, lifecycleBatchId);
+                //AddHistory(instance.Id, MovementActionType.SendToRepair, fromDisplay, $"{vendor.Name} - {targetExternalLocation}", oldStatus, ItemStatus.Repairing, nameof(RepairDocument), document.Id, document.DocumentNo, user);
+                AddTransaction(InventoryTransactionType.RepairSend, instance.ItemId, instance.Id, current.WarehouseId, null, -1, ItemStatus.Repairing, nameof(RepairDocument), document.Id, document.DocumentNo, user, lifecycleBatchId);
                 count++;
             }
         }
@@ -1756,14 +2402,23 @@ public sealed class ImportExportService : IImportService, IExportService
         return await _db.BinLocations.FirstOrDefaultAsync(x => x.WarehouseId == warehouseId && x.BinCode.ToUpper() == normalized && x.IsActive, cancellationToken);
     }
 
+    private async Task<BinLocation?> FindBinIdAsync(int warehouseId, int? binId, CancellationToken cancellationToken)
+    {
+        if (!binId.HasValue) return null;
+        return await _db.BinLocations.FirstOrDefaultAsync(x => x.WarehouseId == warehouseId && x.Id == binId.Value && x.IsActive, cancellationToken);
+    }
+
     private async Task<ItemInstance?> FindInstanceAsync(Dictionary<string, string> row, CancellationToken cancellationToken)
     {
         var serial = NormalizeCode(Value(row, "SerialNumber"));
-        var barcode = NormalizeCode(Value(row, "Barcode"));
+        var code = NormalizeCode(Value(row, "ItemCode"));
         return await _db.ItemInstances.Include(x => x.Item).FirstOrDefaultAsync(x =>
-            (!string.IsNullOrWhiteSpace(serial) && x.SerialNumber != null && x.SerialNumber.ToUpper() == serial) ||
-            (!string.IsNullOrWhiteSpace(barcode) && x.Barcode != null && x.Barcode.ToUpper() == barcode), cancellationToken);
+            (!string.IsNullOrWhiteSpace(serial) && x.SerialNumber != null && x.SerialNumber.ToUpper() == serial) &&
+            (x.Item != null && x.Item.ItemCode == code), cancellationToken);
     }
+    private Task<Item?> FindItemByCodeAsync(string? itemCode, CancellationToken ct)
+        => string.IsNullOrWhiteSpace(itemCode) ? Task.FromResult<Item?>(null)
+            : _db.Items.AsNoTracking().FirstOrDefaultAsync(x => x.ItemCode == itemCode.Trim() && x.IsActive, ct);
 
     private async Task ApplyStockDeltaAsync(int warehouseId, int? binLocationId, int itemId, ItemStatus status, decimal delta, CurrentUserContext user, CancellationToken cancellationToken)
     {
@@ -1779,14 +2434,46 @@ public sealed class ImportExportService : IImportService, IExportService
         balance.UpdatedBy = user.UserName;
     }
 
-    private void AddHistory(int itemInstanceId, MovementActionType action, string? from, string? to, ItemStatus oldStatus, ItemStatus newStatus, string documentType, int documentId, string documentNo, CurrentUserContext user)
+    //private void AddHistory(int itemInstanceId, MovementActionType action, string? from, string? to, ItemStatus oldStatus, ItemStatus newStatus, string documentType, int documentId, string documentNo, CurrentUserContext user)
+    //{
+    //    _db.ItemMovementHistories.Add(new ItemMovementHistory { ItemInstanceId = itemInstanceId, ActionType = action, FromLocationDisplay = from, ToLocationDisplay = to, OldStatus = oldStatus, NewStatus = newStatus, DocumentType = documentType, DocumentId = documentId, DocumentNo = documentNo, PerformedAt = DateTime.UtcNow, PerformedBy = user.UserName });
+
+    private void AddHistory(int itemInstanceId, MovementActionType action, LocationType? fromType, int? fromId, string? fromDisplay, LocationType? toType, int? toId, string? toDisplay, ItemStatus oldStatus, ItemStatus newStatus, string documentType, int documentId, string documentNo, string? note, CurrentUserContext user, Guid? lifecycleBatchId = null)
     {
-        _db.ItemMovementHistories.Add(new ItemMovementHistory { ItemInstanceId = itemInstanceId, ActionType = action, FromLocationDisplay = from, ToLocationDisplay = to, OldStatus = oldStatus, NewStatus = newStatus, DocumentType = documentType, DocumentId = documentId, DocumentNo = documentNo, PerformedAt = DateTime.UtcNow, PerformedBy = user.UserName });
+        _db.ItemMovementHistories.Add(new ItemMovementHistory
+        {
+            ItemInstanceId = itemInstanceId, ActionType = action,
+            FromLocationType = fromType, FromLocationId = fromId, FromLocationDisplay = fromDisplay,
+            ToLocationType = toType, ToLocationId = toId, ToLocationDisplay = toDisplay,
+            OldStatus = oldStatus, NewStatus = newStatus,
+            DocumentType = documentType, DocumentId = documentId, DocumentNo = documentNo,
+            LifecycleBatchId = lifecycleBatchId,
+            Note = note, PerformedAt = DateTime.UtcNow, PerformedBy = user.UserName
+        });
     }
 
-    private void AddTransaction(InventoryTransactionType type, int itemId, int? itemInstanceId, int? warehouseId, int? binLocationId, decimal quantityDelta, ItemStatus statusAfter, string documentType, int documentId, string documentNo, CurrentUserContext user)
+    //private void AddTransaction(InventoryTransactionType type, int itemId, int? itemInstanceId, int? warehouseId, int? binLocationId, decimal quantityDelta, ItemStatus statusAfter, string documentType, int documentId, string documentNo, CurrentUserContext user)
+    //{
+    //    _db.InventoryTransactions.Add(new InventoryTransaction { TransactionType = type, ItemId = itemId, ItemInstanceId = itemInstanceId, WarehouseId = warehouseId, BinLocationId = binLocationId, QuantityDelta = quantityDelta, StatusAfter = statusAfter, DocumentType = documentType, DocumentId = documentId, DocumentNo = documentNo, PostedAt = DateTime.UtcNow, PostedBy = user.UserName });
+    //}
+    private void AddTransaction(InventoryTransactionType type, int itemId, int? itemInstanceId, int? warehouseId, int? binLocationId, decimal quantityDelta, ItemStatus statusAfter, string documentType, int documentId, string documentNo, CurrentUserContext user, Guid? lifecycleBatchId = null)
     {
-        _db.InventoryTransactions.Add(new InventoryTransaction { TransactionType = type, ItemId = itemId, ItemInstanceId = itemInstanceId, WarehouseId = warehouseId, BinLocationId = binLocationId, QuantityDelta = quantityDelta, StatusAfter = statusAfter, DocumentType = documentType, DocumentId = documentId, DocumentNo = documentNo, PostedAt = DateTime.UtcNow, PostedBy = user.UserName });
+        _db.InventoryTransactions.Add(new InventoryTransaction
+        {
+            TransactionType = type,
+            ItemId = itemId,
+            ItemInstanceId = itemInstanceId,
+            WarehouseId = warehouseId,
+            BinLocationId = binLocationId,
+            QuantityDelta = quantityDelta,
+            StatusAfter = statusAfter,
+            DocumentType = documentType,
+            DocumentId = documentId,
+            DocumentNo = documentNo,
+            LifecycleBatchId = lifecycleBatchId,
+            PostedAt = DateTime.UtcNow,
+            PostedBy = user.UserName
+        });
     }
 
     private static Dictionary<string, string> Row(ImportBatchRow row)
@@ -1896,6 +2583,17 @@ public sealed class ImportExportService : IImportService, IExportService
                     "BinCode is duplicated in this import file.");
                 break;
             case "inventorycheck":
+                AddDuplicateKeyErrors(
+                    x => "InventoryCheckWarehouse",
+                    x => rows
+                        .Select(r => Value(r.Data, "WarehouseCode"))
+                        .Where(v => !string.IsNullOrWhiteSpace(v))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Skip(1)
+                        .Any(),
+                    "InventoryCheck import supports one warehouse per session file.");
+                AddDuplicateErrors("SerialNumber", "SerialNumber is duplicated in this import file.");
+                break;
             case "repairsend":
             case "borrowlend":
             case "movelocation":
@@ -1965,8 +2663,8 @@ public sealed class ImportExportService : IImportService, IExportService
                 rows.Add(new object?[] { "B34", "GB300", "SN-GB300-0002", "B34_R01_S02", "Found in wrong bin" });
                 break;
             case "RepairSend":
-                rows.Add(new object?[] { "REP01", "REP-VENDOR", "SN-GB200-0001", "", "Warranty repair", "2026-05-15", "Vendor workshop shelf A" });
-                rows.Add(new object?[] { "REP01", "REP-VENDOR", "SN-GB200-0002", "", "Failure analysis", "2026-05-20", "Vendor receiving desk" });
+                rows.Add(new object?[] { "REP01", "REP-VENDOR", "Hoa", "SN-GB200-0001", "", "Warranty repair", "2026-05-15", "Vendor workshop shelf A" });
+                rows.Add(new object?[] { "REP01", "REP-VENDOR", "Hoa", "SN-GB200-0002", "", "Failure analysis", "2026-05-20", "Vendor receiving desk" });
                 break;
             case "BorrowLend":
                 rows.Add(new object?[] { "BRW-PARTY", "B34", "BRW01", "2026-05-07", "2026-06-07", "Lab testing", "IT Dept", "BRW-PHONE", "IT Manager", "GB200", "SN-GB200-0001", "External lab" });
@@ -2718,7 +3416,7 @@ public sealed class ImportExportService : IImportService, IExportService
         ["WarehouseStructure"] = new[] { "CompanyCode", "CompanyName", "BranchCode", "BranchName", "WarehouseCode", "WarehouseName", "ZoneCode", "ZoneName", "RackCode", "RackName", "ShelfCode", "ShelfName", "BinCode" },
         ["Inbound"]            = new[] { "DocumentDate", "DocumentNo", "ItemCode", "SerialNumber", "Barcode", "MT", "WarehouseCode", "BinCode", "SourcePartyCode", "Condition", "Note", "PartyCode", "Name", "Phone", "Department", "OwnerName", "TrackingType" },
         ["InventoryCheck"]     = new[] { "WarehouseCode", "ItemCode", "SerialNumber", "BinCode", "Note" },
-        ["RepairSend"]         = new[] { "DocumentNo", "RepairVendorCode", "SerialNumber", "Barcode", "Reason", "ExpectedReturnDate", "TargetExternalLocation" },
+        ["RepairSend"]         = new[] { "DocumentNo", "RepairVendorCode", "RepairVendorName", "SerialNumber", "Barcode", "Reason", "ExpectedReturnDate", "TargetExternalLocation" },
         ["BorrowLend"]         = new[] { "BorrowerCode", "WarehouseCode", "DocumentNo", "BorrowDate", "DueDate", "Purpose", "BorrowDepartment", "BorrowerPhone", "DepartmentOwner", "ItemCode", "SerialNumber", "TargetExternalLocation" },
         // --- New import types ---
         ["QuantityInbound"]    = new[] { "DocumentNo", "DocumentDate", "WarehouseCode", "ItemCategoryCode", "ItemCode", "SnCode", "Quantity", "Status", "OwnerName", "Note" },

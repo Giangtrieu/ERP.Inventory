@@ -579,7 +579,8 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         var deps = await FindLaterPhaseDependenciesAsync(nameof(BorrowDocument), id, MovementActionType.ReturnBorrowed, affectedIds, cancellationToken);
         if (deps.Count > 0) return ServiceResult<DocumentMutationResultDto>.Fail(deps);
 
-        await ReverseReturnPhaseAsync(document, affectedIds, user, cancellationToken);
+        var reverseResult = await ReverseReturnPhaseAsync(document, affectedIds, user, cancellationToken);
+        if (!reverseResult.Success) return ServiceResult<DocumentMutationResultDto>.Fail(reverseResult.Errors);
         await UpdateDocumentHeaderAsync(id, "borrow-return", payload, user, cancellationToken);
         var affectedSet = affectedIds.ToHashSet();
         var linesToPost = incomingByInstance.Values.Where(x => affectedSet.Contains(x.Instance.Id)).Select(x => x.Line).ToArray();
@@ -641,7 +642,8 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         var deps = await FindLaterPhaseDependenciesAsync(nameof(RepairDocument), id, MovementActionType.ReceiveFromRepair, affectedIds, cancellationToken);
         if (deps.Count > 0) return ServiceResult<DocumentMutationResultDto>.Fail(deps);
 
-        await ReverseRepairReceivePhaseAsync(document, affectedIds, user, cancellationToken);
+        var reverseResult = await ReverseRepairReceivePhaseAsync(document, affectedIds, user, cancellationToken);
+        if (!reverseResult.Success) return ServiceResult<DocumentMutationResultDto>.Fail(reverseResult.Errors);
         await UpdateDocumentHeaderAsync(id, "repair-receive", payload, user, cancellationToken);
         var affectedSet = affectedIds.ToHashSet();
         var linesToPost = incomingByInstance.Values.Where(x => affectedSet.Contains(x.Instance.Id)).Select(x => x.Line).ToArray();
@@ -1021,36 +1023,103 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         await RecalculateLocationTrackedStockAsync(itemIds, ct);
     }
 
-    private async Task ReverseReturnPhaseAsync(BorrowDocument document, IReadOnlyCollection<int> instanceIds, CurrentUserContext user, CancellationToken ct)
+    private async Task<ServiceResult<bool>> ReverseReturnPhaseAsync(BorrowDocument document, IReadOnlyCollection<int> instanceIds, CurrentUserContext user, CancellationToken ct)
     {
         var ids = instanceIds.Distinct().ToArray();
-        if (ids.Length == 0) return;
-        foreach (var line in document.Lines.Where(x => ids.Contains(x.ItemInstanceId)))
+        if (ids.Length == 0) return ServiceResult<bool>.Ok(true);
+
+        var linesToReset = document.Lines.Where(x => x.IsReturned && ids.Contains(x.ItemInstanceId)).ToArray();
+        if (linesToReset.Length == 0) return ServiceResult<bool>.Ok(true);
+
+        var latestLog = await _db.BorrowDocumentLogs
+            .Where(x => x.BorrowDocumentId == document.Id)
+            .OrderByDescending(x => x.Timestamp)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(ct);
+        if (latestLog == null || latestLog.Action != "BorrowReturn")
+        {
+            return ServiceResult<bool>.Fail("Latest borrow lifecycle action is not a return. Delete later lifecycle effects first.");
+        }
+
+        var latestBatchId = latestLog.LifecycleBatchId;
+        var logsToRevert = await _db.BorrowDocumentLogs
+            .Where(x => x.BorrowDocumentId == document.Id &&
+                        x.Action == "BorrowReturn" &&
+                        ids.Contains(x.ItemInstanceId) &&
+                        (latestBatchId.HasValue
+                            ? x.LifecycleBatchId == latestBatchId
+                            : x.Timestamp == latestLog.Timestamp && x.PerformedBy == latestLog.PerformedBy))
+            .ToArrayAsync(ct);
+        var reversibleIds = logsToRevert.Select(x => x.ItemInstanceId).Distinct().ToHashSet();
+        var blockedIds = linesToReset.Select(x => x.ItemInstanceId).Where(x => !reversibleIds.Contains(x)).Distinct().ToArray();
+        if (blockedIds.Length > 0)
+        {
+            return ServiceResult<bool>.Fail("Only the latest borrow return lifecycle batch can be selectively edited.");
+        }
+
+        foreach (var line in linesToReset)
         {
             line.IsReturned = false; line.ReturnCondition = null; line.ReturnedAt = null; line.TargetBinLocationId = null; line.UpdatedAt = _clock.UtcNow; line.UpdatedBy = user.UserName;
         }
-        _db.BorrowDocumentLogs.RemoveRange(_db.BorrowDocumentLogs.Where(x => x.BorrowDocumentId == document.Id && x.Action == "BorrowReturn" && ids.Contains(x.ItemInstanceId)));
-        await ReverseLocationTrackedPhaseAsync(nameof(BorrowDocument), document.Id, MovementActionType.ReturnBorrowed, InventoryTransactionType.BorrowReturn, ids, document.DocumentNo, ct);
+        _db.BorrowDocumentLogs.RemoveRange(logsToRevert);
+        await ReverseLocationTrackedPhaseAsync(nameof(BorrowDocument), document.Id, MovementActionType.ReturnBorrowed, InventoryTransactionType.BorrowReturn, reversibleIds, latestBatchId, document.DocumentNo, ct);
+        await ReplayBorrowDocumentLinesAsync(document, user, ct);
+        await _db.SaveChangesAsync(ct);
+        return ServiceResult<bool>.Ok(true);
     }
 
-    private async Task ReverseRepairReceivePhaseAsync(RepairDocument document, IReadOnlyCollection<int> instanceIds, CurrentUserContext user, CancellationToken ct)
+    private async Task<ServiceResult<bool>> ReverseRepairReceivePhaseAsync(RepairDocument document, IReadOnlyCollection<int> instanceIds, CurrentUserContext user, CancellationToken ct)
     {
         var ids = instanceIds.Distinct().ToArray();
-        if (ids.Length == 0) return;
-        foreach (var line in document.Lines.Where(x => ids.Contains(x.ItemInstanceId)))
+        if (ids.Length == 0) return ServiceResult<bool>.Ok(true);
+
+        var linesToReset = document.Lines.Where(x => x.IsReturned && ids.Contains(x.ItemInstanceId)).ToArray();
+        if (linesToReset.Length == 0) return ServiceResult<bool>.Ok(true);
+
+        var latestLog = await _db.RepairDocumentLogs
+            .Where(x => x.RepairDocumentId == document.Id)
+            .OrderByDescending(x => x.Timestamp)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(ct);
+        if (latestLog == null || latestLog.Action != "RepairReceive")
+        {
+            return ServiceResult<bool>.Fail("Latest repair lifecycle action is not a receive. Delete later lifecycle effects first.");
+        }
+
+        var latestBatchId = latestLog.LifecycleBatchId;
+        var logsToRevert = await _db.RepairDocumentLogs
+            .Where(x => x.RepairDocumentId == document.Id &&
+                        x.Action == "RepairReceive" &&
+                        ids.Contains(x.ItemInstanceId) &&
+                        (latestBatchId.HasValue
+                            ? x.LifecycleBatchId == latestBatchId
+                            : x.Timestamp == latestLog.Timestamp && x.PerformedBy == latestLog.PerformedBy))
+            .ToArrayAsync(ct);
+        var reversibleIds = logsToRevert.Select(x => x.ItemInstanceId).Distinct().ToHashSet();
+        var blockedIds = linesToReset.Select(x => x.ItemInstanceId).Where(x => !reversibleIds.Contains(x)).Distinct().ToArray();
+        if (blockedIds.Length > 0)
+        {
+            return ServiceResult<bool>.Fail("Only the latest repair receive lifecycle batch can be selectively edited.");
+        }
+
+        foreach (var line in linesToReset)
         {
             line.IsReturned = false; line.TargetBinLocationId = null; line.NewSerialNumber = null; line.UpdatedAt = _clock.UtcNow; line.UpdatedBy = user.UserName;
         }
-        _db.RepairDocumentLogs.RemoveRange(_db.RepairDocumentLogs.Where(x => x.RepairDocumentId == document.Id && x.Action == "RepairReceive" && ids.Contains(x.ItemInstanceId)));
-        await ReverseLocationTrackedPhaseAsync(nameof(RepairDocument), document.Id, MovementActionType.ReceiveFromRepair, InventoryTransactionType.RepairReceive, ids, document.DocumentNo, ct);
+        _db.RepairDocumentLogs.RemoveRange(logsToRevert);
+        await ReverseLocationTrackedPhaseAsync(nameof(RepairDocument), document.Id, MovementActionType.ReceiveFromRepair, InventoryTransactionType.RepairReceive, reversibleIds, latestBatchId, document.DocumentNo, ct);
+        await ReplayRepairDocumentLinesAsync(document, user, ct);
+        await _db.SaveChangesAsync(ct);
+        return ServiceResult<bool>.Ok(true);
     }
 
-    private async Task ReverseLocationTrackedPhaseAsync(string documentType, int documentId, MovementActionType actionType, InventoryTransactionType transactionType, IReadOnlyCollection<int> instanceIds, string documentNo, CancellationToken ct)
+    private async Task ReverseLocationTrackedPhaseAsync(string documentType, int documentId, MovementActionType actionType, InventoryTransactionType transactionType, IReadOnlyCollection<int> instanceIds, Guid? lifecycleBatchId, string documentNo, CancellationToken ct)
     {
         var ids = instanceIds.Distinct().ToArray();
+        if (ids.Length == 0) return;
         var itemIds = await _db.ItemInstances.Where(x => ids.Contains(x.Id)).Select(x => x.ItemId).Distinct().ToArrayAsync(ct);
-        _db.InventoryTransactions.RemoveRange(_db.InventoryTransactions.Where(x => x.DocumentType == documentType && x.DocumentId == documentId && x.TransactionType == transactionType && x.ItemInstanceId.HasValue && ids.Contains(x.ItemInstanceId.Value)));
-        _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x => x.DocumentType == documentType && x.DocumentId == documentId && x.ActionType == actionType && ids.Contains(x.ItemInstanceId)));
+        await RemoveLatestMovementHistoriesAsync(documentType, documentId, actionType, ids, lifecycleBatchId, ct);
+        await RemoveLatestInventoryTransactionsAsync(documentType, documentId, transactionType, ids, lifecycleBatchId, ct);
         await CleanupPostSideEffectsAsync(documentType, documentId, documentNo, ct);
         await _db.SaveChangesAsync(ct);
         await RebuildLocationTrackedInstancesAsync(ids, ct);

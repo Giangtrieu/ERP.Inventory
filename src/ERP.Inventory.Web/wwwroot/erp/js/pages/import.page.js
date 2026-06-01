@@ -27,15 +27,15 @@ Router.register('import', async function(){
 
 async function uploadImportFile(){
   const file = $('#importFile')[0].files[0];
-  if(!file){ UI.toast(UI.t('File is required.')); return; }
+    if (!file) { UI.showError(UI.t('File is required.')); return; }
   const form = new FormData();
   form.append('importType', $('#app [name="importType"]').val());
   form.append('file', file);
   //const token = $('meta[name="request-verification-token"]').attr('content');
   //const result = await $.ajax({ url: '/Import/Upload', method: 'POST', data: form, processData: false, contentType: false, headers: token ? { RequestVerificationToken: token } : {} });
   const result = await UI.upload('/Import/Upload', form);
-  if(!result.success){ UI.toast(UI.resultError(result)); return; }
-  UI.toast(UI.t(result.message || 'Uploaded'));
+    if (!result.success) { UI.showError(UI.resultError(result)); return; }
+  UI.toast(UI.msg(result.message || 'File uploaded.'));
   await loadImportBatches();
   await loadImportRows(result.data);
 }
@@ -44,7 +44,7 @@ async function loadImportBatches(){
   const result = await UI.api('/Import/Batches');
   if(!result.success){ $('#importBatches').html(UI.empty(UI.resultError(result))); return; }
   const rows = result.data || [];
-    if (!rows.length) { $('#importBatches').html(UI.empty('No data')); return; }
+    if (!rows.length) { $('#importBatches').html(UI.empty(UI.t('No data'))); return; }
     $('#importBatches').html(`<div class="table-wrap"><table class="data-table-detail "><thead><tr><th class="px-3">${UI.t('File')}</th><th>${UI.t('Type')}</th><th>${UI.t('Status')}</th><th>${UI.t('Blocking')}/${UI.t('Total')}</th><th></th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3 fw-semibold" data-id="${r.id}">${UI.esc(r.fileName)}</td><td>${UI.esc(UI.t(r.importType))}</td><td>${UI.esc(UI.enum('ImportBatchStatus', r.status))}</td><td>${r.blockingErrorRows}/${r.totalRows}</td><td><div class="btn-group btn-group-sm"><button class="btn btn-light btn-import-rows" data-id="${r.id}"><i class="bi bi-eye"></i></button><button class="btn btn-outline-primary btn-import-validate" data-id="${r.id}" ${r.status === 'Confirmed' ? 'disabled' : ''}>${UI.t('Validate')}</button><button class="btn btn-primary btn-import-confirm" data-id="${r.id}" ${r.status === 'Confirmed' ? 'disabled' : ''}>${UI.t('Confirm')}</button></div></td></tr>`).join('')}</tbody></table></div>`);
   //$('#importBatches').html(`<div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Batch')}</th><th>${UI.t('Type')}</th><th>${UI.t('File')}</th><th>${UI.t('Status')}</th><th>${UI.t('Total')}</th><th>${UI.t('Blocking')}</th><th></th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3 fw-semibold">${UI.esc(r.batchNo)}</td><td>${UI.esc(UI.t(`ImportType.${r.importType}`))}</td><td>${UI.esc(r.fileName)}</td><td>${UI.esc(UI.enum('ImportBatchStatus', r.status))}</td><td>${r.totalRows}</td><td>${r.blockingErrorRows}</td><td><div class="btn-group btn-group-sm"><button class="btn btn-light btn-import-rows" data-id="${r.id}"><i class="bi bi-eye"></i></button><button class="btn btn-outline-primary btn-import-validate" data-id="${r.id}">${UI.t('Validate')}</button><button class="btn btn-primary btn-import-confirm" data-id="${r.id}">${UI.t('Confirm')}</button></div></td></tr>`).join('')}</tbody></table></div>`);
 }
@@ -52,7 +52,7 @@ async function loadImportBatches(){
 async function loadImportRows(id){
   const result = await UI.api(`/Import/Rows/${id}`);
   const rows = result.data || [];
-    if (!rows.length) { $('#importRows').html(UI.empty('No data')); return; }
+    if (!rows.length) { $('#importRows').html(UI.empty(UI.t('No data'))); return; }
   //$('#importRows').html(`<div class="form-section-title">${UI.t('Validation Result')}</div><div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">Row</th><th>Severity</th><th>Message</th><th>Suggested Fix</th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3">${r.rowNumber}</td><td><span class="badge ${r.severity === 'Blocking' ? 'text-bg-danger' : 'text-bg-success'}">${UI.esc(UI.enum('ValidationSeverity', r.severity))}</span></td><td>${UI.esc(r.message || '-')}</td><td>${UI.esc(r.suggestedFix || '-')}</td></tr>`).join('')}</tbody></table></div>`);
   $('#importRows').html(`<div class="form-section-title">${UI.t('Validation Result')}</div><div class="table-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Row')}</th><th>${UI.t('Severity')}</th><th>${UI.t('Message')}</th><th>${UI.t('Suggested Fix')}</th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3">${r.rowNumber}</td><td><span class="badge ${r.severity === 'Blocking' ? 'text-bg-danger' : 'text-bg-success'}">${UI.esc(UI.enum('ValidationSeverity', r.severity))}</span></td><td>${UI.esc(UI.msg(r.message || '-'))}</td><td>${UI.esc(UI.msg(r.suggestedFix || '-'))}</td></tr>`).join('')}</tbody></table></div>`);
 }
@@ -60,16 +60,16 @@ async function loadImportRows(id){
 $(document).on('click', '.btn-import-rows', function(){ loadImportRows($(this).data('id')); });
 $(document).on('click', '.btn-import-validate', async function(){
   const result = await UI.api(`/Import/Validate/${$(this).data('id')}`, { method: 'POST', data: {} });
-  UI.toast(UI.t(result.message || 'Validated'));
+    UI.showError(UI.msg(result.message || 'Import batch is valid.'));
   await loadImportBatches();
   await loadImportRows($(this).data('id'));
 });
 $(document).on('click', '.btn-import-confirm', function () {
     const id = $(this).data('id');
-    UI.confirm('Confirm Import', UI.t('Valid rows will be inserted into operational tables.'), `<div>${UI.t('Batch')}: <b>${$(`td[data-id="${id}"]`).text()}</b></div><div>${UI.t('Backend will re - validate before commit.')}</div>`, async function(){
+    UI.confirm(UI.t('Confirm Import'), UI.t('Valid rows will be inserted into operational tables.'), `<div>${UI.t('Batch')}: <b>${$(`td[data-id="${id}"]`).text()}</b></div><div>${UI.t('Backend will re - validate before commit.')}</div>`, async function(){
     const result = await UI.api(`/Import/Confirm/${id}`, { method: 'POST', data: {} });
-    if(!result.success){ UI.toast(UI.resultError(result)); return; }
-    UI.toast(UI.t(UI.msg(`${result.message} Rows: ${result.data}.`)));
+        if (!result.success) { UI.showError(UI.resultError(result)); return; }
+    UI.toast(UI.msg(`Import confirmed. Rows: ${result.data}.`));
     //UI.toast(`${result.message} Rows: ${result.data}`);
     await loadLookups();
     await loadImportBatches();

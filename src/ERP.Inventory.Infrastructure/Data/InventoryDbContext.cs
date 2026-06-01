@@ -114,11 +114,15 @@ public class InventoryDbContext : DbContext
     {
         modelBuilder.Entity<CurrentItemLocation>().HasIndex(x => x.ItemInstanceId).IsUnique();
         modelBuilder.Entity<ItemMovementHistory>().HasIndex(x => x.ItemInstanceId);
+        modelBuilder.Entity<ItemMovementHistory>().HasIndex(x => x.PerformedAt);
+        modelBuilder.Entity<ItemMovementHistory>().HasIndex(x => x.DocumentNo);
         modelBuilder.Entity<ItemMovementHistory>().HasIndex(x => new { x.DocumentType, x.DocumentId });
         modelBuilder.Entity<ItemMovementHistory>().HasIndex(x => new { x.DocumentType, x.DocumentId, x.ActionType, x.LifecycleBatchId });
         modelBuilder.Entity<StockBalance>().Property(x => x.Quantity).HasPrecision(18, 4);
         modelBuilder.Entity<StockBalance>().HasIndex(x => new { x.WarehouseId, x.ItemId, x.BinLocationId, x.Status }).IsUnique();
         modelBuilder.Entity<InventoryTransaction>().Property(x => x.QuantityDelta).HasPrecision(18, 4);
+        modelBuilder.Entity<InventoryTransaction>().HasIndex(x => x.PostedAt);
+        modelBuilder.Entity<InventoryTransaction>().HasIndex(x => x.DocumentNo);
         modelBuilder.Entity<InventoryTransaction>().HasIndex(x => new { x.DocumentType, x.DocumentId });
         modelBuilder.Entity<InventoryTransaction>().HasIndex(x => new { x.DocumentType, x.DocumentId, x.TransactionType, x.LifecycleBatchId });
     }
@@ -220,7 +224,10 @@ public class InventoryDbContext : DbContext
             .WithMany(x => x.UserRoles)
             .HasForeignKey(x => x.RoleId);
         modelBuilder.Entity<ImportBatch>().HasIndex(x => x.BatchNo).IsUnique();
+        modelBuilder.Entity<ImportBatchRow>().HasIndex(x => new { x.ImportBatchId, x.RowNumber });
         modelBuilder.Entity<AuditLog>().HasIndex(x => new { x.EntityName, x.EntityId });
+        modelBuilder.Entity<AuditLog>().HasIndex(x => x.CreatedAt);
+        modelBuilder.Entity<AuditLog>().HasIndex(x => x.ReferenceNo);
         modelBuilder.Entity<LogErrorSystem>().ToTable("LogErrorSystem");
         modelBuilder.Entity<LogErrorSystem>().HasIndex(x => x.ErrorCode).IsUnique();
         modelBuilder.Entity<LogErrorSystem>().HasIndex(x => x.CreatedAt);
