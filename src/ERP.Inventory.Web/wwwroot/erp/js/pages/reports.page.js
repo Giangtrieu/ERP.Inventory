@@ -19,12 +19,73 @@ Router.register('reports', async function(){
   </div></div>
   <div class="row g-3">
     <!--<div class="col-xl-6"><div class="card h-100"><div class="card-body"><div class="form-section-title">${UI.t('Inventory Preview')}</div><div id="reportsInventory">${UI.loading()}</div></div></div></div> -->
-    <div class="col-xl-6"><div class="card h-100"><div class="card-body"><div class="form-section-title">${UI.t('Movement History')}</div><div id="reportsHistory">${UI.loading()}</div></div></div></div>
-    <div class="col-xl-6"><div class="card"><div class="card-body"><div class="form-section-title">${UI.t('Audit Log')}</div><div id="reportsAudit">${UI.loading()}</div></div></div></div>
+    <div class="card">
+  <div class="card-body">
+    <ul class="nav nav-tabs mb-3" id="reportsTabs">
+      <li class="nav-item">
+        <button class="nav-link active" data-report-tab="history" type="button">
+          ${UI.t('Movement History')}
+        </button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link" data-report-tab="audit" type="button">
+          ${UI.t('Audit Log')}
+        </button>
+      </li>
+    </ul>
+
+    <div id="reportsHistoryTab">
+      <div id="reportsHistory">${UI.loading()}</div>
+    </div>
+
+    <div id="reportsAuditTab" class="d-none">
+      <div id="reportsAudit"></div>
+    </div>
+  </div>
+</div>
   </div>`);
-  $('.btn-report-export').on('click', function(){ exportFile($(this).data('url')); });
-  $('#app input, #app select, #app .cbo-value').on('change input', UI.debounce(loadReportPreviews, 300));
-  await loadReportPreviews();
+    let reportsAuditLoaded = false;
+
+    $('[data-report-tab]').on('click', async function () {
+        const tab = $(this).data('report-tab');
+
+        $('[data-report-tab]').removeClass('active');
+        $(this).addClass('active');
+
+        $('#reportsHistoryTab').toggleClass('d-none', tab !== 'history');
+        $('#reportsAuditTab').toggleClass('d-none', tab !== 'audit');
+
+        if (tab === 'history') {
+            await loadReportsHistory();
+        }
+
+        if (tab === 'audit' && !reportsAuditLoaded) {
+            $('#reportsAudit').html(UI.loading());
+            await loadReportsAudit();
+            reportsAuditLoaded = true;
+        }
+    });
+    $('.btn-report-export').on('click', function () {
+        exportFile($(this).data('url'));
+    });
+
+    $('#app input, #app select, #app .cbo-value').on(
+        'change input',
+        UI.debounce(async function () {
+            reportsAuditLoaded = false;
+
+            const activeTab = $('[data-report-tab].active').data('report-tab');
+
+            if (activeTab === 'history') {
+                await loadReportsHistory();
+            } else {
+                await loadReportsAudit();
+                reportsAuditLoaded = true;
+            }
+        }, 300)
+    );
+
+    await loadReportsHistory();
 });
 
 
@@ -96,12 +157,12 @@ async function loadReportsHistory(){
   const result = await UI.api('/Reports/HistoryPreview', { query: reportFilterQuery() });
   const rows = result.success && result.data ? (result.data.items || []) : [];
   if(!rows.length){ $('#reportsHistory').html(UI.empty('No data')); return; }
-  $('#reportsHistory').html(`<div class="table-wrap report-scroll-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Time')}</th><th>${UI.t('PN/SN')}</th><th>${UI.t('Action')}</th><th>${UI.t('Status')}</th><th>${UI.t('Document No')}</th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3">${UI.formatDate(r.performedAt)}</td><td class="fw-semibold">${UI.esc(r.itemCode || '-')}<div class="small text-muted">${UI.esc(r.serialNumber || r.itemName || '-')}</div></td><td>${UI.esc(UI.enum('MovementActionType', r.actionType))}</td><td>${UI.badge(r.newStatus)}</td><td>${UI.esc(r.documentNo || '-')}</td></tr>`).join('')}</tbody></table><div class="server-footer"><span>${UI.endpoint('ReportsHistoryPreview')}</span><span>${result.data.totalCount} ${UI.t('rows')}</span></div></div>`);
+  $('#reportsHistory').html(`<div class="table-wrap report-scroll-wrap"><table class="data-table" ><thead><tr><th class="px-3">${UI.t('Time')}</th><th>${UI.t('PN/SN')}</th><th>${UI.t('Action')}</th><th>${UI.t('Status')}</th><th>${UI.t('Document No')}</th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3">${UI.formatDate(r.performedAt)}</td><td class="fw-semibold">${UI.esc(r.itemCode || '-')}<div class="small text-muted">${UI.esc(r.serialNumber || r.itemName || '-')}</div></td><td>${UI.esc(UI.enum('MovementActionType', r.actionType))}</td><td>${UI.badge(r.newStatus)}</td><td>${UI.esc(r.documentNo || '-')}</td></tr>`).join('')}</tbody></table><div class="server-footer"><span>${UI.endpoint('ReportsHistoryPreview')}</span><span>${result.data.totalCount} ${UI.t('rows')}</span></div></div>`);
 }
 
 async function loadReportsAudit(){
   const result = await UI.api('/Management/AuditLogs', { query: { page: 1, pageSize: 25, ...reportFilterQuery() } });
   const rows = result.items || [];
   if(!rows.length){ $('#reportsAudit').html(UI.empty('No data')); return; }
-    $('#reportsAudit').html(`<div class="table-wrap report-scroll-wrap"><table class="data-table"><thead><tr><th class="px-3">${UI.t('Time')}</th><th>${UI.t('User')}</th><th>${UI.t('Action')}</th><th>${UI.t('Entity')}</th><th>${UI.t('Document No')}</th><th>${UI.t('Result')}</th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3">${UI.formatDate(r.createdAt)}</td><td>${UI.esc(r.userName)}</td><td>${UI.esc(UI.auditAction(r.action))}</td><td>${UI.esc(UI.auditEntity(r.entityName))}</td><td>${UI.esc(r.referenceNo || '-')}</td><td><span class="badge text-bg-success">${UI.esc(UI.msg(r.result))}</span></td></tr>`).join('')}</tbody></table><div class="server-footer"><span>${UI.endpoint('AuditLogs')}</span><span>${result.totalCount} ${UI.t('rows')}</span></div></div>`);
+    $('#reportsAudit').html(`<div class="table-wrap report-scroll-wrap"><table class="data-table" ><thead><tr><th class="px-3">${UI.t('Time')}</th><th>${UI.t('User')}</th><th>${UI.t('Action')}</th><th>${UI.t('Entity')}</th><th>${UI.t('Document No')}</th><th>${UI.t('Result')}</th></tr></thead><tbody>${rows.map(r => `<tr><td class="px-3">${UI.formatDate(r.createdAt)}</td><td>${UI.esc(r.userName)}</td><td>${UI.esc(UI.auditAction(r.action))}</td><td>${UI.esc(UI.auditEntity(r.entityName))}</td><td>${UI.esc(r.referenceNo || '-')}</td><td><span class="badge text-bg-success">${UI.esc(UI.msg(r.result))}</span></td></tr>`).join('')}</tbody></table><div class="server-footer"><span>${UI.endpoint('AuditLogs')}</span><span>${result.totalCount} ${UI.t('rows')}</span></div></div>`);
 }

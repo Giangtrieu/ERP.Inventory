@@ -123,10 +123,6 @@ public sealed class LookupController : Controller
     {
         var user = _currentUserService.GetCurrentUser();
         var query = _db.CurrentItemLocations.AsNoTracking()
-            .Include(x => x.ItemInstance)!.ThenInclude(x => x!.Item)
-            .Include(x => x.Warehouse)
-            .Include(x => x.BinLocation)
-            .Include(x => x.ExternalParty)
             .Where(x => x.ItemInstance != null && x.ItemInstance.IsActive);
 
         query = ApplyStatusFilter(query, status, statuses);
@@ -161,10 +157,6 @@ public sealed class LookupController : Controller
     {
         var user = _currentUserService.GetCurrentUser();
         var query = _db.CurrentItemLocations.AsNoTracking()
-            .Include(x => x.ItemInstance)!.ThenInclude(x => x!.Item)
-            .Include(x => x.Warehouse)
-            .Include(x => x.BinLocation)
-            .Include(x => x.ExternalParty)
             .Where(x => x.ItemInstance != null && x.ItemInstance.IsActive);
 
         query = ApplyStatusFilter(query, status, statuses);
@@ -305,8 +297,6 @@ public sealed class LookupController : Controller
         var allowedBinIds = await AllowedBinIds(cancellationToken);
 
         var query = _db.RepairDocuments.AsNoTracking()
-            .Include(x => x.RepairVendor)
-            .Include(x => x.Lines)
             .Where(x => x.Lines.Any(l => !l.IsReturned));
 
         if (allowedBinIds != null)
@@ -334,8 +324,6 @@ public sealed class LookupController : Controller
         var allowedBinIds = await AllowedBinIds(cancellationToken);
 
         var query = _db.BorrowDocuments.AsNoTracking()
-            .Include(x => x.Borrower)
-            .Include(x => x.Lines)
             .Where(x => x.Lines.Any(l => !l.IsReturned));
 
         if (allowedBinIds != null)

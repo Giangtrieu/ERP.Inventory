@@ -164,10 +164,6 @@ public sealed class TrackingService : ITrackingService
 
         var query = _db.CurrentItemLocations
             .AsNoTracking()
-            .Include(x => x.ItemInstance)!.ThenInclude(x => x!.Item)!
-            .Include(x => x.Warehouse)
-            .Include(x => x.BinLocation)
-            .Include(x => x.ExternalParty)
             .AsQueryable();
 
         // ── Warehouse scope (in SQL) ────────────────────────────────────────────
@@ -213,26 +209,34 @@ public sealed class TrackingService : ITrackingService
 
         var total = await query.CountAsync(cancellationToken);
         if (pageSize == 0) pageSize = total == 0 ? 1 : total;
-        var locations = await query.AsSplitQuery()
+        var rows = await query
             .OrderBy(x => x.ItemInstance!.Item!.ItemCode)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .ToListAsync(cancellationToken);
-
-        var rows = locations
             .Select(x => new InventoryListRowDto
             {
                 ItemInstanceId = x.ItemInstanceId,
                 ItemCode = x.ItemInstance!.Item!.ItemCode,
-                ItemName = GetItemName(x.ItemInstance.Item, user.LanguageCode),
+                ItemName = x.ItemInstance.Item.Translations
+                    .Where(t => t.LanguageCode == user.LanguageCode && t.FieldName == "DefaultName")
+                    .Select(t => t.Value)
+                    .FirstOrDefault() ?? x.ItemInstance.Item.DefaultName,
                 SerialNumber = x.ItemInstance.SerialNumber,
                 Barcode = x.ItemInstance.Barcode,
                 Status = x.ItemInstance.Status,
-                CurrentLocation = CurrentLocationDisplay(x),
+                CurrentLocation = x.BinLocation != null
+                    ? x.BinLocation.FullPath
+                    : !string.IsNullOrWhiteSpace(x.ExternalLocationText)
+                        ? x.ExternalParty != null
+                            ? x.ExternalParty.Name + " - " + x.ExternalLocationText
+                            : x.ExternalLocationText
+                        : x.ExternalParty != null
+                            ? x.ExternalParty.Name
+                            : x.Warehouse != null ? x.Warehouse.Name : "Unknown",
                 Holder = x.ExternalParty != null ? x.ExternalParty.Name : (x.Warehouse != null ? x.Warehouse.Name : "Unknown"),
                 LastUpdatedAt = x.UpdatedLocationAt
             })
-            .ToArray();
+            .ToArrayAsync(cancellationToken);
 
         return ServiceResult<PagedResult<InventoryListRowDto>>.Ok(new PagedResult<InventoryListRowDto>
         {

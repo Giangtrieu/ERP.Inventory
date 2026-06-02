@@ -73,6 +73,19 @@ public sealed class DashboardController : Controller
         return Json(result);
     }
 
+    [HttpGet("WarehouseMap")]
+    public async Task<IActionResult> WarehouseMap([FromQuery] int warehouseId, [FromQuery] string? viewMode, CancellationToken cancellationToken)
+    {
+        var user = _currentUserService.GetCurrentUser();
+        if (warehouseId <= 0 || !user.CanAccessWarehouse(warehouseId))
+        {
+            return Forbid();
+        }
+
+        var result = await _dashboardService.GetWarehouseMapAsync(warehouseId, viewMode ?? "occupancy", user, cancellationToken);
+        return Json(result);
+    }
+
     [HttpGet("QuantitySummary")]
     public async Task<IActionResult> QuantitySummary([FromQuery] int? warehouseId, CancellationToken cancellationToken)
     {

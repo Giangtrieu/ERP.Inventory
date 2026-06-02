@@ -60,13 +60,13 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         var normalizedType = NormalizeType(type);
         if (normalizedType == null)
         {
-            return ServiceResult<DocumentMutationResultDto>.Fail($"Unsupported document type '{type}'.");
+            return ServiceResult<DocumentMutationResultDto>.Fail($"Unsupported document type '{Text(user.LanguageCode, type)}'.");
         }
-
+        ServiceResult<DocumentMutationResultDto> result = new ServiceResult<DocumentMutationResultDto>();
         await using var tx = await BeginLifecycleTransactionAsync(cancellationToken);
         try
         {
-            var result = await DeleteCoreAsync(normalizedType, id, user, cancellationToken);
+            result = await DeleteCoreAsync(normalizedType, id, user, cancellationToken);
             if (!result.Success)
             {
                 await tx.RollbackAsync(cancellationToken);
@@ -83,10 +83,16 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             await tx.CommitAsync(cancellationToken);
             return result;
         }
-        catch
+        catch (Exception ex)
         {
             await tx.RollbackAsync(cancellationToken);
-            throw;
+            var log = await _errorLog.LogAsync(ex, new LogErrorContext(
+                Module: nameof(DocumentLifecycleService),
+                Action: $"Delete:{normalizedType}",
+                PayloadJson: result.Data != null ? JsonSerializer.Serialize(result.Data) : null,
+                UserId: user.UserId,
+                UserName: user.UserName), cancellationToken);
+            return ServiceResult<DocumentMutationResultDto>.Fail(SystemErrorMessage(user.LanguageCode, log.ErrorCode));
         }
     }
 
@@ -95,7 +101,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         var normalizedType = NormalizeType(type);
         if (normalizedType == null)
         {
-            return ServiceResult<DocumentMutationResultDto>.Fail($"Unsupported document type '{type}'.");
+            return ServiceResult<DocumentMutationResultDto>.Fail($"Unsupported document type '{Text(user.LanguageCode, type)}'.");
         }
 
         await using var tx = await BeginLifecycleTransactionAsync(cancellationToken);
@@ -130,13 +136,14 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         var normalizedType = NormalizeType(type);
         if (normalizedType == null)
         {
-            return ServiceResult<DocumentMutationResultDto>.Fail($"Unsupported document type '{type}'.");
+            return ServiceResult<DocumentMutationResultDto>.Fail($"Unsupported document type '{Text(user.LanguageCode, type)}'.");
         }
 
         await using var tx = await BeginLifecycleTransactionAsync(cancellationToken);
+        ServiceResult<DocumentEditModelDto> editModel = new ServiceResult<DocumentEditModelDto>();
         try
         {
-            var editModel = await GetEditModelAsync(normalizedType, id, user, cancellationToken);
+            editModel = await GetEditModelAsync(normalizedType, id, user, cancellationToken);
             if (!editModel.Success)
             {
                 await tx.RollbackAsync(cancellationToken);
@@ -160,10 +167,16 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             await tx.CommitAsync(cancellationToken);
             return result;
         }
-        catch
+        catch (Exception ex)
         {
             await tx.RollbackAsync(cancellationToken);
-            throw;
+            var log = await _errorLog.LogAsync(ex, new LogErrorContext(
+                Module: nameof(DocumentLifecycleService),
+                Action: $"Rebuild:{normalizedType}",
+                PayloadJson: editModel.Data != null ? JsonSerializer.Serialize(editModel.Data.Payload, JsonOptions) : string.Empty,
+                UserId: user.UserId,
+                UserName: user.UserName), cancellationToken);
+            return ServiceResult<DocumentMutationResultDto>.Fail(SystemErrorMessage(user.LanguageCode, log.ErrorCode));
         }
     }
 
@@ -172,7 +185,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         var normalizedType = NormalizeType(type);
         if (normalizedType == null)
         {
-            return ServiceResult<DocumentDependencyDto>.Fail($"Unsupported document type '{type}'.");
+            return ServiceResult<DocumentDependencyDto>.Fail($"Unsupported document type '{Text(user.LanguageCode, type)}'.");
         }
 
         var documentNo = await GetDocumentNoAsync(normalizedType, id, cancellationToken);
@@ -198,38 +211,71 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         var normalizedType = NormalizeType(type);
         if (normalizedType == null)
         {
-            return ServiceResult<DocumentEditModelDto>.Fail($"Unsupported document type '{type}'.");
+            return ServiceResult<DocumentEditModelDto>.Fail($"Unsupported document type '{Text(user.LanguageCode, type)}'.");
         }
-
-        var payload = normalizedType switch
+        object? payload = null;
+        string? documentNo = null;
+        try
         {
-            "inbound" => await BuildInboundPayloadAsync(id, cancellationToken),
-            "move" => await BuildMovePayloadAsync(id, cancellationToken),
-            "adjustment" => await BuildAdjustmentPayloadAsync(id, cancellationToken),
-            "borrow-lend" => await BuildBorrowLendPayloadAsync(id, cancellationToken),
-            "borrow-return" => await BuildBorrowReturnPayloadAsync(id, cancellationToken),
-            "repair-send" => await BuildRepairSendPayloadAsync(id, cancellationToken),
-            "repair-receive" => await BuildRepairReceivePayloadAsync(id, cancellationToken),
-            "quantity-receive" or "quantity-issue" or "quantity-adjust" => await BuildQuantityPayloadAsync(id, cancellationToken),
-            _ => null
-        };
 
-        if (payload == null)
-        {
-            return ServiceResult<DocumentEditModelDto>.Fail("Document not found.");
+            payload = normalizedType switch
+            {
+                "inbound" => await BuildInboundPayloadAsync(id, cancellationToken),
+                "move" => await BuildMovePayloadAsync(id, cancellationToken),
+                "adjustment" => await BuildAdjustmentPayloadAsync(id, cancellationToken),
+                "borrow-lend" => await BuildBorrowLendPayloadAsync(id, cancellationToken),
+                "borrow-return" => await BuildBorrowReturnPayloadAsync(id, cancellationToken),
+                "repair-send" => await BuildRepairSendPayloadAsync(id, cancellationToken),
+                "repair-receive" => await BuildRepairReceivePayloadAsync(id, cancellationToken),
+                "quantity-receive" or "quantity-issue" or "quantity-adjust" => await BuildQuantityPayloadAsync(id, cancellationToken),
+                _ => null
+            };
+
+            if (payload == null)
+            {
+                return ServiceResult<DocumentEditModelDto>.Fail("Document not found.");
+            }
+
+            documentNo = await GetDocumentNoAsync(normalizedType, id, cancellationToken) ?? string.Empty;
+            var audit = await BuildAuditTrailAsync(EntityNameForType(normalizedType), id, documentNo, cancellationToken);
+
+            return ServiceResult<DocumentEditModelDto>.Ok(new DocumentEditModelDto
+            {
+                DocumentId = id,
+                DocumentNo = documentNo,
+                DocumentType = normalizedType,
+                Payload = payload,
+                Audit = audit
+            });
         }
-
-        var documentNo = await GetDocumentNoAsync(normalizedType, id, cancellationToken) ?? string.Empty;
-        var audit = await BuildAuditTrailAsync(EntityNameForType(normalizedType), id, documentNo, cancellationToken);
-
-        return ServiceResult<DocumentEditModelDto>.Ok(new DocumentEditModelDto
+        catch (Exception ex)
         {
-            DocumentId = id,
-            DocumentNo = documentNo,
-            DocumentType = normalizedType,
-            Payload = payload,
-            Audit = audit
-        });
+            var detailPayload = new
+            {
+                Type = type,
+                NormalizedType = normalizedType,
+                Id = id,
+                DocumentNo = documentNo,
+                UserId = user.UserId,
+                UserName = user.UserName,
+                ErrorMessage = ex.Message,
+                InnerMessage = ex.InnerException?.Message,
+                ExceptionType = ex.GetType().FullName,
+                StackTrace = ex.StackTrace,
+                Payload = payload
+            };
+
+            var log = await _errorLog.LogAsync(
+                ex,
+                new LogErrorContext(
+                    Module: nameof(DocumentLifecycleService),
+                    Action: $"GetEditModel:{normalizedType}",
+                    PayloadJson: JsonSerializer.Serialize(detailPayload, JsonOptions),
+                    UserId: user.UserId,
+                    UserName: user.UserName),
+                cancellationToken);
+            return ServiceResult<DocumentEditModelDto>.Fail(SystemErrorMessage(user.LanguageCode, log.ErrorCode));
+        }
     }
 
     private async Task<ServiceResult<DocumentMutationResultDto>> EditInternalAsync(string type, int id, JsonElement payload, CurrentUserContext user, CancellationToken cancellationToken, string? preservedDocumentNo = null)
@@ -244,7 +290,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             "repair-send" => await EditRepairSendSelectiveAsync(id, payload, user, cancellationToken),
             "repair-receive" => await EditRepairReceiveSelectiveAsync(id, payload, user, cancellationToken),
             "adjustment" => await EditAdjustmentSelectiveAsync(id, payload, user, cancellationToken),
-            _ => ServiceResult<DocumentMutationResultDto>.Fail($"Unsupported document type '{type}'.")
+            _ => ServiceResult<DocumentMutationResultDto>.Fail($"Unsupported document type '{Text(user.LanguageCode, type)}'.")
         };
     }
 
@@ -260,7 +306,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             "repair-send" => await RebuildStandaloneAsync(id, type, payload, user, cancellationToken, preservedDocumentNo),
             "borrow-return" => await RebuildBorrowReturnAsync(id, payload, user, cancellationToken),
             "repair-receive" => await RebuildRepairReceiveAsync(id, payload, user, cancellationToken),
-            _ => ServiceResult<DocumentMutationResultDto>.Fail($"Unsupported document type '{type}'.")
+            _ => ServiceResult<DocumentMutationResultDto>.Fail($"Unsupported document type '{Text(user.LanguageCode, type)}'.")
         };
     }
 
@@ -431,7 +477,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
                 return Edited(type, document.Id, document.DocumentNo);
             }
             default:
-                return ServiceResult<DocumentMutationResultDto>.Fail($"Unsupported document type '{type}'.");
+                return ServiceResult<DocumentMutationResultDto>.Fail($"Unsupported document type '{Text(user.LanguageCode, type)}'.");
         }
     }
 
@@ -1524,7 +1570,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
                 };
             }
             default:
-                return ServiceResult<PostedDocumentDto>.Fail($"Unsupported document type '{type}'.");
+                return ServiceResult<PostedDocumentDto>.Fail($"Unsupported document type '{Text(user.LanguageCode, type)}'.");
         }
     }
 
@@ -1540,7 +1586,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             "borrow-return" => DeleteBorrowReturnAsync(id, user, cancellationToken),
             "repair-send" => DeleteRepairSendAsync(id, user, cancellationToken),
             "repair-receive" => DeleteRepairReceiveAsync(id, user, cancellationToken),
-            _ => Task.FromResult(ServiceResult<DocumentMutationResultDto>.Fail($"Unsupported document type '{type}'.")),
+            _ => Task.FromResult(ServiceResult<DocumentMutationResultDto>.Fail($"Unsupported document type '{Text(user.LanguageCode, type)}'."))
         };
     }
 
@@ -3059,9 +3105,9 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
                 itemCategoryCode = x.Item != null && categoryMap.TryGetValue(x.Item.CategoryId, out var categoryCode) ? categoryCode : string.Empty,
                 itemCode = x.Item?.ItemCode ?? string.Empty,
                 snCode = x.SnCode,
-                status = x.Status,
+                status = x.Status.ToString(),
                 quantity = x.Quantity,
-                note = x.Note
+                note = x.Note,
             }).ToArray()
         };
     }
@@ -3110,6 +3156,59 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         };
     }
 
+    public static string Text(string language, string key)
+    {
+        return language switch
+        {
+            "vi" => Vi.TryGetValue(key, out var vi) ? vi : key,
+            "en" => En.TryGetValue(key, out var en) ? en : key,
+            "zh" => Zh.TryGetValue(key, out var zh) ? zh : key,
+            _ => key
+        };
+    }
+
+    private static readonly Dictionary<string, string> Vi = new()
+    {
+        ["quantity-receive"] = "Nhập số lượng",
+        ["quantity-issue"] = "Xuất số lượng",
+        ["quantity-adjust"] = "Điều chỉnh số lượng",
+        ["inbound"] = "Nhập kho",
+        ["move"] = "Chuyển kho",
+        ["borrow-lend"] = "Cho mượn",
+        ["borrow-return"] = "Trả mượn",
+        ["repair-send"] = "Gửi sửa chữa",
+        ["repair-receive"] = "Nhận sửa chữa",
+        ["adjustment"] = "Điều chỉnh kho",
+        ["inventory-check"] = "Kiểm kê",
+    };
+    private static readonly Dictionary<string, string> En = new()
+    {
+        ["quantity-receive"] = "Quantity Receive",
+        ["quantity-issue"] = "Quantity Issue",
+        ["quantity-adjust"] = "Quantity Adjustment",
+        ["inbound"] = "Inbound",
+        ["move"] = "Move",
+        ["borrow-lend"] = "Borrow / Lend",
+        ["borrow-return"] = "Borrow Return",
+        ["repair-send"] = "Send for Repair",
+        ["repair-receive"] = "Receive from Repair",
+        ["adjustment"] = "Adjustment",
+        ["inventory-check"] = "Inventory Check",
+    };
+    private static readonly Dictionary<string, string> Zh = new()
+    {
+        ["quantity-receive"] = "数量接收",
+        ["quantity-issue"] = "数量发放",
+        ["quantity-adjust"] = "数量调整",
+        ["inbound"] = "入库",
+        ["move"] = "移库",
+        ["borrow-lend"] = "借出",
+        ["borrow-return"] = "归还",
+        ["repair-send"] = "送修",
+        ["repair-receive"] = "维修收回",
+        ["adjustment"] = "库存调整",
+        ["inventory-check"] = "盘点",
+    };
     private static string SystemErrorMessage(string? language, string errorCode)
     {
         return language?.ToLowerInvariant() switch

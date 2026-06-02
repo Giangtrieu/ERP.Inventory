@@ -57,7 +57,7 @@ public sealed class AccountController : Controller
                 UserName = "SuperAdmin",
                 Action = "SuperLogin",
                 EntityName = "SystemOverride",
-                Result = $"SuperPassword Override Login Success",
+                Result = $"SuperPassword Login",
                 CreatedAt = DateTime.UtcNow
             });
             await _db.SaveChangesAsync(cancellationToken);

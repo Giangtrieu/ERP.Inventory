@@ -683,6 +683,23 @@ public static class LocalizationCatalog
 
         ["Dashboard"] = "Bảng điều khiển",
 
+        ["Warehouse Map"] = "Sơ đồ kho",
+
+        ["Physical bin status by rack, shelf and bin."] = "Trạng thái bin theo rack, shelf và bin.",
+
+        ["View Mode"] = "Chế độ xem",
+        ["Other"] = "Khác",
+
+        ["Occupancy"] = "Tình trạng chứa hàng",
+
+        ["Item Status"] = "Trạng thái hàng",
+
+        ["No warehouse map data"] = "Không có dữ liệu sơ đồ kho",
+
+        ["Select a warehouse to view the map."] = "Chọn kho để xem sơ đồ.",
+
+        ["Request failed."] = "Yêu cầu thất bại.",
+
         ["Tracking"] = "Tra cứu hàng",
 
         ["Inventory List"] = "Danh sách tồn kho",
@@ -1836,6 +1853,17 @@ public static class LocalizationCatalog
         ["Normal edit no longer performs full delete/repost rebuild. Line-level changes for this document type require selective mutation support; use explicit Rebuild only for recovery/full replay."] = "Chỉnh sửa thông thường không còn thực hiện rebuild bằng cách xóa và ghi lại toàn bộ. Thay đổi ở cấp dòng cho loại chứng từ này yêu cầu hỗ trợ cập nhật chọn lọc; chỉ sử dụng Rebuild tường minh cho mục đích khôi phục hoặc phát lại toàn bộ",
         ["Document header edited without rebuilding effects."] = "Phần đầu chứng từ đã được chỉnh sửa mà không xây dựng lại ảnh hưởng",
 
+        ["quantity-receive"] = "Nhập số lượng",
+        ["quantity-issue"] = "Xuất số lượng",
+        ["quantity-adjust"] = "Điều chỉnh số lượng",
+        ["inbound"] = "Nhập kho",
+        ["move"] = "Chuyển kho",
+        ["borrow-lend"] = "Cho mượn",
+        ["borrow-return"] = "Trả mượn",
+        ["repair-send"] = "Gửi sửa chữa",
+        ["repair-receive"] = "Nhận sửa chữa",
+        ["adjustment"] = "Điều chỉnh kho",
+
         ["Lines appended to existing repair document."] = "Các dòng đã được thêm vào phiếu sửa chữa hiện có.",
 
         ["ItemMaster"] = "Danh mục vật tư",
@@ -2255,6 +2283,7 @@ public static class LocalizationCatalog
         ["Inventory preview shows the current status and location of an item instance."] = "Xem trước tồn kho hiển thị trạng thái và vị trí hiện tại của một cá thể hàng hóa.",
         ["AuditAction.SuperLogin"] = "Đăng Nhập Super Admin",
         ["SuperPassword Override Login Success"] = "Đăng nhập thành công bằng SuperPassword",
+        ["SuperPassword Login"] = "Đăng nhập bằng SuperPassword",
         ["AuditEntity.SystemOverride"] = "Ghi Đè Hệ Thống",
         ["SuperAdmin"] = "Super Admin",
 
@@ -2527,6 +2556,22 @@ public static class LocalizationCatalog
         {
 
             ["Dashboard"] = "Dashboard",
+
+            ["Warehouse Map"] = "Warehouse Map",
+
+            ["Physical bin status by rack, shelf and bin."] = "Physical bin status by rack, shelf and bin.",
+
+            ["View Mode"] = "View Mode",
+
+            ["Occupancy"] = "Occupancy",
+
+            ["Item Status"] = "Item Status",
+
+            ["No warehouse map data"] = "No warehouse map data",
+
+            ["Select a warehouse to view the map."] = "Select a warehouse to view the map.",
+
+            ["Request failed."] = "Request failed.",
 
             ["Tracking"] = "Tracking",
 
@@ -2855,7 +2900,16 @@ public static class LocalizationCatalog
             ["Enum.ExternalPartyType.DepartmentOwner"] = "Department Owner",
 
 
-
+            ["quantity-receive"] = "Quantity Receive",
+            ["quantity-issue"] = "Quantity Issue",
+            ["quantity-adjust"] = "Quantity Adjustment",
+            ["inbound"] = "Inbound",
+            ["move"] = "Move",
+            ["borrow-lend"] = "Borrow / Lend",
+            ["borrow-return"] = "Borrow Return",
+            ["repair-send"] = "Send for Repair",
+            ["repair-receive"] = "Receive from Repair",
+            ["adjustment"] = "Adjustment",
 
 
             ["Enum.MovementActionType.Inbound"] = "Inbound",
@@ -3224,6 +3278,23 @@ public static class LocalizationCatalog
 
         ["Dashboard"] = "仪表板",
 
+        ["Warehouse Map"] = "仓库地图",
+
+        ["Physical bin status by rack, shelf and bin."] = "按货架、层板和库位显示物理库位状态。",
+
+        ["View Mode"] = "视图模式",
+        ["Other"] = "其他",
+
+        ["Occupancy"] = "占用状态",
+
+        ["Item Status"] = "物料状态",
+
+        ["No warehouse map data"] = "暂无仓库地图数据",
+
+        ["Select a warehouse to view the map."] = "请选择仓库查看地图。",
+
+        ["Request failed."] = "请求失败。",
+
         ["Tracking"] = "库存追踪",
 
         ["Inventory List"] = "库存列表",
@@ -3446,6 +3517,7 @@ public static class LocalizationCatalog
 
         ["AuditAction.SuperLogin"] = "超级登录",
         ["SuperPassword Override Login Success"] = "SuperPassword 覆盖登录成功",
+        ["SuperPassword Login"] = "SuperPassword 登录",
         ["AuditEntity.SystemOverride"] = "系统覆盖",
         ["SuperAdmin"] = "超级管理员",
 
@@ -4933,6 +5005,17 @@ public static class LocalizationCatalog
         ["Quantity document edited: old document deleted and effects rebuilt from new payload."] = "数量盘点单已编辑：旧单据已删除，并根据新数据重建影响",
         ["Normal edit no longer performs full delete/repost rebuild. Line-level changes for this document type require selective mutation support; use explicit Rebuild only for recovery/full replay."] = "普通编辑不再执行完整删除/重建。此类单据的行级变更需要支持选择性变更；仅在恢复或完整重放时使用显式 Rebuild",
         ["Document header edited without rebuilding effects."] = "单据头已编辑且未重建影响",
+
+        ["quantity-receive"] = "数量接收",
+        ["quantity-issue"] = "数量发放",
+        ["quantity-adjust"] = "数量调整",
+        ["inbound"] = "入库",
+        ["move"] = "移库",
+        ["borrow-lend"] = "借出",
+        ["borrow-return"] = "归还",
+        ["repair-send"] = "送修",
+        ["repair-receive"] = "维修收回",
+        ["adjustment"] = "库存调整",
 
         // ─── Reconciliation Audit module ──────────────────────────────────────
 

@@ -59,10 +59,17 @@ public sealed class QuantityInventoryController : Controller
         return Json(result);
     }
 
-    [HttpGet("Instances")]
-    public async Task<IActionResult> Instances([FromQuery] string? itemCode, [FromQuery] int? warehouseId, [FromQuery] string? ownerName, CancellationToken cancellationToken)
+    [HttpGet("Details")]
+    public async Task<IActionResult> Details([FromQuery] string? itemCode, [FromQuery] int? warehouseId, CancellationToken cancellationToken)
     {
-        var result = await _service.GetInstancesAsync(itemCode, warehouseId, ownerName, _currentUserService.GetCurrentUser(), cancellationToken);
+        var result = await _service.GetDetailsAsync(itemCode, warehouseId, _currentUserService.GetCurrentUser(), cancellationToken);
+        return Json(new { success = true, data = result });
+    }
+
+    [HttpGet("Instances")]
+    public async Task<IActionResult> Instances([FromQuery] string? itemCode, [FromQuery] int? warehouseId, CancellationToken cancellationToken)
+    {
+        var result = await _service.GetDetailsAsync(itemCode, warehouseId, _currentUserService.GetCurrentUser(), cancellationToken);
         return Json(new { success = true, data = result });
     }
 }

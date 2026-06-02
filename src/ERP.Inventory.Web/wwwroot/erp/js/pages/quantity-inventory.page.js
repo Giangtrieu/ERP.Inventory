@@ -90,13 +90,13 @@ Router.register('quantity-inventory', async function () {
   });
 
   // ── Detail view button ───────────────────────────────────────────────
-  //$(document).off('click.qtyDetail').on('click.qtyDetail', '.btn-qty-detail', function () {
-  //  const itemCode = $(this).data('item-code');
-  //  const itemName = $(this).data('item-name');
-  //  const warehouseId = $(this).data('warehouse-id');
-  //  qtySelectedItem = { itemCode, itemName, warehouseId };
-  //  loadQtyDetailPanel(itemCode, itemName, warehouseId);
-  //});
+  $(document).off('click.qtyDetail').on('click.qtyDetail', '.btn-qty-detail', function () {
+    const itemCode = $(this).data('item-code');
+    const itemName = $(this).data('item-name');
+    const warehouseId = $(this).data('warehouse-id');
+    qtySelectedItem = { itemCode, itemName, warehouseId };
+    loadQtyDetailPanel(itemCode, itemName, warehouseId);
+  });
 
   // ── History filter events ────────────────────────────────────────────
   $(document).off('change.qtyHistFilter input.qtyHistFilter')
@@ -203,15 +203,15 @@ async function loadQuantityInventory(page = 1, pageSize = AppState.pageSize || 2
         <td>${UI.esc(r.warehouseCode)}</td>
         <td class="fw-bold">${UI.esc(r.quantity)}</td>
         <td class="text-muted small">${UI.formatDate(r.lastUpdatedAt)}</td>
-        <!--<td>
+        <td>
           <button class="btn btn-light btn-sm btn-qty-detail"
             data-item-code="${UI.esc(r.itemCode)}"
-            data-item-name="${UI.esc(r.itemName)}"
+            data-item-name="${UI.esc(r.itemCategoryCode)}"
             data-warehouse-id="${UI.esc(r.warehouseId)}"
             title="${UI.t('View Detail')}">
             <i class="bi bi-eye"></i>
           </button>
-        </td>-->
+        </td>
       </tr>`).join('')}</tbody>
       </table>
       <div class="server-footer">
@@ -231,14 +231,14 @@ async function loadQtyDetailPanel(itemCode, itemName, warehouseId) {
         <button class="btn btn-outline-secondary btn-sm" id="btnQtyBack">
           <i class="bi bi-arrow-left me-1"></i>${UI.t('Back')}
         </button>
-        <div class="form-section-title mb-0">${UI.t('Item Instance')} — <span class="text-primary">${UI.esc(itemCode)}</span>
-          <!--<span class="text-muted fw-normal small ms-2">${UI.esc(itemName)}</span>-->
+        <div class="form-section-title mb-0">${UI.t('Quantity Stock')} — <span class="text-primary">${UI.esc(itemCode)}</span>
+          <span class="text-muted fw-normal small ms-2">${UI.esc(itemName || '')}</span>
         </div>
       </div>
       <div id="qtyDetailTable">${UI.loading()}</div>
     </div></div>`);
 
-  const result = await UI.api('/QuantityInventory/Instances', {
+  const result = await UI.api('/QuantityInventory/Details', {
     query: { itemCode, warehouseId: warehouseId || null }
   });
 
@@ -246,23 +246,38 @@ async function loadQtyDetailPanel(itemCode, itemName, warehouseId) {
   const rows = result.data || [];
   if (!rows.length) { $('#qtyDetailTable').html(UI.empty('No data')); return; }
 
-  $('#qtyDetailTable').html(`
+    $('#qtyDetailTable').html(`
     <div class="table-wrap">
-      <table class="data-table"><thead><tr>
-        <th class="px-3">${UI.t('Document No')}</th>
-        <th class="px-3">${UI.t('SN')}</th>
-        <th>${UI.t('Warehouse')}</th>
-        <th>${UI.t('Time')}</th>
-      </tr></thead>
-      <tbody>${rows.map(r => `<tr>
-        <td class="px-3">${UI.esc(r.documentNo)}</td>
-        <td class="px-3 fw-semibold font-monospace">${UI.esc(r.snCode)}</td>
-        <td>${UI.esc(r.warehouseCode || '-')}</td>
-        <td class="text-muted small">${UI.formatDate(r.createdAt)}</td>
-      </tr>`).join('')}</tbody>
+      <table class="data-table-detail">
+      <thead><tr>
+      <th>${UI.t('Time')}</th>
+      <th>${UI.t('Action')}</th>
+      <th>${UI.t('PN')}</th>
+      <th>${UI.t('Party')}</th>
+      <th>${UI.t('Qty')}</th>
+      <th>${UI.t('Location')}</th>
+      <th>${UI.t('By')}</th>
+      </tr>
+      </thead>
+      <tbody>${rows.map(x => {
+          const party = x.borrower || x.receiver || x.repairVendor || x.sender || x.performedBy || '-';
+          const dept = x.borrowDepartment || x.receiverDepartment || x.department || '';
+          const phone = x.borrowerPhone || x.receiverPhone || '';
+          const owner = x.departmentOwner || '';
+          const partyDetail = [dept, phone, owner].filter(Boolean).join(' · ');
+          return `<tr>
+              <td class="text-muted small">${UI.formatDate(x.timestamp)}</td>
+              <td><span class="badge text-bg-secondary">${UI.esc(x.actionTypeText || UI.t(x.action || '-'))}</span></td>
+              <td><span >${UI.esc(x.itemCode || '-')}</span><br/><small class="text-muted">${UI.esc(x.serialNumber || x.snCode || '')}</small></td>
+              <td class="small"><span class="fw-semibold">${UI.esc(party)}</span>${partyDetail ? `<br/><small class="text-muted">${UI.esc(partyDetail)}</small>` : ''}</td>
+              <td class="${x.quantity < 0 ? 'text-danger' : 'text-success'} fw-bold">${x.quantity > 0 ? '+' : ''}${UI.esc(x.quantity)}</td>
+              <td class="small text-muted">${UI.esc(x.warehouseCode || '\u2014')}</td>
+              <td class="text-muted small">${UI.esc(x.approvedBy || '-')}</td>
+            </tr>`;
+      }).join('')}</tbody>
       </table>
       <div class="server-footer">
-        <span>${UI.t('Item Instance')}: ${rows.length} ${UI.t('rows')}</span>
+        <span>${UI.t('Quantity Stock')}: ${rows.length} ${UI.t('rows')}</span>
       </div>
     </div>`);
 }
@@ -524,7 +539,8 @@ function applyQuantityEditorState(operation) {
           value = value.split('T')[0];
       }
     const el = $(`#qtyContent [name="${fieldMap[key] || key}"]`);
-    if (el.length) el.val(value == null ? '' : value);
+      if (el.length) el.val(value == null ? '' : value);
+      if (key.includes('mentNo')) el.prop('disabled', true);
   });
   const lines = Array.isArray(payload.lines) ? payload.lines : [];
   if (!lines.length) return;

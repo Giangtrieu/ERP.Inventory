@@ -7,6 +7,25 @@ Router.register('dashboard', async function(){
         <div class="col-md-1"><label class="form-label w-100"><span class="fw-semibold small"></span><button class="btn btn-primary w-100" id="btnLoadDashboard">${UI.t('Load')}</button></label></div>
       </div>
     </div></div>
+<ul class="nav nav-tabs mb-3" id="dashboardTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="dashboard-report-tab"
+      data-bs-toggle="tab" data-bs-target="#dashboardReportTab"
+      type="button" role="tab">
+      <i class="bi bi-bar-chart me-2"></i>${UI.t('Reports')}
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="dashboard-map-tab"
+      data-bs-toggle="tab" data-bs-target="#dashboardMapTab"
+      type="button" role="tab">
+      <i class="bi bi-grid-3x3-gap me-2"></i>${UI.t('Warehouse Map')}
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content">
+  <div class="tab-pane fade show active" id="dashboardReportTab" role="tabpanel">
     <div id="dashboardCards">${UI.loading()}</div>
     <div class="row g-3 mt-1">
       <div class="col-xl-6">
@@ -110,7 +129,13 @@ Router.register('dashboard', async function(){
         </div>
       </div>
     </div></div>
-  </div></div>`);
+     </div> <!-- end dashboardReportTab -->
+
+  <div class="tab-pane fade" id="dashboardMapTab" role="tabpanel">
+    ${window.WarehouseMapComponent ? WarehouseMapComponent.renderShell() : ''}
+  </div>
+</div>
+</div></div>`);
 
   $('#btnReloadDashboard').on('click', () => Router.go('dashboard'));
   $('#btnExportDashboardPdf').on('click', () => window.print());
@@ -129,6 +154,10 @@ Router.register('dashboard', async function(){
   $('#app [name="utilizationWarehouseId"]').on('change', loadLocationUtilizationChart);
   $('#app [name="overdueWarehouseId"]').on('change', loadBorrowOverdueChart);
   $('#app [name="qtyWarehouseId"]').on('change', loadQuantitySummary);
+    $('#app [name="mapWarehouseId"], #app [name="mapViewMode"]').on('change', loadWarehouseMap);
+    if (window.WarehouseMapComponent?.bindHighlightEvents) {
+        WarehouseMapComponent.bindHighlightEvents();
+    }
   $(document).off('click.qtyItemPie').on('click.qtyItemPie', '.qty-item-drilldown', function(){
     AppState.quantityPreset = {
       warehouseId: $('#app [name="qtyWarehouseId"]').val() || '',
@@ -136,6 +165,15 @@ Router.register('dashboard', async function(){
     };
     Router.go('quantity-inventory');
   });
+
+    let warehouseMapLoaded = false;
+
+    $('#dashboard-map-tab').on('shown.bs.tab', async function () {
+        if (!warehouseMapLoaded) {
+            warehouseMapLoaded = true;
+            await loadWarehouseMap();
+        }
+    });
 
   await Promise.all([
     loadDashboardSummary(),
@@ -146,6 +184,7 @@ Router.register('dashboard', async function(){
     loadStockByCategoryChart(),
     loadLocationUtilizationChart(),
     loadBorrowOverdueChart(),
+    //loadWarehouseMap(),
     loadQuantitySummary()
   ]);
 });
@@ -204,6 +243,11 @@ async function loadLocationUtilizationChart(){
 async function loadBorrowOverdueChart(){
   const rows = await UI.api('/Dashboard/OverdueBorrowAging', { query: { warehouseId: $('#app [name="overdueWarehouseId"]').val() || '' } });
   $('#borrowOverdueChart').html(barChart(rows.map(x => ({ ...x, label: UI.t(x.label) }))));
+}
+
+async function loadWarehouseMap(){
+  if (!window.WarehouseMapComponent) return;
+  await WarehouseMapComponent.load();
 }
 
 async function loadQuantitySummary() {
