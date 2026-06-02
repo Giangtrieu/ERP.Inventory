@@ -134,6 +134,11 @@ public sealed class ImportExportService : IImportService, IExportService
             return ServiceResult<int>.Fail("Current role cannot use this import type.");
         }
 
+        if (batch.ImportType.Equals("ItemMasterUpdate", StringComparison.OrdinalIgnoreCase))
+        {
+            return await ValidateItemMasterUpdateBatchAsync(batch, user, cancellationToken);
+        }
+
         var blocking = 0;
         var dataRows = batch.Rows.OrderBy(x => x.RowNumber).Select(x => new { Row = x, Data = Row(x) }).ToArray();
         var batchErrors = BuildBatchValidationErrors(batch.ImportType, dataRows.Select(x => (x.Row, x.Data)).ToArray());
@@ -212,6 +217,7 @@ public sealed class ImportExportService : IImportService, IExportService
         return importType switch
         {
             "ItemMaster"         => await ConfirmItemMasterAsync(rows, user, cancellationToken),
+            "ItemMasterUpdate"   => await ConfirmItemMasterUpdateAsync(rows, user, cancellationToken),
             "WarehouseStructure" => await ConfirmWarehouseStructureAsync(rows, user, cancellationToken),
             "Inbound"            => await ConfirmInboundAsync(rows, user, cancellationToken),
             "InventoryCheck"     => await ConfirmInventoryCheckAsync(rows, user, cancellationToken),
@@ -229,7 +235,7 @@ public sealed class ImportExportService : IImportService, IExportService
 
     private static bool RequiresOuterImportTransaction(string importType)
     {
-        return importType is "ItemMaster" or "WarehouseStructure" or "Inbound" or "RepairSend" or "BorrowLend";
+        return importType is "ItemMaster" or "ItemMasterUpdate" or "WarehouseStructure" or "Inbound" or "RepairSend" or "BorrowLend";
     }
 
     public async Task<ServiceResult<IReadOnlyCollection<ImportBatchDto>>> ListAsync(CurrentUserContext user, CancellationToken cancellationToken = default)
@@ -717,6 +723,8 @@ public sealed class ImportExportService : IImportService, IExportService
             case "ItemMaster":
                 await ValidateItemMasterRowAsync(row, errors, cancellationToken);
                 break;
+            case "ItemMasterUpdate":
+                break;
             case "QuantityInbound":
             case "QuantityOutbound":
             case "QuantityAdjust":
@@ -916,6 +924,137 @@ public sealed class ImportExportService : IImportService, IExportService
                 errors.Add($"ItemCode {itemCode} already exists in the system.");
             }
         }
+    }
+
+    private async Task<ServiceResult<int>> ValidateItemMasterUpdateBatchAsync(ImportBatch batch, CurrentUserContext user, CancellationToken cancellationToken)
+    {
+        var dataRows = batch.Rows.OrderBy(x => x.RowNumber).Select(x => new { Row = x, Data = Row(x) }).ToArray();
+        var itemCodes = dataRows
+            .Select(x => Value(x.Data, "ItemCode"))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var newCategoryCodes = dataRows
+            .Select(x => Value(x.Data, "NewCategoryCode"))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var newUnitCodes = dataRows
+            .Select(x => Value(x.Data, "NewUnitCode"))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var items = await _db.Items
+            .Include(x => x.Category)
+            .Include(x => x.Unit)
+            .Where(x => itemCodes.Contains(x.ItemCode) && x.IsActive)
+            .ToDictionaryAsync(x => x.ItemCode, StringComparer.OrdinalIgnoreCase, cancellationToken);
+        var categories = await _db.ItemCategories
+            .Where(x => newCategoryCodes.Contains(x.CategoryCode) && x.IsActive)
+            .ToDictionaryAsync(x => x.CategoryCode, StringComparer.OrdinalIgnoreCase, cancellationToken);
+        var units = await _db.ItemUnits
+            .Where(x => newUnitCodes.Contains(x.UnitCode) && x.IsActive)
+            .ToDictionaryAsync(x => x.UnitCode, StringComparer.OrdinalIgnoreCase, cancellationToken);
+        var duplicateCodes = dataRows
+            .Select(x => Value(x.Data, "ItemCode"))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .Where(x => x.Count() > 1)
+            .Select(x => x.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var blocking = 0;
+        foreach (var rowData in dataRows)
+        {
+            var errors = ValidateItemMasterUpdateRow(rowData.Data, items, categories, units, duplicateCodes);
+            var row = rowData.Row;
+            row.IsValid = errors.Count == 0;
+            row.Severity = errors.Count == 0 ? ValidationSeverity.Info : ValidationSeverity.Blocking;
+            row.Message = errors.Count == 0 ? BuildItemMasterUpdateSummary(rowData.Data, items, categories, units) : string.Join("; ", errors);
+            row.SuggestedFix = errors.Count == 0 ? null : "Correct the row and upload again.";
+            row.UpdatedAt = DateTime.UtcNow;
+            row.UpdatedBy = user.UserName;
+            if (errors.Count > 0)
+            {
+                blocking++;
+            }
+        }
+
+        batch.BlockingErrorRows = blocking;
+        batch.Status = blocking == 0 ? ImportBatchStatus.Validated : ImportBatchStatus.Blocked;
+        batch.UpdatedAt = DateTime.UtcNow;
+        batch.UpdatedBy = user.UserName;
+        await _db.SaveChangesAsync(cancellationToken);
+        return ServiceResult<int>.Ok(blocking, blocking == 0 ? "Import batch is valid." : "Import batch has blocking errors.");
+    }
+
+    private static List<string> ValidateItemMasterUpdateRow(
+        Dictionary<string, string> row,
+        IReadOnlyDictionary<string, Item> items,
+        IReadOnlyDictionary<string, ItemCategory> categories,
+        IReadOnlyDictionary<string, ItemUnit> units,
+        IReadOnlySet<string> duplicateCodes)
+    {
+        var errors = RequiredColumns("ItemMasterUpdate")
+            .Where(x => string.IsNullOrWhiteSpace(Value(row, x)))
+            .Select(x => $"{x} is required.")
+            .ToList();
+        var itemCode = Value(row, "ItemCode");
+        if (string.IsNullOrWhiteSpace(itemCode))
+        {
+            return errors;
+        }
+
+        if (duplicateCodes.Contains(itemCode))
+        {
+            errors.Add("Duplicate ItemCode in import file.");
+        }
+
+        if (!HasItemMasterUpdateField(row))
+        {
+            errors.Add("No update field specified.");
+        }
+
+        if (!items.TryGetValue(itemCode, out var item))
+        {
+            errors.Add("ItemCode does not exist.");
+            return errors;
+        }
+
+        var currentCategoryCode = Value(row, "CurrentCategoryCode");
+        if (!string.IsNullOrWhiteSpace(currentCategoryCode) &&
+            !string.Equals(item.Category?.CategoryCode, currentCategoryCode, StringComparison.OrdinalIgnoreCase))
+        {
+            errors.Add($"Current category mismatch. Expected {currentCategoryCode} but actual {item.Category?.CategoryCode ?? "-"}.");
+        }
+
+        var newCategoryCode = Value(row, "NewCategoryCode");
+        if (!string.IsNullOrWhiteSpace(newCategoryCode) && !categories.ContainsKey(newCategoryCode))
+        {
+            errors.Add("NewCategoryCode does not exist.");
+        }
+
+        var currentUnitCode = Value(row, "CurrentUnitCode");
+        if (!string.IsNullOrWhiteSpace(currentUnitCode) &&
+            !string.Equals(item.Unit?.UnitCode, currentUnitCode, StringComparison.OrdinalIgnoreCase))
+        {
+            errors.Add($"Current unit mismatch. Expected {currentUnitCode} but actual {item.Unit?.UnitCode ?? "-"}.");
+        }
+
+        var newUnitCode = Value(row, "NewUnitCode");
+        if (!string.IsNullOrWhiteSpace(newUnitCode) && !units.ContainsKey(newUnitCode))
+        {
+            errors.Add("NewUnitCode does not exist.");
+        }
+
+        var serialValue = Value(row, "NewIsSerialManaged");
+        if (!string.IsNullOrWhiteSpace(serialValue) && !TryParseBool(serialValue, out _))
+        {
+            errors.Add("NewIsSerialManaged must be yes/no, true/false, or 1/0.");
+        }
+
+        return errors;
     }
 
     // ─── New Validate Methods ────────────────────────────────────────────────
@@ -1191,6 +1330,138 @@ public sealed class ImportExportService : IImportService, IExportService
 
         await _db.SaveChangesAsync(cancellationToken);
         return count;
+    }
+
+    private async Task<int> ConfirmItemMasterUpdateAsync(IReadOnlyCollection<Dictionary<string, string>> rows, CurrentUserContext user, CancellationToken cancellationToken)
+    {
+        var itemCodes = rows
+            .Select(x => Value(x, "ItemCode"))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var newCategoryCodes = rows
+            .Select(x => Value(x, "NewCategoryCode"))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var newUnitCodes = rows
+            .Select(x => Value(x, "NewUnitCode"))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var items = await _db.Items
+            .Include(x => x.Category)
+            .Include(x => x.Unit)
+            .Where(x => itemCodes.Contains(x.ItemCode) && x.IsActive)
+            .ToDictionaryAsync(x => x.ItemCode, StringComparer.OrdinalIgnoreCase, cancellationToken);
+        var categories = await _db.ItemCategories
+            .Where(x => newCategoryCodes.Contains(x.CategoryCode) && x.IsActive)
+            .ToDictionaryAsync(x => x.CategoryCode, StringComparer.OrdinalIgnoreCase, cancellationToken);
+        var units = await _db.ItemUnits
+            .Where(x => newUnitCodes.Contains(x.UnitCode) && x.IsActive)
+            .ToDictionaryAsync(x => x.UnitCode, StringComparer.OrdinalIgnoreCase, cancellationToken);
+        var instances = await _db.ItemInstances
+            .Where(x => itemCodes.Contains(x.Item!.ItemCode) && x.IsActive)
+            .ToListAsync(cancellationToken);
+        var instancesByItemId = instances.GroupBy(x => x.ItemId).ToDictionary(x => x.Key, x => x.ToList());
+
+        var changedItems = new List<Item>();
+        var changedInstances = new List<ItemInstance>();
+        var auditLogs = new List<AuditLog>();
+        foreach (var row in rows)
+        {
+            var item = items[Value(row, "ItemCode")];
+            var before = BuildItemMasterAuditSnapshot(item, instancesByItemId.TryGetValue(item.Id, out var itemInstances) ? itemInstances : Array.Empty<ItemInstance>());
+            var changed = false;
+
+            var newCategoryCode = Value(row, "NewCategoryCode");
+            if (!string.IsNullOrWhiteSpace(newCategoryCode) && categories.TryGetValue(newCategoryCode, out var category) && item.CategoryId != category.Id)
+            {
+                item.CategoryId = category.Id;
+                item.Category = category;
+                changed = true;
+            }
+
+            var newUnitCode = Value(row, "NewUnitCode");
+            if (!string.IsNullOrWhiteSpace(newUnitCode) && units.TryGetValue(newUnitCode, out var unit) && item.UnitId != unit.Id)
+            {
+                item.UnitId = unit.Id;
+                item.Unit = unit;
+                changed = true;
+            }
+
+            var newDefaultName = Value(row, "NewDefaultName");
+            if (!string.IsNullOrWhiteSpace(newDefaultName) && !string.Equals(item.DefaultName, newDefaultName, StringComparison.Ordinal))
+            {
+                item.DefaultName = newDefaultName;
+                changed = true;
+            }
+
+            var newIsSerialManaged = Value(row, "NewIsSerialManaged");
+            if (!string.IsNullOrWhiteSpace(newIsSerialManaged) && TryParseBool(newIsSerialManaged, out var parsedSerialManaged) && item.IsSerialManaged != parsedSerialManaged)
+            {
+                item.IsSerialManaged = parsedSerialManaged;
+                changed = true;
+            }
+
+            var ownerChanged = false;
+            var newOwnerName = Value(row, "NewOwnerName");
+            if (!string.IsNullOrWhiteSpace(newOwnerName) && itemInstances != null)
+            {
+                foreach (var instance in itemInstances)
+                {
+                    if (!string.Equals(instance.OwnerName, newOwnerName, StringComparison.Ordinal))
+                    {
+                        instance.OwnerName = newOwnerName;
+                        instance.UpdatedAt = DateTime.UtcNow;
+                        instance.UpdatedBy = user.UserName;
+                        changedInstances.Add(instance);
+                        ownerChanged = true;
+                    }
+                }
+            }
+
+            if (!changed && !ownerChanged)
+            {
+                continue;
+            }
+
+            item.UpdatedAt = DateTime.UtcNow;
+            item.UpdatedBy = user.UserName;
+            changedItems.Add(item);
+            var after = BuildItemMasterAuditSnapshot(item, itemInstances != null ? itemInstances : Array.Empty<ItemInstance>());
+            auditLogs.Add(new AuditLog
+            {
+                UserId = user.UserId,
+                UserName = user.UserName,
+                Action = "BulkUpdateItemMaster",
+                EntityName = nameof(Item),
+                EntityId = item.Id,
+                ReferenceNo = item.ItemCode,
+                BeforeJson = JsonSerializer.Serialize(before, JsonOptions),
+                AfterJson = JsonSerializer.Serialize(after, JsonOptions),
+                Result = "Success",
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        if (changedItems.Count > 0)
+        {
+            await _db.BulkUpdateAsync(changedItems, cancellationToken: cancellationToken);
+        }
+
+        if (changedInstances.Count > 0)
+        {
+            await _db.BulkUpdateAsync(changedInstances.DistinctBy(x => x.Id).ToList(), cancellationToken: cancellationToken);
+        }
+
+        if (auditLogs.Count > 0)
+        {
+            await _db.BulkInsertAsync(auditLogs, cancellationToken: cancellationToken);
+        }
+
+        return changedItems.Count;
     }
 
     private async Task<int> ConfirmWarehouseStructureAsync(IReadOnlyCollection<Dictionary<string, string>> rows, CurrentUserContext user, CancellationToken cancellationToken)
@@ -2543,6 +2814,97 @@ public sealed class ImportExportService : IImportService, IExportService
         return value.Equals("true", StringComparison.OrdinalIgnoreCase) || value.Equals("yes", StringComparison.OrdinalIgnoreCase) || value == "1";
     }
 
+    private static bool TryParseBool(string value, out bool result)
+    {
+        if (value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("y", StringComparison.OrdinalIgnoreCase) ||
+            value == "1")
+        {
+            result = true;
+            return true;
+        }
+
+        if (value.Equals("false", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("no", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("n", StringComparison.OrdinalIgnoreCase) ||
+            value == "0")
+        {
+            result = false;
+            return true;
+        }
+
+        result = false;
+        return false;
+    }
+
+    private static bool HasItemMasterUpdateField(Dictionary<string, string> row)
+    {
+        return !string.IsNullOrWhiteSpace(Value(row, "NewCategoryCode")) ||
+               !string.IsNullOrWhiteSpace(Value(row, "NewUnitCode")) ||
+               !string.IsNullOrWhiteSpace(Value(row, "NewDefaultName")) ||
+               !string.IsNullOrWhiteSpace(Value(row, "NewOwnerName")) ||
+               !string.IsNullOrWhiteSpace(Value(row, "NewIsSerialManaged"));
+    }
+
+    private static string BuildItemMasterUpdateSummary(
+        Dictionary<string, string> row,
+        IReadOnlyDictionary<string, Item> items,
+        IReadOnlyDictionary<string, ItemCategory> categories,
+        IReadOnlyDictionary<string, ItemUnit> units)
+    {
+        if (!items.TryGetValue(Value(row, "ItemCode"), out var item))
+        {
+            return "OK";
+        }
+
+        var changes = new List<string>();
+        var newCategoryCode = Value(row, "NewCategoryCode");
+        if (!string.IsNullOrWhiteSpace(newCategoryCode) && categories.TryGetValue(newCategoryCode, out var category))
+        {
+            changes.Add($"Category: {item.Category?.CategoryCode ?? "-"} -> {category.CategoryCode}");
+        }
+
+        var newUnitCode = Value(row, "NewUnitCode");
+        if (!string.IsNullOrWhiteSpace(newUnitCode) && units.TryGetValue(newUnitCode, out var unit))
+        {
+            changes.Add($"Unit: {item.Unit?.UnitCode ?? "-"} -> {unit.UnitCode}");
+        }
+
+        var newDefaultName = Value(row, "NewDefaultName");
+        if (!string.IsNullOrWhiteSpace(newDefaultName))
+        {
+            changes.Add($"DefaultName: {item.DefaultName} -> {newDefaultName}");
+        }
+
+        var newOwnerName = Value(row, "NewOwnerName");
+        if (!string.IsNullOrWhiteSpace(newOwnerName))
+        {
+            changes.Add($"OwnerName: update active instances -> {newOwnerName}");
+        }
+
+        var newSerialManaged = Value(row, "NewIsSerialManaged");
+        if (!string.IsNullOrWhiteSpace(newSerialManaged) && TryParseBool(newSerialManaged, out var parsed))
+        {
+            changes.Add($"IsSerialManaged: {item.IsSerialManaged} -> {parsed}");
+        }
+
+        return changes.Count == 0 ? "OK" : string.Join("; ", changes);
+    }
+
+    private static object BuildItemMasterAuditSnapshot(Item item, IEnumerable<ItemInstance> instances)
+    {
+        return new
+        {
+            item.ItemCode,
+            item.DefaultName,
+            CategoryCode = item.Category?.CategoryCode,
+            UnitCode = item.Unit?.UnitCode,
+            item.IsSerialManaged,
+            OwnerNames = instances.Select(x => x.OwnerName).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().OrderBy(x => x).ToArray()
+        };
+    }
+
     private static bool IsInstructionRow(Dictionary<string, string> row)
     {
         if (row.Values.All(string.IsNullOrWhiteSpace))
@@ -2654,6 +3016,10 @@ public sealed class ImportExportService : IImportService, IExportService
                 rows.Add(new object?[] { "GB200", "NVIDIA GB200 GPU", "GPU", "Graphics adapters", "PCS", "Piece", "yes", "GPU GB200", "NVIDIA GB200 GPU", "GB200 GPU" });
                 rows.Add(new object?[] { "GB300", "NVIDIA GB300 GPU", "GPU", "Graphics adapters", "PCS", "Piece", "yes", "GPU GB300", "NVIDIA GB300 GPU", "GB300 GPU" });
                 break;
+            case "ItemMasterUpdate":
+                rows.Add(new object?[] { "GB200", "GPU", "CONSUMABLE", "PCS", "", "NVIDIA GB200 GPU - corrected", "IT Dept", "", "Correct category only" });
+                rows.Add(new object?[] { "GB300", "", "", "PCS", "EA", "", "", "no", "Correct unit and serial flag" });
+                break;
             case "WarehouseStructure":
                 rows.Add(new object?[] { "FOXCON", "FOXCON", "FII", "FUYU", "B34", "B34", "F16", "F16", "R01", "Rack 01", "S01", "Shelf 01", "B34_R01_S01" });
                 rows.Add(new object?[] { "FOXCON", "FOXCON", "FII", "FUYU", "B34", "B34", "F16", "F16", "R01", "Rack 01", "S02", "Shelf 02", "B34_R01_S02" });
@@ -2707,6 +3073,7 @@ public sealed class ImportExportService : IImportService, IExportService
         return importType switch
         {
             "ItemMaster" => "ItemCode unique SKU; DefaultName item name; CategoryCode/CategoryName group; UnitCode/UnitName unit; IsSerialManaged yes/no; NameVi/NameEn/NameZh translations.",
+            "ItemMasterUpdate" => "ItemCode existing SKU; CurrentCategoryCode/CurrentUnitCode optional safety checks; NewCategoryCode/NewUnitCode/NewDefaultName/NewOwnerName/NewIsSerialManaged are selective updates.",
             "WarehouseStructure" => "Company/Branch/Warehouse identify hierarchy; Zone/Rack/Shelf identify storage levels; BinCode should follow WarehouseCode_RackCode_ShelfCode unless intentionally edited.",
             "InventoryCheck" => "WarehouseCode checked warehouse; SerialNumber or Barcode identifies item except Extra; ActualBinCode physical bin found; Result is Matched/Missing/Extra/WrongLocation/Damaged; Note explains variance.",
             "RepairSend" => "RepairVendorCode active repair vendor; SerialNumber or Barcode identifies item; Reason repair reason; ExpectedReturnDate yyyy-MM-dd; TargetExternalLocation external repair location.",
@@ -2719,6 +3086,7 @@ public sealed class ImportExportService : IImportService, IExportService
         return importType switch
         {
             "ItemMaster" => "None, but CategoryCode and UnitCode will be created if missing.",
+            "ItemMasterUpdate" => "Items, target categories and target units must already exist. The import never creates missing items, categories or units.",
             "WarehouseStructure" => "User must have manager permission for the target warehouse or be admin.",
             "InventoryCheck" => "Warehouse, items and bins must already exist; physical count must be completed before import.",
             "RepairSend" => "Items must be InStock or Damaged; repair vendor must exist; target external repair location must be known.",
@@ -2739,6 +3107,7 @@ public sealed class ImportExportService : IImportService, IExportService
         return importType switch
         {
             "ItemMaster"         => new[] { "ItemCode", "DefaultName", "CategoryCode", "UnitCode" },
+            "ItemMasterUpdate"   => new[] { "ItemCode" },
             "WarehouseStructure" => new[] { "CompanyCode", "BranchCode", "WarehouseCode", "ZoneCode", "RackCode", "ShelfCode", "BinCode" },
             "Inbound"            => new[] { "ItemCode", "WarehouseCode" },
             "InventoryCheck"     => new[] { "WarehouseCode" },
@@ -2761,7 +3130,7 @@ public sealed class ImportExportService : IImportService, IExportService
 
     private static bool CanUseImportType(string importType, CurrentUserContext user)
     {
-        return importType is not ("ItemMaster" or "WarehouseStructure") || user.CanManage;
+        return importType is not ("ItemMaster" or "ItemMasterUpdate" or "WarehouseStructure") || user.CanManage;
     }
 
     private static string[] Headers(CurrentUserContext user, params string[] keys)
@@ -2926,6 +3295,7 @@ public sealed class ImportExportService : IImportService, IExportService
             ["ImportType.RepairReceive"]     = "Nhận sửa chữa",
             ["AuditAction.SuperLogin"] = "Đăng Nhập Super Admin",
             ["SuperPassword Override Login Success"] = "Đăng nhập thành công bằng SuperPassword",
+            ["SuperPassword Login"] = "Đăng nhập bằng SuperPassword",
             ["AuditEntity.SystemOverride"] = "Ghi Đè Hệ Thống",
             ["SuperAdmin"] = "Super Admin",
 
@@ -3294,6 +3664,7 @@ public sealed class ImportExportService : IImportService, IExportService
             ["ImportType.RepairReceive"]     = "维修入库",
             ["AuditAction.SuperLogin"] = "超级登录",
             ["SuperPassword Override Login Success"] = "SuperPassword 覆盖登录成功",
+            ["SuperPassword Login"] = "SuperPassword 登录",
             ["AuditEntity.SystemOverride"] = "系统覆盖",
             ["SuperAdmin"] = "超级管理员",
 
@@ -3413,6 +3784,7 @@ public sealed class ImportExportService : IImportService, IExportService
     private static readonly Dictionary<string, string[]> ImportHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
         ["ItemMaster"]         = new[] { "ItemCode", "DefaultName", "CategoryCode", "CategoryName", "UnitCode", "UnitName", "IsSerialManaged", "NameVi", "NameEn", "NameZh" },
+        ["ItemMasterUpdate"]   = new[] { "ItemCode", "CurrentCategoryCode", "NewCategoryCode", "CurrentUnitCode", "NewUnitCode", "NewDefaultName", "NewOwnerName", "NewIsSerialManaged", "Remark" },
         ["WarehouseStructure"] = new[] { "CompanyCode", "CompanyName", "BranchCode", "BranchName", "WarehouseCode", "WarehouseName", "ZoneCode", "ZoneName", "RackCode", "RackName", "ShelfCode", "ShelfName", "BinCode" },
         ["Inbound"]            = new[] { "DocumentDate", "DocumentNo", "ItemCode", "SerialNumber", "Barcode", "MT", "WarehouseCode", "BinCode", "SourcePartyCode", "Condition", "Note", "PartyCode", "Name", "Phone", "Department", "OwnerName", "TrackingType" },
         ["InventoryCheck"]     = new[] { "WarehouseCode", "ItemCode", "SerialNumber", "BinCode", "Note" },

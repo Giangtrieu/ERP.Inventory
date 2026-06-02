@@ -62,11 +62,11 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         {
             return ServiceResult<DocumentMutationResultDto>.Fail($"Unsupported document type '{type}'.");
         }
-
+        ServiceResult<DocumentMutationResultDto> result = new ServiceResult<DocumentMutationResultDto>();
         await using var tx = await BeginLifecycleTransactionAsync(cancellationToken);
         try
         {
-            var result = await DeleteCoreAsync(normalizedType, id, user, cancellationToken);
+            result = await DeleteCoreAsync(normalizedType, id, user, cancellationToken);
             if (!result.Success)
             {
                 await tx.RollbackAsync(cancellationToken);
@@ -83,10 +83,16 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             await tx.CommitAsync(cancellationToken);
             return result;
         }
-        catch
+        catch (Exception ex)
         {
             await tx.RollbackAsync(cancellationToken);
-            throw;
+            var log = await _errorLog.LogAsync(ex, new LogErrorContext(
+                Module: nameof(DocumentLifecycleService),
+                Action: $"Delete:{normalizedType}",
+                PayloadJson: result.Data != null ? JsonSerializer.Serialize(result.Data) : null,
+                UserId: user.UserId,
+                UserName: user.UserName), cancellationToken);
+            return ServiceResult<DocumentMutationResultDto>.Fail(SystemErrorMessage(user.LanguageCode, log.ErrorCode));
         }
     }
 
@@ -134,9 +140,10 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         }
 
         await using var tx = await BeginLifecycleTransactionAsync(cancellationToken);
+        ServiceResult<DocumentEditModelDto> editModel = new ServiceResult<DocumentEditModelDto>();
         try
         {
-            var editModel = await GetEditModelAsync(normalizedType, id, user, cancellationToken);
+            editModel = await GetEditModelAsync(normalizedType, id, user, cancellationToken);
             if (!editModel.Success)
             {
                 await tx.RollbackAsync(cancellationToken);
@@ -160,10 +167,16 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             await tx.CommitAsync(cancellationToken);
             return result;
         }
-        catch
+        catch (Exception ex)
         {
             await tx.RollbackAsync(cancellationToken);
-            throw;
+            var log = await _errorLog.LogAsync(ex, new LogErrorContext(
+                Module: nameof(DocumentLifecycleService),
+                Action: $"Rebuild:{normalizedType}",
+                PayloadJson: editModel.Data != null ? JsonSerializer.Serialize(editModel.Data.Payload, JsonOptions) : string.Empty,
+                UserId: user.UserId,
+                UserName: user.UserName), cancellationToken);
+            return ServiceResult<DocumentMutationResultDto>.Fail(SystemErrorMessage(user.LanguageCode, log.ErrorCode));
         }
     }
 
@@ -200,36 +213,69 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         {
             return ServiceResult<DocumentEditModelDto>.Fail($"Unsupported document type '{type}'.");
         }
-
-        var payload = normalizedType switch
+        object? payload = null;
+        string? documentNo = null;
+        try
         {
-            "inbound" => await BuildInboundPayloadAsync(id, cancellationToken),
-            "move" => await BuildMovePayloadAsync(id, cancellationToken),
-            "adjustment" => await BuildAdjustmentPayloadAsync(id, cancellationToken),
-            "borrow-lend" => await BuildBorrowLendPayloadAsync(id, cancellationToken),
-            "borrow-return" => await BuildBorrowReturnPayloadAsync(id, cancellationToken),
-            "repair-send" => await BuildRepairSendPayloadAsync(id, cancellationToken),
-            "repair-receive" => await BuildRepairReceivePayloadAsync(id, cancellationToken),
-            "quantity-receive" or "quantity-issue" or "quantity-adjust" => await BuildQuantityPayloadAsync(id, cancellationToken),
-            _ => null
-        };
 
-        if (payload == null)
-        {
-            return ServiceResult<DocumentEditModelDto>.Fail("Document not found.");
+            payload = normalizedType switch
+            {
+                "inbound" => await BuildInboundPayloadAsync(id, cancellationToken),
+                "move" => await BuildMovePayloadAsync(id, cancellationToken),
+                "adjustment" => await BuildAdjustmentPayloadAsync(id, cancellationToken),
+                "borrow-lend" => await BuildBorrowLendPayloadAsync(id, cancellationToken),
+                "borrow-return" => await BuildBorrowReturnPayloadAsync(id, cancellationToken),
+                "repair-send" => await BuildRepairSendPayloadAsync(id, cancellationToken),
+                "repair-receive" => await BuildRepairReceivePayloadAsync(id, cancellationToken),
+                "quantity-receive" or "quantity-issue" or "quantity-adjust" => await BuildQuantityPayloadAsync(id, cancellationToken),
+                _ => null
+            };
+
+            if (payload == null)
+            {
+                return ServiceResult<DocumentEditModelDto>.Fail("Document not found.");
+            }
+
+            documentNo = await GetDocumentNoAsync(normalizedType, id, cancellationToken) ?? string.Empty;
+            var audit = await BuildAuditTrailAsync(EntityNameForType(normalizedType), id, documentNo, cancellationToken);
+
+            return ServiceResult<DocumentEditModelDto>.Ok(new DocumentEditModelDto
+            {
+                DocumentId = id,
+                DocumentNo = documentNo,
+                DocumentType = normalizedType,
+                Payload = payload,
+                Audit = audit
+            });
         }
-
-        var documentNo = await GetDocumentNoAsync(normalizedType, id, cancellationToken) ?? string.Empty;
-        var audit = await BuildAuditTrailAsync(EntityNameForType(normalizedType), id, documentNo, cancellationToken);
-
-        return ServiceResult<DocumentEditModelDto>.Ok(new DocumentEditModelDto
+        catch (Exception ex)
         {
-            DocumentId = id,
-            DocumentNo = documentNo,
-            DocumentType = normalizedType,
-            Payload = payload,
-            Audit = audit
-        });
+            var detailPayload = new
+            {
+                Type = type,
+                NormalizedType = normalizedType,
+                Id = id,
+                DocumentNo = documentNo,
+                UserId = user.UserId,
+                UserName = user.UserName,
+                ErrorMessage = ex.Message,
+                InnerMessage = ex.InnerException?.Message,
+                ExceptionType = ex.GetType().FullName,
+                StackTrace = ex.StackTrace,
+                Payload = payload
+            };
+
+            var log = await _errorLog.LogAsync(
+                ex,
+                new LogErrorContext(
+                    Module: nameof(DocumentLifecycleService),
+                    Action: $"GetEditModel:{normalizedType}",
+                    PayloadJson: JsonSerializer.Serialize(detailPayload, JsonOptions),
+                    UserId: user.UserId,
+                    UserName: user.UserName),
+                cancellationToken);
+            return ServiceResult<DocumentEditModelDto>.Fail(SystemErrorMessage(user.LanguageCode, log.ErrorCode));
+        }
     }
 
     private async Task<ServiceResult<DocumentMutationResultDto>> EditInternalAsync(string type, int id, JsonElement payload, CurrentUserContext user, CancellationToken cancellationToken, string? preservedDocumentNo = null)
@@ -3059,9 +3105,9 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
                 itemCategoryCode = x.Item != null && categoryMap.TryGetValue(x.Item.CategoryId, out var categoryCode) ? categoryCode : string.Empty,
                 itemCode = x.Item?.ItemCode ?? string.Empty,
                 snCode = x.SnCode,
-                status = x.Status,
+                status = x.Status.ToString(),
                 quantity = x.Quantity,
-                note = x.Note
+                note = x.Note,
             }).ToArray()
         };
     }

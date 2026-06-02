@@ -1208,80 +1208,67 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         => $"{itemId}:{NormalizeSn(snCode)}";
 
     // ─── Instance Detail Query ────────────────────────────────────────
-    public async Task<IReadOnlyCollection<QuantityInstanceDto>> GetInstancesAsync(string? itemCode, int? warehouseId, string? ownerName, CurrentUserContext user, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<QuantityStockBalanceDto>> GetDetailsAsync(string? itemCode, int? warehouseId, CurrentUserContext user, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(itemCode)) return Array.Empty<QuantityInstanceDto>();
+        if (string.IsNullOrWhiteSpace(itemCode))
+            return Array.Empty<QuantityStockBalanceDto>();
 
         var normalizedCode = itemCode.Trim().ToUpperInvariant();
 
-        // Get QuantityOnly instances for this item
-        var instancesQuery = _db.ItemInstances
+        var query = _db.QuantityInventoryTransactions
             .AsNoTracking()
-            .Include(x => x.Item)
+            .Include(x => x.Item)!.ThenInclude(x => x!.Category)
+            .Include(x => x.Warehouse)
             .Where(x =>
                 x.Item != null &&
-                x.Item.ItemCode == normalizedCode &&
-                x.TrackingType == ItemTrackingType.QuantityOnly &&
-                x.IsActive);
-
-        if (!string.IsNullOrWhiteSpace(ownerName))
-        {
-            var ownerFilter = ownerName.Trim();
-            instancesQuery = instancesQuery.Where(x => x.OwnerName != null && x.OwnerName.Contains(ownerFilter));
-        }
-
-        var instances = await instancesQuery
-            .Select(x => new { x.Id, x.SerialNumber, x.Status, x.TrackingType, x.OwnerName, x.CreatedAt, x.DocumentNo})
-            .ToArrayAsync(cancellationToken);
-
-        if (!instances.Any()) return Array.Empty<QuantityInstanceDto>();
-
-        var snCodes = instances.Select(x => x.SerialNumber ?? string.Empty).Where(s => s.Length > 0).ToArray();
-
-        // Get current balances (grouped by SN) for this item
-        var balancesQuery = _db.QuantityStockBalances
-            .AsNoTracking()
-            .Include(x => x.Warehouse)
-            .Where(x => x.Item != null && x.Item.ItemCode == normalizedCode && snCodes.Contains(x.SnCode));
-
+                x.Item.ItemCode == normalizedCode);
         if (warehouseId.HasValue)
         {
-            balancesQuery = user.CanAccessWarehouse(warehouseId.Value)
-                ? balancesQuery.Where(x => x.WarehouseId == warehouseId.Value)
-                : balancesQuery.Where(x => false);
+            query = user.CanAccessWarehouse(warehouseId.Value)
+                ? query.Where(x => x.WarehouseId == warehouseId.Value)
+                : query.Where(x => false);
         }
         else if (!user.IsAdmin)
         {
-            balancesQuery = balancesQuery.Where(x => user.WarehouseIds.Contains(x.WarehouseId));
+            query = query.Where(x =>
+                user.WarehouseIds.Contains(x.WarehouseId));
         }
 
-        var balances = await balancesQuery
-            .GroupBy(x => x.SnCode)
-            .Select(g => new
+        var data = await query
+            .OrderByDescending(x => x.PostedAt)
+            .Select(x => new
             {
-                SnCode = g.Key,
-                TotalQty = g.Sum(b => b.Quantity),
-                WarehouseCode = g.Select(b => b.Warehouse != null ? b.Warehouse.WarehouseCode : string.Empty).FirstOrDefault() ?? string.Empty
+                x.ItemId,
+                ItemCode = x.Item != null ? x.Item.ItemCode : "",
+                ItemName = x.Item != null ? x.Item.DefaultName : "",
+                ItemCategoryCode =x.Item != null && x.Item.Category != null
+                        ? x.Item.Category.CategoryCode : "",
+                x.WarehouseId,
+                WarehouseCode = x.Warehouse != null  ? x.Warehouse.WarehouseCode
+                        : "",
+                Status = x.StatusAfter,
+                Quantity = x.QuantityDelta,
+                LastUpdatedAt = x.PostedAt,
+                x.DocumentNo,
+                x.SnCode
             })
-            .ToDictionaryAsync(x => x.SnCode, cancellationToken);
+            .ToListAsync(cancellationToken);
 
-        return instances.Select(inst =>
+        var result = data.Select(x => new QuantityStockBalanceDto
         {
-            var sn = inst.SerialNumber ?? string.Empty;
-            balances.TryGetValue(sn, out var bal);
-            return new QuantityInstanceDto
-            {
-                Id = inst.Id,
-                SnCode = sn,
-                DocumentNo = inst.DocumentNo,
-                Status = inst.Status.ToString(),
-                TrackingType = inst.TrackingType.ToString(),
-                WarehouseCode = bal?.WarehouseCode ?? string.Empty,
-                Quantity = bal?.TotalQty ?? 0,
-                OwnerName = inst.OwnerName,
-                CreatedAt = inst.CreatedAt
-            };
-        }).OrderBy(x => x.SnCode).ToArray();
+            ItemId = x.ItemId,
+            ItemCode = x.ItemCode,
+            ItemName = x.ItemName,
+            ItemCategoryCode = x.ItemCategoryCode,
+            WarehouseId = x.WarehouseId,
+            WarehouseCode = x.WarehouseCode,
+            Status = x.Status.ToString(),
+            Quantity = x.Quantity,
+
+            LastUpdatedAt = x.LastUpdatedAt
+        }).ToList();
+
+        return result;
     }
 }
 

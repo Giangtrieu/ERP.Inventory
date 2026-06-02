@@ -25,6 +25,7 @@ public sealed class ImportController : Controller
         return Json(new[]
         {
             new { id = "ItemMaster",        text = LocalizationCatalog.Text(language, "ImportType.ItemMaster") },
+            new { id = "ItemMasterUpdate",  text = LocalizationCatalog.Text(language, "ImportType.ItemMasterUpdate") },
             new { id = "WarehouseStructure",text = LocalizationCatalog.Text(language, "ImportType.WarehouseStructure") },
             new { id = "Inbound",           text = LocalizationCatalog.Text(language, "ImportType.Inbound") },
             new { id = "InventoryCheck",    text = LocalizationCatalog.Text(language, "ImportType.InventoryCheck") },
@@ -104,6 +105,6 @@ public sealed class ImportController : Controller
     {
         var user = _currentUserService.GetCurrentUser();
         var normalized = importType.Trim().Replace(" ", string.Empty).Replace("-", string.Empty);
-        return normalized is not ("ItemMaster" or "WarehouseStructure") || user.CanManage;
+        return normalized is not ("ItemMaster" or "ItemMasterUpdate" or "WarehouseStructure") || user.CanManage;
     }
 }

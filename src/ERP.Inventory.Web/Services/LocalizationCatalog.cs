@@ -1943,6 +1943,7 @@ public static class LocalizationCatalog
 
 
         ["ImportType.ItemMaster"] = "Danh mục vật tư",
+        ["ImportType.ItemMasterUpdate"] = "Cập nhật danh mục vật tư",
 
         ["ImportType.WarehouseStructure"] = "Cấu trúc kho",
 
@@ -2255,6 +2256,7 @@ public static class LocalizationCatalog
         ["Inventory preview shows the current status and location of an item instance."] = "Xem trước tồn kho hiển thị trạng thái và vị trí hiện tại của một cá thể hàng hóa.",
         ["AuditAction.SuperLogin"] = "Đăng Nhập Super Admin",
         ["SuperPassword Override Login Success"] = "Đăng nhập thành công bằng SuperPassword",
+        ["SuperPassword Login"] = "Đăng nhập bằng SuperPassword",
         ["AuditEntity.SystemOverride"] = "Ghi Đè Hệ Thống",
         ["SuperAdmin"] = "Super Admin",
 
@@ -2449,6 +2451,7 @@ public static class LocalizationCatalog
 
         // ── Phase 5: Import Types (vi) ──
         ["ImportType.ItemMaster"] = "Danh mục vật tư",
+        ["ImportType.ItemMasterUpdate"] = "Cập nhật danh mục vật tư",
         ["ImportType.WarehouseStructure"] = "Cấu trúc kho",
         ["ImportType.Inbound"] = "Nhập kho",
         ["ImportType.InventoryCheck"] = "Kiểm kê",
@@ -2619,6 +2622,7 @@ public static class LocalizationCatalog
 
 
             ["ImportType.ItemMaster"] = "Item master",
+            ["ImportType.ItemMasterUpdate"] = "Item master update",
 
             ["ImportType.WarehouseStructure"] = "Warehouse structure",
 
@@ -3139,6 +3143,7 @@ public static class LocalizationCatalog
 
             // ── Phase 5: Import Types (en) ──
             ["ImportType.ItemMaster"] = "Item Catalog",
+            ["ImportType.ItemMasterUpdate"] = "Item Catalog Update",
             ["ImportType.WarehouseStructure"] = "Warehouse Structure",
             ["ImportType.Inbound"] = "Inbound",
             ["ImportType.InventoryCheck"] = "Inventory Check",
@@ -3446,6 +3451,7 @@ public static class LocalizationCatalog
 
         ["AuditAction.SuperLogin"] = "超级登录",
         ["SuperPassword Override Login Success"] = "SuperPassword 覆盖登录成功",
+        ["SuperPassword Login"] = "SuperPassword 登录",
         ["AuditEntity.SystemOverride"] = "系统覆盖",
         ["SuperAdmin"] = "超级管理员",
 
@@ -4661,9 +4667,10 @@ public static class LocalizationCatalog
 
 
 
-        ["ImportType.ItemMaster"] = "物料目录",
+            ["ImportType.ItemMaster"] = "物料目录",
+            ["ImportType.ItemMasterUpdate"] = "物料目录更新",
 
-        ["ImportType.WarehouseStructure"] = "仓库结构",
+            ["ImportType.WarehouseStructure"] = "仓库结构",
 
         ["ImportType.Inbound"] = "入库",
 
@@ -5016,6 +5023,7 @@ public static class LocalizationCatalog
 
         // ── Phase 5: Import Types (zh) ──
         ["ImportType.ItemMaster"] = "物料目录",
+        ["ImportType.ItemMasterUpdate"] = "物料目录更新",
         ["ImportType.WarehouseStructure"] = "仓库结构",
         ["ImportType.Inbound"] = "入库",
         ["ImportType.InventoryCheck"] = "盘点",

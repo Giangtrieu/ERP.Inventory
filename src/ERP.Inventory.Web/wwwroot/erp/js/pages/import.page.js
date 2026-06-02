@@ -66,7 +66,7 @@ $(document).on('click', '.btn-import-validate', async function(){
 });
 $(document).on('click', '.btn-import-confirm', function () {
     const id = $(this).data('id');
-    UI.confirm(UI.t('Confirm Import'), UI.t('Valid rows will be inserted into operational tables.'), `<div>${UI.t('Batch')}: <b>${$(`td[data-id="${id}"]`).text()}</b></div><div>${UI.t('Backend will re - validate before commit.')}</div>`, async function(){
+    UI.confirm(UI.t('Confirm Import'), UI.t('Valid rows will be applied to operational tables.'), `<div>${UI.t('Batch')}: <b>${$(`td[data-id="${id}"]`).text()}</b></div><div>${UI.t('Backend will re - validate before commit.')}</div>`, async function(){
     const result = await UI.api(`/Import/Confirm/${id}`, { method: 'POST', data: {} });
         if (!result.success) { UI.showError(UI.resultError(result)); return; }
     UI.toast(UI.msg(`Import confirmed. Rows: ${result.data}.`));
