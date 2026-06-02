@@ -920,6 +920,57 @@ public static class LocalizationCatalog
 
         ["Unit Name"] = "Tên đơn vị",
 
+        ["Bins matched"] = "Bin khớp",
+        ["No matched bins"] = "Không có bin phù hợp",
+        ["Search PN / SN / MT"] = "Tìm kiếm PN / SN / MT",
+        ["Clear"] = "Xóa",
+        ["No data found"] = "Không tìm thấy dữ liệu",
+        ["No warehouse map data"] = "Không có dữ liệu sơ đồ kho",
+        ["Validation success"] = "Kiểm tra dữ liệu thành công",
+        ["Validation failed"] = "Kiểm tra dữ liệu thất bại",
+
+        ["Import validation completed"] = "Kiểm tra file import hoàn tất",
+        ["Import validation failed"] = "Kiểm tra file import thất bại",
+
+        ["Data is valid"] = "Dữ liệu hợp lệ",
+        ["Data contains errors"] = "Dữ liệu có lỗi",
+
+        ["Validation passed"] = "Kiểm tra đạt",
+        ["Validation not passed"] = "Kiểm tra không đạt",
+
+        ["Total rows"] = "Tổng số dòng",
+        ["Valid rows"] = "Dòng hợp lệ",
+        ["Invalid rows"] = "Dòng lỗi",
+
+        ["No validation errors"] = "Không phát hiện lỗi dữ liệu",
+        ["Validation errors found"] = "Phát hiện lỗi dữ liệu",
+
+        ["Ready to import"] = "Sẵn sàng để import",
+        ["Import cannot continue"] = "Không thể tiếp tục import",
+
+        ["Please review the validation result"] = "Vui lòng kiểm tra kết quả xác thực dữ liệu",
+
+        ["Duplicate data found"] = "Phát hiện dữ liệu trùng",
+        ["Missing required fields"] = "Thiếu trường bắt buộc",
+        ["Invalid format"] = "Định dạng không hợp lệ",
+        ["Reference data not found"] = "Không tìm thấy dữ liệu tham chiếu",
+
+        ["Request failed"] = "Yêu cầu thất bại",
+        ["Server error"] = "Lỗi máy chủ",
+        ["Unexpected error"] = "Đã xảy ra lỗi không mong muốn",
+
+        ["Operation completed"] = "Thao tác hoàn tất",
+        ["Operation failed"] = "Thao tác thất bại",
+
+        ["Data updated successfully"] = "Cập nhật dữ liệu thành công",
+        ["Data update failed"] = "Cập nhật dữ liệu thất bại",
+
+        ["Search completed"] = "Tra cứu hoàn tất",
+        ["Search returned no results"] = "Không có kết quả phù hợp",
+
+        ["Please try again"] = "Vui lòng thử lại",
+        ["Loading"] = "Đang tải...",
+        ["Processing"] = "Đang xử lý...",
 
         ["Are you sure you want to finalize this inventory check session? Missing items will be calculated and adjustments generated if needed."] = "Bạn có chắc chắn muốn hoàn tất phiên kiểm kê này không? Các vật tư thiếu sẽ được tính toán và tạo phiếu điều chỉnh nếu cần.",
 
@@ -3514,6 +3565,60 @@ public static class LocalizationCatalog
         ["Unit Code"] = "单位代码",
 
         ["Unit Name"] = "单位名称",
+        ["Bins matched"] = "匹配的库位",
+        ["No matched bins"] = "未找到匹配的库位",
+        ["Search PN / SN / MT"] = "搜索 PN / SN / MT",
+        ["Clear"] = "清除",
+        ["Load data success"] = "数据加载成功",
+        ["Load data failed"] = "数据加载失败",
+        ["Validation success"] = "数据校验成功",
+        ["Validation failed"] = "数据校验失败",
+
+        ["Import validation completed"] = "导入校验完成",
+        ["Import validation failed"] = "导入校验失败",
+
+        ["Data is valid"] = "数据有效",
+        ["Data contains errors"] = "数据存在错误",
+
+        ["Validation passed"] = "校验通过",
+        ["Validation not passed"] = "校验未通过",
+
+        ["Total rows"] = "总行数",
+        ["Valid rows"] = "有效行数",
+        ["Invalid rows"] = "错误行数",
+
+        ["No validation errors"] = "未发现数据错误",
+        ["Validation errors found"] = "发现数据错误",
+
+        ["Ready to import"] = "可执行导入",
+        ["Import cannot continue"] = "无法继续导入",
+
+        ["Please review the validation result"] = "请检查校验结果",
+
+        ["Duplicate data found"] = "发现重复数据",
+        ["Missing required fields"] = "缺少必填字段",
+        ["Invalid format"] = "格式无效",
+        ["Reference data not found"] = "未找到参考数据",
+
+        ["No data found"] = "未找到数据",
+        ["No warehouse map data"] = "没有仓库地图数据",
+
+        ["Request failed"] = "请求失败",
+        ["Server error"] = "服务器错误",
+        ["Unexpected error"] = "发生未知错误",
+
+        ["Operation completed"] = "操作完成",
+        ["Operation failed"] = "操作失败",
+
+        ["Data updated successfully"] = "数据更新成功",
+        ["Data update failed"] = "数据更新失败",
+
+        ["Search completed"] = "查询完成",
+        ["Search returned no results"] = "没有匹配结果",
+
+        ["Please try again"] = "请重试",
+        ["Loading"] = "加载中...",
+        ["Processing"] = "处理中...",
 
         ["AuditAction.SuperLogin"] = "超级登录",
         ["SuperPassword Override Login Success"] = "SuperPassword 覆盖登录成功",

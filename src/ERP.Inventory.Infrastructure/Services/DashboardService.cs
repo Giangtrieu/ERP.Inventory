@@ -313,28 +313,35 @@ public sealed class DashboardService : IDashboardService
             .ToArrayAsync(cancellationToken);
 
         var binIds = binRows.Select(x => x.BinLocationId).ToArray();
-        var locationRows = binIds.Length == 0
-            ? Array.Empty<WarehouseMapItemRow>()
-            : await _db.CurrentItemLocations.AsNoTracking()
-                 .Where(x =>
-            x.WarehouseId == warehouseId &&
-            x.BinLocationId.HasValue &&
-            binIds.Contains(x.BinLocationId.Value) &&
-            x.ItemInstance != null &&
-            x.ItemInstance.IsActive &&
-            x.ItemInstance.Status != ItemStatus.Lost &&
-            x.ItemInstance.Status != ItemStatus.Disposed)
-        .Select(x => new WarehouseMapItemRow(
-            x.BinLocationId!.Value,
-            x.ItemInstance!.Item != null? x.ItemInstance.Item.ItemCode : "Unknown",
-            x.ItemInstance.Item != null? x.ItemInstance.Item.DefaultName: null,
-            x.ItemInstance.SerialNumber,
-            x.ItemInstance.Item != null &&
-            x.ItemInstance.Item.Category != null ? x.ItemInstance.Item.Category.CategoryCode: "Unknown",
-            x.ItemInstance.Status,
-            x.ItemInstance.Barcode
-        ))
-        .ToArrayAsync(cancellationToken);
+        var locationRows = await _db.CurrentItemLocations
+    .AsNoTracking()
+    .Where(x =>
+        x.WarehouseId == warehouseId &&
+        x.BinLocationId.HasValue &&
+        x.BinLocation != null &&
+        x.BinLocation.IsActive &&
+        x.BinLocation.WarehouseId == warehouseId &&
+        x.ItemInstance != null &&
+        x.ItemInstance.IsActive &&
+        x.ItemInstance.Status != ItemStatus.Lost &&
+        x.ItemInstance.Status != ItemStatus.Disposed)
+    .Select(x => new WarehouseMapItemRow(
+        x.BinLocationId!.Value,
+        x.ItemInstance!.Item != null
+            ? x.ItemInstance.Item.ItemCode
+            : "Unknown",
+        x.ItemInstance.Item != null
+            ? x.ItemInstance.Item.DefaultName
+            : null,
+        x.ItemInstance.SerialNumber,
+        x.ItemInstance.Item != null &&
+        x.ItemInstance.Item.Category != null
+            ? x.ItemInstance.Item.Category.CategoryCode
+            : "Unknown",
+        x.ItemInstance.Status,
+        x.ItemInstance.Barcode
+    ))
+    .ToArrayAsync(cancellationToken);
 
         var itemsByBin = locationRows
             .GroupBy(x => x.BinLocationId)

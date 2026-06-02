@@ -21,34 +21,23 @@
           ${UI.select('View Mode', 'mapViewMode', viewModes.map(x => ({ id: x.id, text: UI.t(x.text) })), 'occupancy')}
         </div>
       </div>
-          <div class="warehouse-map-highlight-tools mb-3">
-      <div class="d-flex gap-2 align-items-end flex-wrap">
-        <div style="min-width:180px">
-          ${UI.select('Search Type', 'mapSearchType', [
-              { id: 'pn', text: UI.t('PN / ItemCode') },
-              { id: 'sn', text: UI.t('SN / SerialNumber') },
-              { id: 'barcode', text: UI.t('Barcode') }
-          ], 'pn')}
-        </div>
+        <div class="warehouse-map-highlight-tools mb-3">
+  <div class="d-flex gap-2 align-items-end flex-wrap">
+    <div class="flex-grow-1">
+      <label class="form-label fw-semibold small">${UI.t('Search PN / SN / MT')}</label>
+      <input type="text"
+        class="form-control"
+        name="mapSearchValues"
+        placeholder="VD: 007, PN001, SN001">
+    </div>
 
-        <div class="flex-grow-1">
-          <label class="form-label fw-semibold small">${UI.t('Search List')}</label>
-          <input type="text"
-            class="form-control"
-            name="mapSearchValues"
-            placeholder="VD: PN001, PN002 hoặc SN001, SN002">
-        </div>
+    <button type="button" class="btn btn-outline-secondary" id="btnClearWarehouseMapHighlight">
+      ${UI.t('Clear')}
+    </button>
+  </div>
 
-        <button type="button" class="btn btn-primary" id="btnWarehouseMapSearch">
-          <i class="bi bi-search me-2"></i>${UI.t('Highlight')}
-        </button>
-
-        <button type="button" class="btn btn-outline-secondary" id="btnClearWarehouseMapHighlight">
-          ${UI.t('Clear')}
-        </button>
-      </div>
-
-      <div id="warehouseMapHighlightResult" class="small text-muted mt-2"></div>
+  <div id="warehouseMapHighlightResult" class="small text-muted mt-2"></div>
+</div></div>
     </div>
           <div id="warehouseMapLegend" class="warehouse-map-legend"></div>
           <div id="warehouseMapBody">${UI.loading()}</div>
@@ -176,7 +165,8 @@
   data-color="${UI.esc(color)}"
   data-item-codes="${UI.esc((bin.itemCodes || bin.ItemCodes || []).join('|'))}"
   data-serial-numbers="${UI.esc((bin.serialNumbers || bin.SerialNumbers || []).join('|'))}"
-  data-barcodes="${UI.esc((bin.barcodes || bin.Barcodes || []).join('|'))}">
+  data-barcodes="${UI.esc((bin.barcodes || bin.Barcodes || []).join('|'))}"
+  data-mts="${UI.esc((bin.mTs || bin.MTs || bin.mts || []).join('|'))}">
   ${categoryPreview}${multiBadge}
 </button>`;
     }
@@ -209,54 +199,69 @@
         $(document)
             .off('click.warehouseMapLegend')
             .on('click.warehouseMapLegend', '#warehouseMapLegend .warehouse-map-legend-item', function () {
-                const color = String($(this).attr('data-legend-color') || '').toLowerCase();
+                $('#app [name="mapSearchValues"]').val('');
 
-                console.log('legend clicked:', color);
+                $(this).toggleClass('is-active');
 
-                $('#warehouseMapLegend .warehouse-map-legend-item').removeClass('is-active');
-                $(this).addClass('is-active');
+                const selectedColors = $('#warehouseMapLegend .warehouse-map-legend-item.is-active')
+                    .map(function () {
+                        return String($(this).attr('data-legend-color') || '').toLowerCase();
+                    })
+                    .get()
+                    .filter(Boolean);
+
+                if (!selectedColors.length) {
+                    clearWarehouseMapHighlight();
+                    return;
+                }
 
                 highlightWarehouseMapBins(function ($bin) {
-                    return String($bin.attr('data-color') || '').toLowerCase() === color;
+                    const binColor = String($bin.attr('data-color') || '').toLowerCase();
+                    return selectedColors.includes(binColor);
                 });
             });
 
         $(document)
-            .off('click.warehouseMapSearch')
-            .on('click.warehouseMapSearch', '#btnWarehouseMapSearch', function () {
-                const type = $('#app [name="mapSearchType"]').val() || 'pn';
-                const raw = $('#app [name="mapSearchValues"]').val() || '';
+            .off('input.warehouseMapSearch')
+            .on('input.warehouseMapSearch', '#app [name="mapSearchValues"]', function () {
+                const raw = String($(this).val() || '').trim().toLowerCase();
 
-                console.log('search clicked:', type, raw);
+                $('#warehouseMapLegend .warehouse-map-legend-item').removeClass('is-active');
+
+                if (!raw) {
+                    clearWarehouseMapHighlight();
+                    return;
+                }
 
                 const values = raw
                     .split(/[\n,; ]+/)
                     .map(x => x.trim().toLowerCase())
                     .filter(Boolean);
 
-                if (!values.length) {
-                    clearWarehouseMapHighlight();
-                    return;
-                }
-
                 highlightWarehouseMapBins(function ($bin) {
-                    const attr =
-                        type === 'sn' ? 'data-serial-numbers' :
-                            type === 'barcode' ? 'data-barcodes' :
-                                'data-item-codes';
-
-                    const tokens = String($bin.attr(attr) || '')
+                    const tokens = [
+                        String($bin.attr('data-item-codes') || ''),
+                        String($bin.attr('data-serial-numbers') || ''),
+                        String($bin.attr('data-barcodes') || ''),
+                        String($bin.attr('data-mts') || '')
+                    ]
+                        .join('|')
                         .split('|')
                         .map(x => x.trim().toLowerCase())
                         .filter(Boolean);
 
-                    return tokens.some(x => values.includes(x));
+                    return tokens.some(token =>
+                        values.some(value => token.includes(value))
+                    );
                 });
             });
 
         $(document)
             .off('click.clearWarehouseMapHighlight')
-            .on('click.clearWarehouseMapHighlight', '#btnClearWarehouseMapHighlight', clearWarehouseMapHighlight);
+            .on('click.clearWarehouseMapHighlight', '#btnClearWarehouseMapHighlight', function () {
+                $('#app [name="mapSearchValues"]').val('');
+                clearWarehouseMapHighlight();
+            });
     }
 
     function highlightWarehouseMapBins(matchFn) {
@@ -278,7 +283,7 @@
 
         $('#warehouseMapHighlightResult').text(
             matched > 0
-                ? `${matched} ${UI.t('bins matched')}`
+                ? `${matched} ${UI.t('Bins matched')}`
                 : UI.t('No matched bins')
         );
     }
