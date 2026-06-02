@@ -206,7 +206,7 @@ async function loadQuantityInventory(page = 1, pageSize = AppState.pageSize || 2
         <td>
           <button class="btn btn-light btn-sm btn-qty-detail"
             data-item-code="${UI.esc(r.itemCode)}"
-            data-item-name="${UI.esc(r.itemName)}"
+            data-item-name="${UI.esc(r.itemCategoryCode)}"
             data-warehouse-id="${UI.esc(r.warehouseId)}"
             title="${UI.t('View Detail')}">
             <i class="bi bi-eye"></i>
@@ -248,20 +248,33 @@ async function loadQtyDetailPanel(itemCode, itemName, warehouseId) {
 
     $('#qtyDetailTable').html(`
     <div class="table-wrap">
-      <table class="data-table"><thead><tr>
-        <th class="px-3">${UI.t('Item')}</th>
-        <th>${UI.t('Warehouse')}</th>
-        <th>${UI.t('Status')}</th>
-        <th>${UI.t('Quantity')}</th>
-        <th>${UI.t('Last Updated')}</th>
-      </tr></thead>
-      <tbody>${rows.map(r => `<tr>
-        <td class="px-3 fw-semibold">${UI.esc(r.itemCode)}<div class="small text-muted">${UI.esc(r.itemName || '')}</div></td>
-        <td>${UI.esc(r.warehouseCode || '-')}</td>
-        <td>${UI.badge(r.status || '-')}</td>
-        <td class="${r.quantity < 0 ? 'text-danger' : 'text-success'} fw-bold">${r.quantity > 0 ? '+' : ''}${UI.esc(r.quantity)}</td>
-        <td class="text-muted small">${UI.formatDate(r.lastUpdatedAt)}</td>
-      </tr>`).join('')}</tbody>
+      <table class="data-table-detail">
+      <thead><tr>
+      <th>${UI.t('Time')}</th>
+      <th>${UI.t('Action')}</th>
+      <th>${UI.t('PN')}</th>
+      <th>${UI.t('Party')}</th>
+      <th>${UI.t('Qty')}</th>
+      <th>${UI.t('Location')}</th>
+      <th>${UI.t('By')}</th>
+      </tr>
+      </thead>
+      <tbody>${rows.map(x => {
+          const party = x.borrower || x.receiver || x.repairVendor || x.sender || x.performedBy || '-';
+          const dept = x.borrowDepartment || x.receiverDepartment || x.department || '';
+          const phone = x.borrowerPhone || x.receiverPhone || '';
+          const owner = x.departmentOwner || '';
+          const partyDetail = [dept, phone, owner].filter(Boolean).join(' · ');
+          return `<tr>
+              <td class="text-muted small">${UI.formatDate(x.timestamp)}</td>
+              <td><span class="badge text-bg-secondary">${UI.esc(x.actionTypeText || UI.t(x.action || '-'))}</span></td>
+              <td><span >${UI.esc(x.itemCode || '-')}</span><br/><small class="text-muted">${UI.esc(x.serialNumber || x.snCode || '')}</small></td>
+              <td class="small"><span class="fw-semibold">${UI.esc(party)}</span>${partyDetail ? `<br/><small class="text-muted">${UI.esc(partyDetail)}</small>` : ''}</td>
+              <td class="${x.quantity < 0 ? 'text-danger' : 'text-success'} fw-bold">${x.quantity > 0 ? '+' : ''}${UI.esc(x.quantity)}</td>
+              <td class="small text-muted">${UI.esc(x.warehouseCode || '\u2014')}</td>
+              <td class="text-muted small">${UI.esc(x.approvedBy || '-')}</td>
+            </tr>`;
+      }).join('')}</tbody>
       </table>
       <div class="server-footer">
         <span>${UI.t('Quantity Stock')}: ${rows.length} ${UI.t('rows')}</span>
@@ -526,7 +539,8 @@ function applyQuantityEditorState(operation) {
           value = value.split('T')[0];
       }
     const el = $(`#qtyContent [name="${fieldMap[key] || key}"]`);
-    if (el.length) el.val(value == null ? '' : value);
+      if (el.length) el.val(value == null ? '' : value);
+      if (key.includes('mentNo')) el.prop('disabled', true);
   });
   const lines = Array.isArray(payload.lines) ? payload.lines : [];
   if (!lines.length) return;

@@ -12,6 +12,8 @@ namespace ERP.Inventory.Web.Controllers;
 [Route("[controller]")]
 public sealed class ReportsController : Controller
 {
+    private const int PreviewPageSize = 25;
+
     private readonly InventoryDbContext _db;
     private readonly ICurrentUserService _currentUserService;
     private readonly ITrackingService _trackingService;
@@ -89,6 +91,7 @@ public sealed class ReportsController : Controller
 
         var rows = await query
             .OrderByDescending(x => x.h.PerformedAt)
+            .Take(PreviewPageSize)
             .Select(x => new
             {
                 x.h.PerformedAt,
@@ -107,7 +110,7 @@ public sealed class ReportsController : Controller
         {
             Items = rows.Cast<object>().ToArray(),
             Page = 1,
-            PageSize = 25,
+            PageSize = PreviewPageSize,
             TotalCount = total
         }));
     }

@@ -1019,3 +1019,150 @@ The change is schema/index-only and preserves application behavior. The main com
 - Generated EF migration with `dotnet ef migrations add AddPerf002ReportingIndexes`.
 - Ran `dotnet build ERP.Inventory.sln`.
 - Build succeeded with existing warnings only.
+
+## PERF-003 - Import validation and confirm contain per-row database calls
+
+Date: 2026-06-02
+
+### Files Changed
+
+- `src/ERP.Inventory.Infrastructure/Services/ImportExportService.cs`
+- `docs/SystemAudit/ImplementationReport.md`
+- `PROJECT_STATUS.md`
+
+### Current Logic
+
+Import validation loaded the batch and iterated each row through row-specific async validators. Those validators repeatedly queried EF for items, warehouses, bins, item instances, current locations, occupied bins, document numbers, external parties, and quantity balances.
+
+`ConfirmAsync` always called `ValidateAsync` before posting, so a previously validated large import paid the full validation cost again during confirm.
+
+### Root Cause
+
+Batch duplicate validation already ran in memory, but reference-data validation was still row-oriented. For large imports, this produced N+1 database access patterns.
+
+Confirm had no conservative freshness check for persisted validation results, so it could not distinguish a still-valid batch from one that needed revalidation.
+
+### Summary
+
+Added a request-scoped import validation preload context in `ImportExportService`.
+
+Validation now preloads the reference data needed by the row validators before row iteration:
+
+- active items and existing item codes,
+- active warehouses,
+- active bins and existing bin keys,
+- item instances by item code and serial number,
+- current locations by item instance,
+- occupied bin ids,
+- existing Borrow/Repair document numbers,
+- active repair vendors,
+- quantity stock balance keys.
+
+Row validators now read from those dictionaries/hashsets instead of issuing EF queries per row. Validation message text, row-level validation order, required-column short-circuit behavior, and batch duplicate error appending are preserved.
+
+`ConfirmAsync` now skips redundant validation only when the persisted batch validation is fresh:
+
+- batch status is `Validated`,
+- `BlockingErrorRows == 0`,
+- batch `UpdatedAt` exists,
+- row count still matches `TotalRows`,
+- every row is valid with `Severity = Info`, `Message = OK`, no suggested fix,
+- every row was updated no later than the batch validation timestamp,
+- no row was created after the batch validation timestamp.
+
+If any freshness condition fails, confirm revalidates normally.
+
+### Performance Impact
+
+Validation changes from per-row database lookups to bounded preload queries plus in-memory dictionary/hashset checks. This targets the highest-impact PERF-003 bottleneck for 100k+ row imports without changing import posting workflows.
+
+Confirm avoids a second full validation pass for already-validated unchanged batches, reducing confirm latency for large imports.
+
+### Migration / Backfill Impact
+
+No database schema migration is required.
+
+No existing import batches or historical data are modified. The freshness check relies only on existing `ImportBatch` and `ImportBatchRow` status/audit fields.
+
+### Compatibility Risk
+
+Low to medium.
+
+Business workflows and import confirm side effects are unchanged. The main compatibility consideration is that validation now depends on the preload context matching the previous EF lookup semantics. The implementation preserves existing active/reference filters and falls back to normal revalidation whenever persisted validation state is not clearly fresh.
+
+### Validation Result
+
+- Ran `dotnet build ERP.Inventory.sln`.
+- Build succeeded with existing warnings only.
+
+## PERF-004 Phase 1 - Safe high-impact read optimizations
+
+Date: 2026-06-02
+
+### Files Changed
+
+- `src/ERP.Inventory.Web/Controllers/ReportsController.cs`
+- `src/ERP.Inventory.Infrastructure/Data/InventoryDbContext.cs`
+- `src/ERP.Inventory.Infrastructure/Data/Migrations/20260602014025_AddPerf004CurrentLocationHotPathIndexes.cs`
+- `src/ERP.Inventory.Infrastructure/Data/Migrations/20260602014025_AddPerf004CurrentLocationHotPathIndexes.Designer.cs`
+- `src/ERP.Inventory.Infrastructure/Data/Migrations/InventoryDbContextModelSnapshot.cs`
+- `docs/SystemAudit/ImplementationReport.md`
+- `PROJECT_STATUS.md`
+
+### Current Logic
+
+`Reports/HistoryPreview` counted matching rows but then materialized every matching movement-history row before returning a preview response with `Page = 1` and `PageSize = 25`.
+
+`Reports/InventoryPreview` called the inventory list service with `pageSize = 0`. The service treats `pageSize = 0` as an all-rows request, so the preview path could load the full inventory dataset.
+
+`CurrentItemLocations` had FK/index coverage for single-column `WarehouseId` and `BinLocationId`, and a unique `ItemInstanceId` index. The hot read paths also combine warehouse scope with bin predicates and updated-location date/order access.
+
+### Root Cause
+
+The two report preview endpoints used unbounded materialization patterns despite returning preview-shaped responses.
+
+The existing current-location indexes covered simple FK lookups, but not the composite access patterns used by scoped inventory/report/dashboard reads.
+
+### Summary
+
+Added a shared preview size constant in `ReportsController` and applied it to:
+
+- `InventoryPreview`, now calling `GetListInventoryAsync` with a bounded preview page size.
+- `HistoryPreview`, now applying `Take(25)` before materializing rows.
+
+Added supported hot-path current-location indexes:
+
+- `IX_CurrentItemLocations_WarehouseId_BinLocationId`
+- `IX_CurrentItemLocations_WarehouseId_UpdatedLocationAt`
+
+No export behavior was changed.
+
+### Performance Impact
+
+History preview now materializes a fixed 25 rows instead of all matching movement-history rows. Inventory preview now requests a bounded page instead of the full matching inventory set.
+
+The new composite indexes target actual current-location query usage:
+
+- warehouse-scoped inventory/report/dashboard predicates with bin-location conditions,
+- warehouse-scoped updated-location date/order access.
+
+### Migration / Backfill Impact
+
+Migration `20260602014025_AddPerf004CurrentLocationHotPathIndexes` adds two non-unique indexes to `CurrentItemLocations`.
+
+EF replaces the prior single-column `WarehouseId` index with composite indexes whose leading key is `WarehouseId`, so warehouse-only predicates remain indexable through the leftmost key.
+
+No data backfill is required. Production migration should be scheduled for a maintenance window or low-traffic period because index creation adds temporary database load and small ongoing write overhead on current-location updates.
+
+### Compatibility Risk
+
+Low.
+
+API response shape is preserved. Preview endpoints still return paged result contracts with `TotalCount`; they now materialize only preview rows. The schema change is index-only and does not alter business data or workflows.
+
+### Validation Result
+
+- Generated EF migration with `dotnet ef migrations add AddPerf004CurrentLocationHotPathIndexes`.
+- Verified the migration contains only current-location index changes.
+- Ran `dotnet build ERP.Inventory.sln`.
+- Build succeeded with existing warnings only.

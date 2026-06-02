@@ -1,6 +1,6 @@
 # Project Status
 
-Date: 2026-06-01
+Date: 2026-06-02
 
 ## Completed
 
@@ -25,11 +25,12 @@ Date: 2026-06-01
 - LOC-006
 - PERF-001
 - PERF-002
+- PERF-003
+- PERF-004 Phase 1
 
 ## Open
 
 - LOC-004
-- PERF-003
 - PERF-004
 - PERF-005
 - PERF-006
@@ -37,7 +38,7 @@ Date: 2026-06-01
 
 ## Latest Work
 
-PERF-002 implemented. Added the scoped reporting/history indexes for audit logs, import batch rows, inventory transactions, and item movement histories. Generated migration `20260601070918_AddPerf002ReportingIndexes`.
+PERF-004 Phase 1 implemented. Report history and inventory previews now materialize bounded preview rows instead of all matching records. CurrentItemLocations now has supported composite hot-path indexes for warehouse/bin and warehouse/updated-location access.
 
 ## Validation
 
@@ -46,4 +47,5 @@ PERF-002 implemented. Added the scoped reporting/history indexes for audit logs,
 
 ## Recommended Next Item
 
-PERF-003 - import validation and confirm contain per-row database calls.
+PERF-004 - audit GET APIs for inventory, tracking, history, reports, and dashboard performance.
+Remaining PERF-004 findings should be handled in later phases only after separate validation.

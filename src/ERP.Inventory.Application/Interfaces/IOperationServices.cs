@@ -47,7 +47,8 @@ public interface IDashboardService
     Task<IReadOnlyCollection<ChartPointDto>> GetStockByCategoryAsync(int? warehouseId, string? status, CurrentUserContext user, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<ChartPointDto>> GetLocationUtilizationAsync(int? warehouseId, CurrentUserContext user, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<ChartPointDto>> GetOverdueBorrowAgingAsync(int? warehouseId, CurrentUserContext user, CancellationToken cancellationToken = default);
-    /// <summary>Tóm tắt tồn kho QuantityOnly — card + charts cho dashboard.</summary>
+    Task<WarehouseMapDto> GetWarehouseMapAsync(int warehouseId, string viewMode, CurrentUserContext user, CancellationToken cancellationToken = default);
+    /// </summary>
     Task<QuantitySummaryDto> GetQuantitySummaryAsync(int? warehouseId, CurrentUserContext user, CancellationToken cancellationToken = default);
 }
 

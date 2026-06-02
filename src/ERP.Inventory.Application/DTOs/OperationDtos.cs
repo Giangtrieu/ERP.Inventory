@@ -323,6 +323,10 @@ public sealed class QuantityInventoryLineRequest
 
 public sealed class QuantityStockBalanceDto
 {
+    public DateTime Timestamp { get; init; }
+    public string Action { get; init; } = string.Empty;
+    public string Operator { get; init; } = string.Empty;
+    public string Reason { get; init; } = string.Empty;
     public int Id { get; init; }
     public int WarehouseId { get; init; }
     public string WarehouseCode { get; init; } = string.Empty;
@@ -331,6 +335,12 @@ public sealed class QuantityStockBalanceDto
     public string ItemCode { get; init; } = string.Empty;
     public string ItemName { get; init; } = string.Empty;
     public string SnCode { get; init; } = string.Empty;
+    public string Receiver { get; init; } = string.Empty;
+    public string Sender { get; set; } = string.Empty;
+    public string ReceiverPhone { get; init; } = string.Empty;
+    public string ReceiverDepartment { get; init; } = string.Empty;
+    public string DepartmentOwner { get; init; } = string.Empty;
+    public string ApprovedBy { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
     public decimal Quantity { get; init; }
     public string? OwnerName { get; init; }

@@ -38,3 +38,73 @@ public sealed class ChartPointDto
     public decimal Value { get; init; }
     public decimal Percentage { get; init; }
 }
+
+public sealed class WarehouseMapDto
+{
+    public int WarehouseId { get; init; }
+    public string WarehouseCode { get; init; } = string.Empty;
+    public string WarehouseName { get; init; } = string.Empty;
+    public string ViewMode { get; init; } = "occupancy";
+    public int RackCount { get; init; }
+    public int ShelfCount { get; init; }
+    public int BinCount { get; init; }
+    public int OccupiedBinCount { get; init; }
+    public int EmptyBinCount { get; init; }
+    public IReadOnlyCollection<WarehouseMapLegendDto> Legend { get; init; } = Array.Empty<WarehouseMapLegendDto>();
+    public IReadOnlyCollection<RackMapDto> Racks { get; init; } = Array.Empty<RackMapDto>();
+}
+
+public sealed class RackMapDto
+{
+    public int RackId { get; init; }
+    public string RackCode { get; init; } = string.Empty;
+    public string RackName { get; init; } = string.Empty;
+    public IReadOnlyCollection<ShelfMapDto> Shelves { get; init; } = Array.Empty<ShelfMapDto>();
+}
+
+public sealed class ShelfMapDto
+{
+    public int ShelfId { get; init; }
+    public string ShelfCode { get; init; } = string.Empty;
+    public string ShelfName { get; init; } = string.Empty;
+    public IReadOnlyCollection<WarehouseMapBinDto> Bins { get; init; } = Array.Empty<WarehouseMapBinDto>();
+}
+
+public sealed class WarehouseMapBinDto
+{
+    public int BinLocationId { get; init; }
+    public string BinCode { get; init; } = string.Empty;
+    public string FullPath { get; init; } = string.Empty;
+    public bool IsOccupied { get; init; }
+    public int ItemCount { get; init; }
+    public IReadOnlyCollection<string> ItemCodes { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<string> SerialNumbers { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<string> Barcodes { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<string> MTs { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<WarehouseMapItemDto> Items { get; init; } = Array.Empty<WarehouseMapItemDto>();
+    //public string? ItemCode { get; init; }
+    //public string? ItemName { get; init; }
+    //public string? SerialNumber { get; init; }
+    //public string? CategoryCode { get; init; }
+    //public string? Status { get; init; }
+    public string Color { get; init; } = "#ffffff";
+    public string TextColor { get; init; } = "#111827";
+}
+
+public sealed class WarehouseMapItemDto
+{
+    public string? ItemCode { get; init; }
+    public string? ItemName { get; init; }
+    public string? SerialNumber { get; init; }
+    public string? CategoryCode { get; init; }
+    public string? Status { get; init; }
+    public string? Barcode { get; init; }
+    public string? MT { get; init; }
+}
+
+public sealed class WarehouseMapLegendDto
+{
+    public string Key { get; init; } = string.Empty;
+    public string Label { get; init; } = string.Empty;
+    public string Color { get; init; } = "#ffffff";
+}

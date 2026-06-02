@@ -647,7 +647,7 @@ function renderDocumentDetail(detail, docType) {
               <td><span class="badge text-bg-secondary">${UI.esc(x.actionTypeText || UI.t(x.actionType || '-'))}</span></td>
               <td><span >${UI.esc(x.itemCode || '-')}</span><br/><small class="text-muted">${UI.esc(x.serialNumber || x.snCode || '')}</small></td>
               <td class="small"><span class="fw-semibold">${UI.esc(party)}</span>${partyDetail ? `<br/><small class="text-muted">${UI.esc(partyDetail)}</small>` : ''}</td>
-              <td class="small">${UI.esc(x.quantityDelta)}</td>
+              <td class="${x.quantityDelta < 0 ? 'text-danger' : 'text-success'} fw-bold">${x.quantityDelta > 0 ? '+' : ''}${UI.esc(x.quantityDelta)}</td>
               <td class="small text-muted">${UI.esc(x.oldLocation || '\u2014')}</td>
               <td class="text-muted small">${UI.esc(x.performedBy || '-')}</td>
             </tr>`;
@@ -670,7 +670,7 @@ function renderDocumentDetail(detail, docType) {
               <div class="form-section-title mt-3">${UI.t('Line Items')}</div>
               <div class="table-wrap report-scroll-wrap"><table class="data-table-detail"><thead><tr><th class="px-3">${UI.t('Item')}</th><th>${UI.t('Category Code')}</th><th style="min-width: 120px;">${UI.t('Qty')}</th><th>${UI.t('Location')}</th></tr></thead>
                 <tbody>${lines.map(l =>
-                    `<tr><td class="px-3"><span>${UI.esc(l.item || '-')}</span></td><td>${UI.esc(l.itemCategory || '-')}</span></td><td>${l.quantity || ''}</td><td>${UI.esc(l.location || '-')}</td></tr>`).join('')}
+                    `<tr><td class="px-3"><span>${UI.esc(l.item || '-')}</span></td><td>${UI.esc(l.itemCategory || '-')}</span></td><td class="${l.quantity < 0 ? 'text-danger' : 'text-success'} fw-bold">${l.quantity > 0 ? '+' : ''}${UI.esc(l.quantity)}</td><td>${UI.esc(l.location || '-')}</td></tr>`).join('')}
                 </tbody>
               </table></div>
               ${auditHtml}
@@ -748,12 +748,13 @@ function applyOperationEditorState(type) {
 function populateOperationEditor(type, payload) {
     Object.entries(payload || {}).forEach(([key, value]) => {
         if (key === 'lines') return;
-        if (key === 'documentDate' && value) {
+        if (key.includes('Date') && value) {
             value = value.split('T')[0];
         }
         const el = $(`#app [name="${key}"]`);
         if (!el.length) return;
         el.val(value == null ? '' : value);
+        if (key.includes('mentNo')) el.prop('disabled', true);
     });
     const lines = Array.isArray(payload.lines) ? payload.lines : [];
     if (!lines.length) return;

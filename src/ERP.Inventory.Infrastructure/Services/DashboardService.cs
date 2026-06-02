@@ -5,6 +5,7 @@ using ERP.Inventory.Domain.Entities;
 using ERP.Inventory.Domain.Enums;
 using ERP.Inventory.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using System.Linq;
 
 namespace ERP.Inventory.Infrastructure.Services;
 
@@ -236,24 +237,166 @@ public sealed class DashboardService : IDashboardService
     public async Task<IReadOnlyCollection<ChartPointDto>> GetOverdueBorrowAgingAsync(int? warehouseId, CurrentUserContext user, CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
+        var sevenDaysAgo = now.Date.AddDays(-7);
+        var thirtyDaysAgo = now.Date.AddDays(-30);
         var query = _db.BorrowDocumentLines.AsNoTracking()
-            .Include(x => x.BorrowDocument)
-            .Include(x => x.FromBinLocation)
-            .Include(x => x.TargetBinLocation)
             .Where(x => !x.IsReturned && x.BorrowDocument != null && x.BorrowDocument.DueDate < now);
 
         query = ApplyBorrowWarehouseScope(query, warehouseId, user);
 
-        var rows = await query.Select(x => x.BorrowDocument!.DueDate).ToArrayAsync(cancellationToken);
-        var oneToSeven = rows.Count(x => (now.Date - x.Date).TotalDays <= 7);
-        var eightToThirty = rows.Count(x => (now.Date - x.Date).TotalDays > 7 && (now.Date - x.Date).TotalDays <= 30);
-        var overThirty = rows.Count(x => (now.Date - x.Date).TotalDays > 30);
+        var aging = await query
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                OneToSeven = g.Count(x => x.BorrowDocument!.DueDate >= sevenDaysAgo),
+                EightToThirty = g.Count(x => x.BorrowDocument!.DueDate < sevenDaysAgo && x.BorrowDocument.DueDate >= thirtyDaysAgo),
+                OverThirty = g.Count(x => x.BorrowDocument!.DueDate < thirtyDaysAgo)
+            })
+            .FirstOrDefaultAsync(cancellationToken);
 
         return new[]
         {
-            new ChartPointDto { Key = "1-7", Label = "1-7 days", Value = oneToSeven },
-            new ChartPointDto { Key = "8-30", Label = "8-30 days", Value = eightToThirty },
-            new ChartPointDto { Key = "30+", Label = "Over 30 days", Value = overThirty }
+            new ChartPointDto { Key = "1-7", Label = "1-7 days", Value = aging?.OneToSeven ?? 0 },
+            new ChartPointDto { Key = "8-30", Label = "8-30 days", Value = aging?.EightToThirty ?? 0 },
+            new ChartPointDto { Key = "30+", Label = "Over 30 days", Value = aging?.OverThirty ?? 0 }
+        };
+    }
+
+    public async Task<WarehouseMapDto> GetWarehouseMapAsync(int warehouseId, string viewMode, CurrentUserContext user, CancellationToken cancellationToken = default)
+    {
+        if (!user.CanAccessWarehouse(warehouseId))
+        {
+            throw new UnauthorizedAccessException("Access denied for selected warehouse.");
+        }
+
+        var normalizedViewMode = NormalizeWarehouseMapViewMode(viewMode);
+        var warehouse = await _db.Warehouses.AsNoTracking()
+            .Where(x => x.Id == warehouseId && x.IsActive)
+            .Select(x => new { x.Id, x.WarehouseCode, x.Name })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (warehouse == null)
+        {
+            return new WarehouseMapDto
+            {
+                WarehouseId = warehouseId,
+                ViewMode = normalizedViewMode,
+                Legend = BuildWarehouseMapLegend(normalizedViewMode, Array.Empty<WarehouseMapBinDto>())
+            };
+        }
+
+        var binRows = await _db.BinLocations.AsNoTracking()
+            .Where(x =>
+                x.IsActive &&
+                x.WarehouseId == warehouseId &&
+                x.Shelf != null &&
+                x.Shelf.IsActive &&
+                x.Shelf.Rack != null &&
+                x.Shelf.Rack.IsActive &&
+                x.Shelf.Rack.WarehouseZone != null &&
+                x.Shelf.Rack.WarehouseZone.IsActive)
+            .Select(x => new
+            {
+                BinLocationId = x.Id,
+                x.BinCode,
+                x.FullPath,
+                x.ShelfId,
+                ShelfCode = x.Shelf!.ShelfCode,
+                ShelfName = x.Shelf.Name,
+                RackId = x.Shelf.RackId,
+                RackCode = x.Shelf.Rack!.RackCode,
+                RackName = x.Shelf.Rack.Name
+            })
+            .OrderBy(x => x.RackCode)
+            .ThenBy(x => x.ShelfCode)
+            .ThenBy(x => x.BinCode)
+            .ToArrayAsync(cancellationToken);
+
+        var binIds = binRows.Select(x => x.BinLocationId).ToArray();
+        var locationRows = await _db.CurrentItemLocations
+    .AsNoTracking()
+    .Where(x =>
+        x.WarehouseId == warehouseId &&
+        x.BinLocationId.HasValue &&
+        x.BinLocation != null &&
+        x.BinLocation.IsActive &&
+        x.BinLocation.WarehouseId == warehouseId &&
+        x.ItemInstance != null &&
+        x.ItemInstance.IsActive &&
+        x.ItemInstance.Status != ItemStatus.Lost &&
+        x.ItemInstance.Status != ItemStatus.Disposed)
+    .Select(x => new WarehouseMapItemRow(
+        x.BinLocationId!.Value,
+        x.ItemInstance!.Item != null
+            ? x.ItemInstance.Item.ItemCode
+            : "Unknown",
+        x.ItemInstance.Item != null
+            ? x.ItemInstance.Item.DefaultName
+            : null,
+        x.ItemInstance.SerialNumber,
+        x.ItemInstance.Item != null &&
+        x.ItemInstance.Item.Category != null
+            ? x.ItemInstance.Item.Category.CategoryCode
+            : "Unknown",
+        x.ItemInstance.Status,
+        x.ItemInstance.Barcode
+    ))
+    .ToArrayAsync(cancellationToken);
+
+        var itemsByBin = locationRows
+            .GroupBy(x => x.BinLocationId)
+            .ToDictionary(x => x.Key, x => x
+                .OrderByDescending(i => WarehouseMapStatusPriority(i.Status))
+                .ThenBy(i => i.ItemCode)
+                .ThenBy(i => i.SerialNumber)
+                .ToArray());
+
+        var racks = binRows
+            .GroupBy(x => new { x.RackId, x.RackCode, x.RackName })
+            .OrderBy(x => x.Key.RackCode)
+            .Select(rackGroup =>
+            {
+                var shelves = rackGroup
+                    .GroupBy(x => new { x.ShelfId, x.ShelfCode, x.ShelfName })
+                    .OrderBy(x => x.Key.ShelfCode)
+                    .Take(17)
+                    .Select(shelfGroup => new ShelfMapDto
+                    {
+                        ShelfId = shelfGroup.Key.ShelfId,
+                        ShelfCode = shelfGroup.Key.ShelfCode,
+                        ShelfName = shelfGroup.Key.ShelfName,
+                        Bins = shelfGroup
+                            .OrderBy(x => x.BinCode)
+                            .Select(x => BuildWarehouseMapBin(x.BinLocationId, x.BinCode, x.FullPath, normalizedViewMode, itemsByBin))
+                            .ToArray()
+                    })
+                    .ToArray();
+
+                return new RackMapDto
+                {
+                    RackId = rackGroup.Key.RackId,
+                    RackCode = rackGroup.Key.RackCode,
+                    RackName = rackGroup.Key.RackName,
+                    Shelves = shelves
+                };
+            })
+            .ToArray();
+
+        var displayedBins = racks.SelectMany(x => x.Shelves).SelectMany(x => x.Bins).ToArray();
+
+        return new WarehouseMapDto
+        {
+            WarehouseId = warehouse.Id,
+            WarehouseCode = warehouse.WarehouseCode,
+            WarehouseName = warehouse.Name,
+            ViewMode = normalizedViewMode,
+            RackCount = racks.Length,
+            ShelfCount = racks.Sum(x => x.Shelves.Count),
+            BinCount = displayedBins.Length,
+            OccupiedBinCount = displayedBins.Count(x => x.IsOccupied),
+            EmptyBinCount = displayedBins.Count(x => !x.IsOccupied),
+            Legend = BuildWarehouseMapLegend(normalizedViewMode, displayedBins),
+            Racks = racks
         };
     }
 
@@ -368,6 +511,187 @@ public sealed class DashboardService : IDashboardService
 
     // ─── Shared scope helpers ────────────────────────────────
 
+    private static WarehouseMapBinDto BuildWarehouseMapBin(int binLocationId,string binCode, string fullPath,string viewMode, IReadOnlyDictionary<int, WarehouseMapItemRow[]> itemsByBin)
+    {
+        itemsByBin.TryGetValue(binLocationId, out var items);
+        items ??= Array.Empty<WarehouseMapItemRow>();
+        var primary = items.FirstOrDefault();
+        var color = primary == null ? "#ffffff" : WarehouseMapColor(viewMode, primary);
+
+        return new WarehouseMapBinDto
+        {
+            BinLocationId = binLocationId,
+            BinCode = binCode,
+            FullPath = fullPath,
+            IsOccupied = items.Length > 0,
+            ItemCount = items.Length,
+
+            ItemCodes = items
+        .Select(x => x.ItemCode)
+        .Where(x => !string.IsNullOrWhiteSpace(x))
+        .Distinct()
+        .ToArray(),
+
+            SerialNumbers = items
+        .Select(x => x.SerialNumber)
+        .Where(x => !string.IsNullOrWhiteSpace(x))
+        .Distinct()
+        .ToArray(),
+
+            Barcodes = items
+        .Select(x => x.Barcode)
+        .Where(x => !string.IsNullOrWhiteSpace(x))
+        .Distinct()
+        .ToArray(),
+
+            Items = items.Select(x => new WarehouseMapItemDto
+            {
+                ItemCode = x.ItemCode,
+                ItemName = x.ItemName,
+                SerialNumber = x.SerialNumber,
+                Barcode = x.Barcode,
+                CategoryCode = x.CategoryCode,
+                Status = x.Status.ToString()
+            }).ToArray(),
+
+            Color = color,
+            TextColor = TextColorFor(color)
+        };
+    }
+
+    private static string NormalizeWarehouseMapViewMode(string? viewMode)
+    {
+        if (string.Equals(viewMode, "itemStatus", StringComparison.OrdinalIgnoreCase)) return "itemStatus";
+        if (string.Equals(viewMode, "itemCode", StringComparison.OrdinalIgnoreCase)) return "itemCode";
+        if (string.Equals(viewMode, "categoryCode", StringComparison.OrdinalIgnoreCase)) return "categoryCode";
+        return "occupancy";
+    }
+
+    private static string WarehouseMapColor(string viewMode, WarehouseMapItemRow row)
+    {
+        return viewMode switch
+        {
+            "itemStatus" => row.Status switch
+            {
+                ItemStatus.Normal or ItemStatus.InStock => "#10b981",
+                ItemStatus.Damaged => "#ef4444",
+                ItemStatus.Scrapped => "#7f1d1d",
+                _ => "#64748b"
+            },
+            "itemCode" => StableColor(row.ItemCode),
+            "categoryCode" => StableColor(row.CategoryCode),
+            _ => "#10b981"
+        };
+    }
+
+    private static IReadOnlyCollection<WarehouseMapLegendDto> BuildWarehouseMapLegend(string viewMode, IReadOnlyCollection<WarehouseMapBinDto> bins)
+    {
+        if (viewMode == "itemStatus")
+        {
+            return new[]
+            {
+                new WarehouseMapLegendDto { Key = "Normal", Label = "Normal", Color = "#10b981" },
+                new WarehouseMapLegendDto { Key = "Damaged", Label = "Damaged", Color = "#ef4444" },
+                new WarehouseMapLegendDto { Key = "Scrapped", Label = "Scrapped", Color = "#7f1d1d" },
+                new WarehouseMapLegendDto { Key = "Other", Label = "Other", Color = "#64748b" },
+                new WarehouseMapLegendDto { Key = "Empty", Label = "Empty", Color = "#ffffff" }
+            };
+        }
+
+        if (viewMode == "itemCode" || viewMode == "categoryCode")
+        {
+            return bins
+                .Where(x => x.IsOccupied)
+                .SelectMany(x => x.Items)
+                .Select(x => viewMode == "itemCode" ? x.ItemCode : x.CategoryCode)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x)
+                .Select(x => new WarehouseMapLegendDto
+                {
+                    Key = x!,
+                    Label = x!,
+                    Color = StableColor(x!)
+                })
+                .Append(new WarehouseMapLegendDto { Key = "Empty", Label = "Empty", Color = "#ffffff" })
+                .ToArray();
+        }
+
+        return new[]
+        {
+            new WarehouseMapLegendDto { Key = "Occupied", Label = "Occupied bins", Color = "#10b981" },
+            new WarehouseMapLegendDto { Key = "Empty", Label = "Empty", Color = "#ffffff" }
+        };
+    }
+
+    private static int WarehouseMapStatusPriority(ItemStatus status)
+    {
+        return status switch
+        {
+            ItemStatus.Scrapped => 4,
+            ItemStatus.Damaged => 3,
+            ItemStatus.Normal or ItemStatus.InStock => 2,
+            _ => 1
+        };
+    }
+
+    private static string StableColor(string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return "#64748b";
+        }
+
+        var palette = new[]
+        {
+            "#1e5bff", "#10b981", "#f59e0b", "#ef4444",
+            "#8b5cf6", "#06b6d4", "#84cc16", "#f97316",
+            "#14b8a6", "#6366f1", "#ec4899", "#22c55e",
+            "#0ea5e9", "#a855f7", "#eab308", "#64748b"
+        };
+
+        unchecked
+        {
+            uint hash = 2166136261;
+            foreach (var ch in key.Trim().ToUpperInvariant())
+            {
+                hash ^= ch;
+                hash *= 16777619;
+            }
+
+            return palette[hash % palette.Length];
+        }
+    }
+
+    private static string TextColorFor(string color)
+    {
+        if (string.Equals(color, "#ffffff", StringComparison.OrdinalIgnoreCase))
+        {
+            return "#111827";
+        }
+
+        var hex = color.TrimStart('#');
+        if (hex.Length != 6 ||
+            !int.TryParse(hex[..2], System.Globalization.NumberStyles.HexNumber, null, out var r) ||
+            !int.TryParse(hex[2..4], System.Globalization.NumberStyles.HexNumber, null, out var g) ||
+            !int.TryParse(hex[4..6], System.Globalization.NumberStyles.HexNumber, null, out var b))
+        {
+            return "#ffffff";
+        }
+
+        var luminance = (0.299 * r) + (0.587 * g) + (0.114 * b);
+        return luminance > 155 ? "#111827" : "#ffffff";
+    }
+
+    private sealed record WarehouseMapItemRow(
+         int BinLocationId,
+    string ItemCode,
+    string? ItemName,
+    string? SerialNumber,
+    string? CategoryCode,
+    ItemStatus Status,
+    string? Barcode);
+
     private IQueryable<CurrentItemLocation> ApplyCurrentLocationWarehouseScope(IQueryable<CurrentItemLocation> query, int? warehouseId, CurrentUserContext user)
     {
         if (warehouseId.HasValue)
@@ -412,12 +736,16 @@ public sealed class DashboardService : IDashboardService
             return query.Where(x => false);
         }
 
-        // Simplified: use only CurrentItemLocations to scope warehouse access
-        return query.Where(x =>
-            _db.CurrentItemLocations.Any(c =>
-                c.ItemInstanceId == x.ItemInstanceId &&
-                c.WarehouseId.HasValue &&
-                warehouseIds.Contains(c.WarehouseId.Value)));
+        var currentItemInstanceIds = _db.CurrentItemLocations.AsNoTracking()
+            .Where(x => x.WarehouseId.HasValue && warehouseIds.Contains(x.WarehouseId.Value))
+            .Select(x => x.ItemInstanceId)
+            .Distinct();
+
+        return query.Join(
+            currentItemInstanceIds,
+            movement => movement.ItemInstanceId,
+            currentItemInstanceId => currentItemInstanceId,
+            (movement, _) => movement);
     }
 
     private static IQueryable<BorrowDocumentLine> ApplyBorrowWarehouseScope(IQueryable<BorrowDocumentLine> query, int? warehouseId, CurrentUserContext user)

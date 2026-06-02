@@ -425,9 +425,10 @@ public sealed class DocumentsController : Controller
                 sender =string.IsNullOrWhiteSpace(x.SenderCode) && string.IsNullOrWhiteSpace(x.SenderName) ? null
                             : $"{x.SenderCode}-{x.SenderName}",
                 department = "TE",
-                oldLocation = x.TransactionType.ToString() == "Receive" ? x.Warehouse.Name : "",
+                oldLocation = x.QuantityDelta > 0 ? x.Warehouse.Name : "",
                 receiverPhone = string.IsNullOrWhiteSpace(x.ReceiverPhone)  ? x.SenderPhone : x.ReceiverPhone,
-                performedBy = x.PostedBy
+                performedBy = x.PostedBy,
+                itemCategory = x.Item != null ? x.Item.Category.CategoryCode : null,
             })
             .ToListAsync(cancellationToken);
 
@@ -440,7 +441,7 @@ public sealed class DocumentsController : Controller
                 doc.DocumentNo,
                 doc.DocumentDate,
                 warehouse = doc.Warehouse?.WarehouseCode,
-                party = doc.DocumentType.ToString(),
+                party = "",
                 status = LocalizationCatalog.Text(language, $"Enum.QuantityInventoryDocumentType.{doc.DocumentType}"),
                 doc.CreatedBy,
                 doc.ApprovedBy,
@@ -448,7 +449,7 @@ public sealed class DocumentsController : Controller
                 doc.PostedAt,
                 doc.Note
             },
-            lines = doc.Lines.Select(x => new { itemCategory = x.Item?.Category?.CategoryCode , item =  x.Item?.ItemCode, status = x.Status, quantity = x.Quantity, note = x.Note, location = x.QuantityInventoryDocument?.DocumentType.ToString() == "Receive" ? x.QuantityInventoryDocument.Warehouse?.Name : "", }),
+            lines = history.Select(x => new { x.itemCategory, item =  x.itemCode,  quantity = x.quantityDelta, note = "", location = x.quantityDelta > 0 ? x.oldLocation : "", }),
             history
         };
     }

@@ -69,6 +69,23 @@ public sealed class ImportExportService : IImportService, IExportService
             Bins = bins;
         }
     }
+
+    private sealed class ImportValidationContext
+    {
+        public Dictionary<string, Item> ActiveItemsByCode { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> ExistingItemCodes { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, Warehouse> ActiveWarehousesByCode { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<(int WarehouseId, string BinCode), BinLocation> ActiveBinsByWarehouseAndCode { get; } = new();
+        public HashSet<(int WarehouseId, string BinCode)> ExistingBinKeys { get; } = new();
+        public Dictionary<(string ItemCode, string SerialNumber), ItemInstance> InstancesByItemAndSerial { get; } = new();
+        public Dictionary<string, ItemInstance> InstancesBySerialOrBarcode { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<int, CurrentItemLocation> CurrentLocationsByInstanceId { get; } = new();
+        public HashSet<int> OccupiedBinIds { get; } = new();
+        public HashSet<string> BorrowDocumentNos { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> RepairDocumentNos { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<(ExternalPartyType PartyType, string PartyCode)> ActivePartyKeys { get; } = new();
+        public HashSet<(int WarehouseId, int ItemId, string SnCode)> QuantityBalanceKeys { get; } = new();
+    }
     public async Task<ServiceResult<int>> UploadAsync(string importType, string fileName, Stream fileStream, CurrentUserContext user, CancellationToken cancellationToken = default)
     {
         importType = NormalizeImportType(importType);
@@ -142,10 +159,11 @@ public sealed class ImportExportService : IImportService, IExportService
         var blocking = 0;
         var dataRows = batch.Rows.OrderBy(x => x.RowNumber).Select(x => new { Row = x, Data = Row(x) }).ToArray();
         var batchErrors = BuildBatchValidationErrors(batch.ImportType, dataRows.Select(x => (x.Row, x.Data)).ToArray());
+        var validationContext = await BuildImportValidationContextAsync(batch.ImportType, dataRows.Select(x => x.Data).ToArray(), cancellationToken);
         foreach (var rowData in dataRows)
         {
             var row = rowData.Row;
-            var errors = await ValidateRowAsync(batch.ImportType, rowData.Data, user, cancellationToken);
+            var errors = ValidateRow(batch.ImportType, rowData.Data, validationContext, user);
             if (batchErrors.TryGetValue(row.Id, out var extraErrors))
             {
                 errors.AddRange(extraErrors);
@@ -173,13 +191,28 @@ public sealed class ImportExportService : IImportService, IExportService
 
     public async Task<ServiceResult<int>> ConfirmAsync(int importBatchId, CurrentUserContext user, CancellationToken cancellationToken = default)
     {
-        var validate = await ValidateAsync(importBatchId, user, cancellationToken);
-        if (!validate.Success)
+        var batch = await _db.ImportBatches.Include(x => x.Rows).FirstOrDefaultAsync(x => x.Id == importBatchId, cancellationToken);
+        if (batch == null)
         {
-            return validate;
+            return ServiceResult<int>.Fail("Import batch not found.");
         }
 
-        var batch = await _db.ImportBatches.Include(x => x.Rows).FirstAsync(x => x.Id == importBatchId, cancellationToken);
+        if (!CanUseImportType(batch.ImportType, user))
+        {
+            return ServiceResult<int>.Fail("Current role cannot use this import type.");
+        }
+
+        if (!HasFreshValidation(batch))
+        {
+            var validate = await ValidateAsync(importBatchId, user, cancellationToken);
+            if (!validate.Success)
+            {
+                return validate;
+            }
+
+            batch = await _db.ImportBatches.Include(x => x.Rows).FirstAsync(x => x.Id == importBatchId, cancellationToken);
+        }
+
         if (batch.BlockingErrorRows > 0)
         {
             return ServiceResult<int>.Fail("Import batch has blocking errors.");
@@ -210,6 +243,29 @@ public sealed class ImportExportService : IImportService, IExportService
             await tx.CommitAsync(cancellationToken);
         }
         return ServiceResult<int>.Ok(inserted, "Import confirmed.");
+    }
+
+    private static bool HasFreshValidation(ImportBatch batch)
+    {
+        if (batch.Status != ImportBatchStatus.Validated || batch.BlockingErrorRows != 0 || !batch.UpdatedAt.HasValue)
+        {
+            return false;
+        }
+
+        if (batch.Rows.Count != batch.TotalRows)
+        {
+            return false;
+        }
+
+        var validatedAt = batch.UpdatedAt.Value;
+        return batch.Rows.All(row =>
+            row.IsValid &&
+            row.Severity == ValidationSeverity.Info &&
+            row.Message == "OK" &&
+            row.SuggestedFix == null &&
+            row.UpdatedAt.HasValue &&
+            row.UpdatedAt.Value <= validatedAt &&
+            row.CreatedAt <= validatedAt);
     }
 
     private async Task<int> ConfirmRowsAsync(string importType, IReadOnlyCollection<Dictionary<string, string>> rows, CurrentUserContext user, CancellationToken cancellationToken)
@@ -695,7 +751,217 @@ public sealed class ImportExportService : IImportService, IExportService
         return SimpleExcel.CreateWorkbook(Headers(user, "CompanyCode", "CompanyName", "BranchCode", "BranchName", "WarehouseCode", "WarehouseName", "ZoneCode", "ZoneName", "RackCode", "RackName", "ShelfCode", "ShelfName", "BinCode"), rows, ExcelText(user, "WarehouseStructure"));
     }
 
-    private async Task<List<string>> ValidateRowAsync(string importType, Dictionary<string, string> row, CurrentUserContext user, CancellationToken cancellationToken)
+    private async Task<ImportValidationContext> BuildImportValidationContextAsync(string importType, IReadOnlyCollection<Dictionary<string, string>> rows, CancellationToken cancellationToken)
+    {
+        var context = new ImportValidationContext();
+
+        var itemCodes = DistinctCodes(rows, "ItemCode");
+        foreach (var chunk in Batch(itemCodes))
+        {
+            var items = await _db.Items.AsNoTracking()
+                .Where(x => chunk.Contains(x.ItemCode.ToUpper()))
+                .ToListAsync(cancellationToken);
+            foreach (var item in items)
+            {
+                var key = NormalizeCode(item.ItemCode);
+                context.ExistingItemCodes.Add(key);
+                if (item.IsActive && !context.ActiveItemsByCode.ContainsKey(key))
+                {
+                    context.ActiveItemsByCode[key] = item;
+                }
+            }
+        }
+
+        var warehouseCodes = DistinctCodes(rows, "WarehouseCode", "TargetWarehouseCode");
+        foreach (var chunk in Batch(warehouseCodes))
+        {
+            var warehouses = await _db.Warehouses.AsNoTracking()
+                .Where(x => x.IsActive && chunk.Contains(x.WarehouseCode.ToUpper()))
+                .ToListAsync(cancellationToken);
+            foreach (var warehouse in warehouses)
+            {
+                context.ActiveWarehousesByCode.TryAdd(NormalizeCode(warehouse.WarehouseCode), warehouse);
+            }
+        }
+
+        var warehouseIds = context.ActiveWarehousesByCode.Values.Select(x => x.Id).ToHashSet();
+        var binCodes = DistinctCodes(rows, "BinCode", "ActualBinCode", "TargetBinCode", "ReturnLocationBinCode");
+        if (warehouseIds.Count > 0 && binCodes.Length > 0)
+        {
+            foreach (var chunk in Batch(binCodes))
+            {
+                var bins = await _db.BinLocations.AsNoTracking()
+                    .Where(x => chunk.Contains(x.BinCode.ToUpper()))
+                    .ToListAsync(cancellationToken);
+                foreach (var bin in bins)
+                {
+                    if (!warehouseIds.Contains(bin.WarehouseId))
+                    {
+                        continue;
+                    }
+
+                    var key = (bin.WarehouseId, NormalizeCode(bin.BinCode));
+                    context.ExistingBinKeys.Add(key);
+                    if (bin.IsActive && !context.ActiveBinsByWarehouseAndCode.ContainsKey(key))
+                    {
+                        context.ActiveBinsByWarehouseAndCode[key] = bin;
+                    }
+                }
+            }
+        }
+
+        var serials = DistinctCodes(rows, "SerialNumber", "Barcode");
+        var itemCodeSet = itemCodes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (serials.Length > 0)
+        {
+            foreach (var chunk in Batch(serials))
+            {
+                var instances = await _db.ItemInstances.AsNoTracking()
+                    .Include(x => x.Item)
+                    .Where(x =>
+                        (x.SerialNumber != null && chunk.Contains(x.SerialNumber.ToUpper())) ||
+                        (x.Barcode != null && chunk.Contains(x.Barcode.ToUpper())))
+                    .ToListAsync(cancellationToken);
+                foreach (var instance in instances)
+                {
+                    if (!string.IsNullOrWhiteSpace(instance.SerialNumber))
+                    {
+                        context.InstancesBySerialOrBarcode.TryAdd(NormalizeCode(instance.SerialNumber), instance);
+                    }
+                    if (!string.IsNullOrWhiteSpace(instance.Barcode))
+                    {
+                        context.InstancesBySerialOrBarcode.TryAdd(NormalizeCode(instance.Barcode), instance);
+                    }
+
+                    if (instance.Item == null)
+                    {
+                        continue;
+                    }
+
+                    var itemCode = NormalizeCode(instance.Item.ItemCode);
+                    if (itemCodeSet.Count > 0 && !itemCodeSet.Contains(itemCode))
+                    {
+                        continue;
+                    }
+
+                    var key = (itemCode, NormalizeCode(instance.SerialNumber));
+                    context.InstancesByItemAndSerial.TryAdd(key, instance);
+                }
+            }
+        }
+
+        var instanceIds = context.InstancesByItemAndSerial.Values.Select(x => x.Id).Distinct().ToArray();
+        foreach (var chunk in Batch(instanceIds))
+        {
+            var locations = await _db.CurrentItemLocations.AsNoTracking()
+                .Where(x => chunk.Contains(x.ItemInstanceId))
+                .ToListAsync(cancellationToken);
+            foreach (var location in locations)
+            {
+                context.CurrentLocationsByInstanceId.TryAdd(location.ItemInstanceId, location);
+            }
+        }
+
+        var binIds = context.ActiveBinsByWarehouseAndCode.Values.Select(x => x.Id).Distinct().ToArray();
+        foreach (var chunk in Batch(binIds))
+        {
+            var occupiedBinIds = await _db.CurrentItemLocations.AsNoTracking()
+                .Where(x =>
+                    x.BinLocationId.HasValue &&
+                    chunk.Contains(x.BinLocationId.Value) &&
+                    x.ItemInstance != null &&
+                    x.ItemInstance.IsActive &&
+                    x.ItemInstance.Status != ItemStatus.Lost &&
+                    x.ItemInstance.Status != ItemStatus.Disposed)
+                .Select(x => x.BinLocationId!.Value)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+            foreach (var binId in occupiedBinIds)
+            {
+                context.OccupiedBinIds.Add(binId);
+            }
+        }
+
+        var borrowDocumentNos = DistinctCodes(rows, "BorrowDocumentNo");
+        foreach (var chunk in Batch(borrowDocumentNos))
+        {
+            var documentNos = await _db.BorrowDocuments.AsNoTracking()
+                .Where(x => chunk.Contains(x.DocumentNo))
+                .Select(x => x.DocumentNo)
+                .ToListAsync(cancellationToken);
+            foreach (var documentNo in documentNos)
+            {
+                context.BorrowDocumentNos.Add(NormalizeCode(documentNo));
+            }
+        }
+
+        var repairDocumentNos = DistinctCodes(rows, "RepairDocumentNo");
+        foreach (var chunk in Batch(repairDocumentNos))
+        {
+            var documentNos = await _db.RepairDocuments.AsNoTracking()
+                .Where(x => chunk.Contains(x.DocumentNo))
+                .Select(x => x.DocumentNo)
+                .ToListAsync(cancellationToken);
+            foreach (var documentNo in documentNos)
+            {
+                context.RepairDocumentNos.Add(NormalizeCode(documentNo));
+            }
+        }
+
+        var repairVendorCodes = DistinctCodes(rows, "RepairVendorCode");
+        foreach (var chunk in Batch(repairVendorCodes))
+        {
+            var partyCodes = await _db.ExternalParties.AsNoTracking()
+                .Where(x => x.PartyType == ExternalPartyType.RepairVendor && x.IsActive && chunk.Contains(x.PartyCode))
+                .Select(x => x.PartyCode)
+                .ToListAsync(cancellationToken);
+            foreach (var partyCode in partyCodes)
+            {
+                context.ActivePartyKeys.Add((ExternalPartyType.RepairVendor, NormalizeCode(partyCode)));
+            }
+        }
+
+        if (importType is "QuantityOutbound" or "QuantityAdjust")
+        {
+            var balanceCandidates = rows
+                .Select(row =>
+                {
+                    context.ActiveWarehousesByCode.TryGetValue(NormalizeCode(Value(row, "WarehouseCode")), out var warehouse);
+                    context.ActiveItemsByCode.TryGetValue(NormalizeCode(Value(row, "ItemCode")), out var item);
+                    return new
+                    {
+                        Warehouse = warehouse,
+                        Item = item,
+                        SnCode = NormalizeCode(Value(row, "SnCode"))
+                    };
+                })
+                .Where(x => x.Warehouse != null && x.Item != null && !string.IsNullOrWhiteSpace(x.SnCode))
+                .Select(x => (x.Warehouse!.Id, x.Item!.Id, x.SnCode))
+                .Distinct()
+                .ToArray();
+
+            var candidateSet = balanceCandidates.ToHashSet();
+            foreach (var chunk in Batch(balanceCandidates.Select(x => x.SnCode).Distinct(StringComparer.OrdinalIgnoreCase)))
+            {
+                var balances = await _db.QuantityStockBalances.AsNoTracking()
+                    .Where(x => chunk.Contains(x.SnCode))
+                    .Select(x => new { x.WarehouseId, x.ItemId, x.SnCode })
+                    .ToListAsync(cancellationToken);
+                foreach (var balance in balances)
+                {
+                    var key = (balance.WarehouseId, balance.ItemId, NormalizeCode(balance.SnCode));
+                    if (candidateSet.Contains(key))
+                    {
+                        context.QuantityBalanceKeys.Add(key);
+                    }
+                }
+            }
+        }
+
+        return context;
+    }
+
+    private static List<string> ValidateRow(string importType, Dictionary<string, string> row, ImportValidationContext context, CurrentUserContext user)
     {
         var errors = RequiredColumns(importType).Where(x => string.IsNullOrWhiteSpace(Value(row, x))).Select(x => $"{x} is required.").ToList();
         if (errors.Count > 0)
@@ -706,47 +972,47 @@ public sealed class ImportExportService : IImportService, IExportService
         switch (importType)
         {
             case "Inbound":
-                await ValidateInboundRowAsync(row, errors, user, cancellationToken);
+                ValidateInboundRow(row, errors, context, user);
                 break;
             case "InventoryCheck":
-                await ValidateInventoryCheckRowAsync(row, errors, user, cancellationToken);
+                ValidateInventoryCheckRow(row, errors, context, user);
                 break;
             case "RepairSend":
-                await ValidateRepairSendRowAsync(row, errors, user, cancellationToken);
+                ValidateRepairSendRow(row, errors, context, user);
                 break;
             case "BorrowLend":
-                await ValidateBorrowLendRowAsync(row, errors, user, cancellationToken);
+                ValidateBorrowLendRow(row, errors, context, user);
                 break;
             case "WarehouseStructure":
-                await ValidateWarehouseStructureRowAsync(row, errors, user, cancellationToken);
+                ValidateWarehouseStructureRow(row, errors, context, user);
                 break;
             case "ItemMaster":
-                await ValidateItemMasterRowAsync(row, errors, cancellationToken);
+                ValidateItemMasterRow(row, errors, context);
                 break;
             case "ItemMasterUpdate":
                 break;
             case "QuantityInbound":
             case "QuantityOutbound":
             case "QuantityAdjust":
-                await ValidateQuantityOperationRowAsync(importType, row, errors, user, cancellationToken);
+                ValidateQuantityOperationRow(importType, row, errors, context, user);
                 break;
             case "MoveLocation":
-                await ValidateMoveLocationRowAsync(row, errors, user, cancellationToken);
+                ValidateMoveLocationRow(row, errors, context, user);
                 break;
             case "BorrowReturn":
-                await ValidateBorrowReturnRowAsync(row, errors, user, cancellationToken);
+                ValidateBorrowReturnRow(row, errors, context);
                 break;
             case "RepairReceive":
-                await ValidateRepairReceiveRowAsync(row, errors, user, cancellationToken);
+                ValidateRepairReceiveRow(row, errors, context);
                 break;
         }
 
         return errors;
     }
 
-    private async Task ValidateInboundRowAsync(Dictionary<string, string> row, List<string> errors, CurrentUserContext user, CancellationToken cancellationToken)
+    private static void ValidateInboundRow(Dictionary<string, string> row, List<string> errors, ImportValidationContext context, CurrentUserContext user)
     {
-        var item = await FindItemAsync(Value(row, "ItemCode"), cancellationToken);
+        var item = FindPreloadedItem(context, Value(row, "ItemCode"));
         if (item == null)
         {
             errors.Add("ItemCode does not exist.");
@@ -756,7 +1022,7 @@ public sealed class ImportExportService : IImportService, IExportService
             errors.Add("SerialNumber is required for serial-managed item.");
         }
 
-        var warehouse = await FindWarehouseAsync(Value(row, "WarehouseCode"), cancellationToken);
+        var warehouse = FindPreloadedWarehouse(context, Value(row, "WarehouseCode"));
         if (warehouse == null)
         {
             errors.Add("WarehouseCode does not exist.");
@@ -766,37 +1032,32 @@ public sealed class ImportExportService : IImportService, IExportService
             errors.Add("Current user cannot import into this warehouse.");
         }
 
-        if (warehouse != null && await FindBinAsync(warehouse.Id, Value(row, "BinCode"), cancellationToken) == null)
+        var bin = warehouse == null ? null : FindPreloadedBin(context, warehouse.Id, Value(row, "BinCode"));
+        if (warehouse != null && bin == null)
         {
             errors.Add("BinCode is invalid for warehouse.");
         }
         else if (warehouse != null)
         {
-            var bin = await FindBinAsync(warehouse.Id, Value(row, "BinCode"), cancellationToken);
-            if (bin != null && await _db.CurrentItemLocations.AnyAsync(x =>
-                x.BinLocationId == bin.Id &&
-                x.ItemInstance != null &&
-                x.ItemInstance.IsActive &&
-                x.ItemInstance.Status != ItemStatus.Lost &&
-                x.ItemInstance.Status != ItemStatus.Disposed, cancellationToken))
+            if (bin != null && context.OccupiedBinIds.Contains(bin.Id))
             {
                 errors.Add("BinCode already contains another active item.");
             }
         }
 
-        if(item != null)
+        if (item != null)
         {
             var serial = Value(row, "SerialNumber");
-            if (!string.IsNullOrWhiteSpace(serial) && await _db.ItemInstances.AnyAsync(x => x.SerialNumber == serial && x.ItemId == item.Id, cancellationToken))
+            if (!string.IsNullOrWhiteSpace(serial) && HasPreloadedInstance(context, item.ItemCode, serial))
             {
                 errors.Add("SerialNumber already exists.");
             }
         }
     }
 
-    private async Task ValidateInventoryCheckRowAsync(Dictionary<string, string> row, List<string> errors, CurrentUserContext user, CancellationToken cancellationToken)
+    private static void ValidateInventoryCheckRow(Dictionary<string, string> row, List<string> errors, ImportValidationContext context, CurrentUserContext user)
     {
-        var warehouse = await FindWarehouseAsync(Value(row, "WarehouseCode"), cancellationToken);
+        var warehouse = FindPreloadedWarehouse(context, Value(row, "WarehouseCode"));
         if (warehouse == null)
         {
             errors.Add("WarehouseCode does not exist.");
@@ -827,7 +1088,7 @@ public sealed class ImportExportService : IImportService, IExportService
         }
         else if (warehouse != null)
         {
-            var bin = await FindBinAsync(warehouse.Id, binCode, cancellationToken);
+            var bin = FindPreloadedBin(context, warehouse.Id, binCode);
             if (bin == null)
             {
                 errors.Add("BinCode does not exist in the checked warehouse.");
@@ -835,9 +1096,9 @@ public sealed class ImportExportService : IImportService, IExportService
         }
     }
 
-    private async Task ValidateBorrowLendRowAsync(Dictionary<string, string> row, List<string> errors, CurrentUserContext user, CancellationToken cancellationToken)
+    private static void ValidateBorrowLendRow(Dictionary<string, string> row, List<string> errors, ImportValidationContext context, CurrentUserContext user)
     {
-        var instance = await FindInstanceAsync(row, cancellationToken);
+        var instance = FindPreloadedInstance(context, row);
         if (instance == null)
         {
             errors.Add("SerialNumber does not exist.");
@@ -848,7 +1109,7 @@ public sealed class ImportExportService : IImportService, IExportService
         }
         else
         {
-            var current = await _db.CurrentItemLocations.AsNoTracking().FirstOrDefaultAsync(x => x.ItemInstanceId == instance.Id, cancellationToken);
+            context.CurrentLocationsByInstanceId.TryGetValue(instance.Id, out var current);
             if (current?.WarehouseId != null && !user.CanAccessWarehouse(current.WarehouseId.Value))
             {
                 errors.Add("Current user cannot lend items from this warehouse.");
@@ -861,10 +1122,9 @@ public sealed class ImportExportService : IImportService, IExportService
         }
     }
 
-    private async Task ValidateRepairSendRowAsync(Dictionary<string, string> row, List<string> errors, CurrentUserContext user, CancellationToken cancellationToken)
+    private static void ValidateRepairSendRow(Dictionary<string, string> row, List<string> errors, ImportValidationContext context, CurrentUserContext user)
     {
-        var vendor = await _db.ExternalParties.AsNoTracking().FirstOrDefaultAsync(x => x.PartyCode == Value(row, "RepairVendorCode") && x.PartyType == ExternalPartyType.RepairVendor && x.IsActive, cancellationToken);
-        if (vendor == null)
+        if (!context.ActivePartyKeys.Contains((ExternalPartyType.RepairVendor, NormalizeCode(Value(row, "RepairVendorCode")))))
         {
             errors.Add("RepairVendorCode does not exist.");
         }
@@ -874,7 +1134,7 @@ public sealed class ImportExportService : IImportService, IExportService
             errors.Add("TargetExternalLocation is required.");
         }
 
-        var instance = await FindInstanceAsync(row, cancellationToken);
+        var instance = FindPreloadedInstance(context, row);
         if (instance == null)
         {
             errors.Add("SerialNumber or Barcode does not exist.");
@@ -885,7 +1145,7 @@ public sealed class ImportExportService : IImportService, IExportService
         }
         else
         {
-            var current = await _db.CurrentItemLocations.AsNoTracking().FirstOrDefaultAsync(x => x.ItemInstanceId == instance.Id, cancellationToken);
+            context.CurrentLocationsByInstanceId.TryGetValue(instance.Id, out var current);
             if (current?.WarehouseId != null && !user.CanAccessWarehouse(current.WarehouseId.Value))
             {
                 errors.Add("Current user cannot send this item to repair.");
@@ -893,16 +1153,16 @@ public sealed class ImportExportService : IImportService, IExportService
         }
     }
 
-    private async Task ValidateWarehouseStructureRowAsync(Dictionary<string, string> row, List<string> errors, CurrentUserContext user, CancellationToken cancellationToken)
+    private static void ValidateWarehouseStructureRow(Dictionary<string, string> row, List<string> errors, ImportValidationContext context, CurrentUserContext user)
     {
         var warehouseCode = Value(row, "WarehouseCode");
         var binCode = Value(row, "BinCode");
         if (!string.IsNullOrWhiteSpace(warehouseCode) && !string.IsNullOrWhiteSpace(binCode))
         {
-            var warehouse = await FindWarehouseAsync(warehouseCode, cancellationToken);
+            var warehouse = FindPreloadedWarehouse(context, warehouseCode);
             if (warehouse != null)
             {
-                if (await _db.BinLocations.AnyAsync(x => x.WarehouseId == warehouse.Id && x.BinCode == binCode, cancellationToken))
+                if (context.ExistingBinKeys.Contains((warehouse.Id, NormalizeCode(binCode))))
                 {
                     errors.Add($"Bin code {binCode} already exists in warehouse {warehouseCode}.");
                 }
@@ -914,12 +1174,12 @@ public sealed class ImportExportService : IImportService, IExportService
         }
     }
 
-    private async Task ValidateItemMasterRowAsync(Dictionary<string, string> row, List<string> errors, CancellationToken cancellationToken)
+    private static void ValidateItemMasterRow(Dictionary<string, string> row, List<string> errors, ImportValidationContext context)
     {
         var itemCode = Value(row, "ItemCode");
         if (!string.IsNullOrWhiteSpace(itemCode))
         {
-            if (await _db.Items.AnyAsync(x => x.ItemCode == itemCode, cancellationToken))
+            if (context.ExistingItemCodes.Contains(NormalizeCode(itemCode)))
             {
                 errors.Add($"ItemCode {itemCode} already exists in the system.");
             }
@@ -1059,10 +1319,10 @@ public sealed class ImportExportService : IImportService, IExportService
 
     // ─── New Validate Methods ────────────────────────────────────────────────
 
-    private async Task ValidateQuantityOperationRowAsync(string operationType, Dictionary<string, string> row, List<string> errors, CurrentUserContext user, CancellationToken cancellationToken)
+    private static void ValidateQuantityOperationRow(string operationType, Dictionary<string, string> row, List<string> errors, ImportValidationContext context, CurrentUserContext user)
     {
         var warehouseCode = Value(row, "WarehouseCode");
-        var warehouse = await FindWarehouseAsync(warehouseCode, cancellationToken);
+        var warehouse = FindPreloadedWarehouse(context, warehouseCode);
         if (warehouse == null) { errors.Add("WarehouseCode does not exist."); return; }
         if (!user.CanAccessWarehouse(warehouse.Id)) { errors.Add("Current user cannot access this warehouse."); return; }
 
@@ -1080,66 +1340,64 @@ public sealed class ImportExportService : IImportService, IExportService
         // For Outbound: check balance exists
         if (operationType == "Issue" || operationType == "Adjust")
         {
-            var item = await FindItemAsync(itemCode, cancellationToken);
+            var item = FindPreloadedItem(context, itemCode);
             if (item != null)
             {
-                var balanceExists = await _db.QuantityStockBalances.AnyAsync(
-                    x => x.WarehouseId == warehouse.Id && x.ItemId == item.Id && x.SnCode == snCode,
-                    cancellationToken);
+                var balanceExists = context.QuantityBalanceKeys.Contains((warehouse.Id, item.Id, snCode));
                 if (!balanceExists && operationType == "Issue")
                     errors.Add($"SnCode '{snCode}' has no stock balance in this warehouse.");
             }
         }
     }
 
-    private async Task ValidateMoveLocationRowAsync(Dictionary<string, string> row, List<string> errors, CurrentUserContext user, CancellationToken cancellationToken)
+    private static void ValidateMoveLocationRow(Dictionary<string, string> row, List<string> errors, ImportValidationContext context, CurrentUserContext user)
     {
-        var instance = await FindInstanceAsync(row, cancellationToken);
+        var instance = FindPreloadedInstance(context, row);
         if (instance == null) { errors.Add("SerialNumber or Barcode does not exist."); return; }
 
-        var current = await _db.CurrentItemLocations.AsNoTracking().FirstOrDefaultAsync(x => x.ItemInstanceId == instance.Id, cancellationToken);
+        context.CurrentLocationsByInstanceId.TryGetValue(instance.Id, out var current);
         if (current?.WarehouseId != null && !user.CanAccessWarehouse(current.WarehouseId.Value))
             errors.Add("Current user cannot move items from this warehouse.");
 
         var targetWarehouseCode = Value(row, "TargetWarehouseCode");
-        var targetWarehouse = await FindWarehouseAsync(targetWarehouseCode, cancellationToken);
+        var targetWarehouse = FindPreloadedWarehouse(context, targetWarehouseCode);
         if (targetWarehouse == null) { errors.Add("TargetWarehouseCode does not exist."); return; }
         if (!user.CanAccessWarehouse(targetWarehouse.Id)) errors.Add("Current user cannot move items to this warehouse.");
 
-        var targetBin = await FindBinAsync(targetWarehouse.Id, Value(row, "TargetBinCode"), cancellationToken);
+        var targetBin = FindPreloadedBin(context, targetWarehouse.Id, Value(row, "TargetBinCode"));
         if (targetBin == null) errors.Add("TargetBinCode does not exist in target warehouse.");
     }
 
-    private async Task ValidateBorrowReturnRowAsync(Dictionary<string, string> row, List<string> errors, CurrentUserContext user, CancellationToken cancellationToken)
+    private static void ValidateBorrowReturnRow(Dictionary<string, string> row, List<string> errors, ImportValidationContext context)
     {
-        var instance = await FindInstanceAsync(row, cancellationToken);
+        var instance = FindPreloadedInstance(context, row);
         if (instance == null) { errors.Add("SerialNumber or Barcode does not exist."); return; }
         if (instance.Status != ItemStatus.LentOut) errors.Add("Item is not currently lent out.");
 
         var borrowDocNo = NullIfEmpty(Value(row, "BorrowDocumentNo"));
         if (borrowDocNo != null)
         {
-            var docExists = await _db.BorrowDocuments.AnyAsync(x => x.DocumentNo == borrowDocNo, cancellationToken);
+            var docExists = context.BorrowDocumentNos.Contains(NormalizeCode(borrowDocNo));
             if (!docExists) errors.Add($"BorrowDocumentNo '{borrowDocNo}' not found.");
         }
     }
 
-    private async Task ValidateRepairReceiveRowAsync(Dictionary<string, string> row, List<string> errors, CurrentUserContext user, CancellationToken cancellationToken)
+    private static void ValidateRepairReceiveRow(Dictionary<string, string> row, List<string> errors, ImportValidationContext context)
     {
-        var instance = await FindInstanceAsync(row, cancellationToken);
+        var instance = FindPreloadedInstance(context, row);
         if (instance == null) { errors.Add("SerialNumber or Barcode does not exist."); return; }
         if (instance.Status != ItemStatus.Repairing) errors.Add("Item is not currently under repair.");
 
         var repairDocNo = NullIfEmpty(Value(row, "RepairDocumentNo"));
         if (repairDocNo != null)
         {
-            var docExists = await _db.RepairDocuments.AnyAsync(x => x.DocumentNo == repairDocNo, cancellationToken);
+            var docExists = context.RepairDocumentNos.Contains(NormalizeCode(repairDocNo));
             if (!docExists) errors.Add($"RepairDocumentNo '{repairDocNo}' not found.");
         }
 
-        var targetWarehouse = await FindWarehouseAsync(Value(row, "TargetWarehouseCode"), cancellationToken);
+        var targetWarehouse = FindPreloadedWarehouse(context, Value(row, "TargetWarehouseCode"));
         if (targetWarehouse == null) { errors.Add("TargetWarehouseCode does not exist."); return; }
-        var targetBin = await FindBinAsync(targetWarehouse.Id, Value(row, "TargetBinCode"), cancellationToken);
+        var targetBin = FindPreloadedBin(context, targetWarehouse.Id, Value(row, "TargetBinCode"));
         if (targetBin == null) errors.Add("TargetBinCode does not exist in target warehouse.");
     }
 
@@ -1215,21 +1473,47 @@ public sealed class ImportExportService : IImportService, IExportService
     private async Task<int> ConfirmMoveLocationImportAsync(IReadOnlyCollection<Dictionary<string, string>> rows, CurrentUserContext user, CancellationToken cancellationToken)
     {
         var count = 0;
-        foreach (var row in rows)
+        var context = await BuildImportValidationContextAsync("MoveLocation", rows, cancellationToken);
+        foreach (var group in rows.GroupBy(row => new
         {
-            var instance = await FindInstanceAsync(row, cancellationToken) ?? throw new InvalidOperationException("Item instance not found.");
-            var targetWarehouse = await FindWarehouseAsync(Value(row, "TargetWarehouseCode"), cancellationToken) ?? throw new InvalidOperationException("Target warehouse not found.");
-            var targetBin = await FindBinAsync(targetWarehouse.Id, Value(row, "TargetBinCode"), cancellationToken) ?? throw new InvalidOperationException("Target bin not found.");
+            TargetWarehouseCode = NormalizeCode(Value(row, "TargetWarehouseCode")),
+            DocumentDate = ParseImportDate(Value(row, "DocumentDate")),
+            Note = NullIfEmpty(Value(row, "Note"))
+        }))
+        {
+            var firstRow = group.First();
+            var targetWarehouse = FindPreloadedWarehouse(context, Value(firstRow, "TargetWarehouseCode"))
+                ?? throw new InvalidOperationException("Target warehouse not found.");
 
-            var request = new MoveLocationRequest
+            foreach (var batch in SplitByUniqueTargetBin(group))
             {
-                WarehouseId = targetWarehouse.Id,
-                Lines = new[] { new MoveLocationLineRequest { SerialNumber = instance.SerialNumber ?? string.Empty, ItemCode = Value(row, "ItemCode"), TargetBinCode = targetBin.BinCode } },
-                Note        = NullIfEmpty(Value(row, "Note"))
-            };
-            var result = await _moveLocationService.MoveLocationAsync(request, user, cancellationToken);
-            if (!result.Success) throw new InvalidOperationException($"MoveLocation failed: {result.Message}");
-            count++;
+                var lines = batch.Select(row =>
+                {
+                    var instance = FindPreloadedInstance(context, row) ?? throw new InvalidOperationException("Item instance not found.");
+                    var targetBin = FindPreloadedBin(context, targetWarehouse.Id, Value(row, "TargetBinCode"))
+                        ?? throw new InvalidOperationException("Target bin not found.");
+
+                    return new MoveLocationLineRequest
+                    {
+                        SerialNumber = instance.SerialNumber ?? string.Empty,
+                        ItemCode = instance.Item?.ItemCode ?? Value(row, "ItemCode"),
+                        TargetBinCode = targetBin.BinCode,
+                        Note = NullIfEmpty(Value(row, "Note"))
+                    };
+                }).ToArray();
+
+                var request = new MoveLocationRequest
+                {
+                    WarehouseId = targetWarehouse.Id,
+                    WarehouseCode = targetWarehouse.WarehouseCode,
+                    DocumentDate = group.Key.DocumentDate,
+                    Lines = lines,
+                    Note = group.Key.Note
+                };
+                var result = await _moveLocationService.MoveLocationAsync(request, user, cancellationToken);
+                if (!result.Success) throw new InvalidOperationException($"MoveLocation failed: {result.Message}");
+                count += lines.Length;
+            }
         }
         return count;
     }
@@ -1268,36 +1552,89 @@ public sealed class ImportExportService : IImportService, IExportService
     private async Task<int> ConfirmRepairReceiveImportAsync(IReadOnlyCollection<Dictionary<string, string>> rows, CurrentUserContext user, CancellationToken cancellationToken)
     {
         var count = 0;
-        foreach (var group in rows.GroupBy(x => NullIfEmpty(Value(x, "RepairDocumentNo"))))
+        var context = await BuildImportValidationContextAsync("RepairReceive", rows, cancellationToken);
+        foreach (var group in rows.GroupBy(row => new
+        {
+            RepairDocumentNo = NullIfEmpty(Value(row, "RepairDocumentNo")),
+            TargetWarehouseCode = NormalizeCode(Value(row, "TargetWarehouseCode"))
+        }))
         {
             var firstRow = group.First();
-            var targetWarehouse = await FindWarehouseAsync(Value(firstRow, "TargetWarehouseCode"), cancellationToken) ?? throw new InvalidOperationException("Target warehouse not found.");
-            var targetBin = await FindBinAsync(targetWarehouse.Id, Value(firstRow, "TargetBinCode"), cancellationToken) ?? throw new InvalidOperationException("Target bin not found.");
+            var targetWarehouse = FindPreloadedWarehouse(context, Value(firstRow, "TargetWarehouseCode"))
+                ?? throw new InvalidOperationException("Target warehouse not found.");
 
-            foreach (var row in group)
+            foreach (var batch in SplitByUniqueTargetBin(group))
             {
-                var instance = await FindInstanceAsync(row, cancellationToken) ?? throw new InvalidOperationException("Item instance not found.");
-                Enum.TryParse<ItemStatus>(Value(row, "NewStatus"), true, out var newStatus);
-                if (newStatus == default) newStatus = ItemStatus.Normal;
-                var repairResult = Enum.TryParse<RepairResult>(Value(row, "NewStatus"), true, out var parsedRepairResult)
-                    ? parsedRepairResult
-                    : newStatus is ItemStatus.Damaged or ItemStatus.Scrapped or ItemStatus.Lost ? RepairResult.Failed : RepairResult.Success;
+                var firstBatchRow = batch.First();
+                var firstTargetBin = FindPreloadedBin(context, targetWarehouse.Id, Value(firstBatchRow, "TargetBinCode"))
+                    ?? throw new InvalidOperationException("Target bin not found.");
+                var lines = batch.Select(row =>
+                {
+                    var instance = FindPreloadedInstance(context, row) ?? throw new InvalidOperationException("Item instance not found.");
+                    var targetBin = FindPreloadedBin(context, targetWarehouse.Id, Value(row, "TargetBinCode"))
+                        ?? throw new InvalidOperationException("Target bin not found.");
+                    Enum.TryParse<ItemStatus>(Value(row, "NewStatus"), true, out var newStatus);
+                    if (newStatus == default) newStatus = ItemStatus.Normal;
+                    var repairResult = Enum.TryParse<RepairResult>(Value(row, "NewStatus"), true, out var parsedRepairResult)
+                        ? parsedRepairResult
+                        : newStatus is ItemStatus.Damaged or ItemStatus.Scrapped or ItemStatus.Lost ? RepairResult.Failed : RepairResult.Success;
+
+                    return new RepairReceiveLineRequest
+                    {
+                        SerialNumber = instance.SerialNumber ?? string.Empty,
+                        ItemCode = instance.Item?.ItemCode ?? string.Empty,
+                        Result = repairResult,
+                        TargetBinCode = targetBin.BinCode,
+                        Note = NullIfEmpty(Value(row, "Note"))
+                    };
+                }).ToArray();
 
                 var request = new RepairReceiveRequest
                 {
-                    RepairDocumentNo  = group.Key ?? string.Empty,
+                    RepairDocumentNo = group.Key.RepairDocumentNo ?? string.Empty,
                     TargetWarehouseId = targetWarehouse.Id,
-                    TargetBinCode     = targetBin.BinCode,
-                    Note              = NullIfEmpty(Value(row, "Note")),
-                    Lines             = new[] { new RepairReceiveLineRequest { SerialNumber = instance.SerialNumber ?? string.Empty, ItemCode = instance.Item?.ItemCode ?? string.Empty, Result = repairResult, TargetBinCode = targetBin.BinCode, Note = NullIfEmpty(Value(row, "Note")) } }
+                    TargetBinCode = firstTargetBin.BinCode,
+                    Note = NullIfEmpty(Value(firstBatchRow, "Note")),
+                    Lines = lines
                 };
                 var result = await _repairService.ReceiveFromRepairAsync(request, user, cancellationToken);
                 if (!result.Success) throw new InvalidOperationException($"RepairReceive failed: {result.Message}");
-                count++;
+                count += lines.Length;
             }
         }
         return count;
     }
+
+    private static IEnumerable<IReadOnlyCollection<Dictionary<string, string>>> SplitByUniqueTargetBin(IEnumerable<Dictionary<string, string>> rows)
+    {
+        var batch = new List<Dictionary<string, string>>();
+        var targetBins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
+        {
+            var targetBin = NormalizeCode(Value(row, "TargetBinCode"));
+            if (batch.Count > 0 && !targetBins.Add(targetBin))
+            {
+                yield return batch;
+                batch = new List<Dictionary<string, string>>();
+                targetBins.Clear();
+                targetBins.Add(targetBin);
+            }
+            else if (batch.Count == 0)
+            {
+                targetBins.Add(targetBin);
+            }
+
+            batch.Add(row);
+        }
+
+        if (batch.Count > 0)
+        {
+            yield return batch;
+        }
+    }
+
+    private static DateTime ParseImportDate(string value)
+        => DateTime.TryParse(value, out var parsed) ? parsed : DateTime.UtcNow.Date;
 
     private async Task<int> ConfirmItemMasterAsync(IReadOnlyCollection<Dictionary<string, string>> rows, CurrentUserContext user, CancellationToken cancellationToken)
     {
@@ -2762,6 +3099,80 @@ public sealed class ImportExportService : IImportService, IExportService
         return (value ?? string.Empty).Trim().ToUpperInvariant();
     }
 
+    private static string[] DistinctCodes(IReadOnlyCollection<Dictionary<string, string>> rows, params string[] keys)
+    {
+        return rows
+            .SelectMany(row => keys.Select(key => NormalizeCode(Value(row, key))))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static IEnumerable<T[]> Batch<T>(IEnumerable<T> values, int size = 1000)
+    {
+        var chunk = new List<T>(size);
+        foreach (var value in values)
+        {
+            chunk.Add(value);
+            if (chunk.Count < size)
+            {
+                continue;
+            }
+
+            yield return chunk.ToArray();
+            chunk.Clear();
+        }
+
+        if (chunk.Count > 0)
+        {
+            yield return chunk.ToArray();
+        }
+    }
+
+    private static Item? FindPreloadedItem(ImportValidationContext context, string code)
+    {
+        return context.ActiveItemsByCode.TryGetValue(NormalizeCode(code), out var item) ? item : null;
+    }
+
+    private static Warehouse? FindPreloadedWarehouse(ImportValidationContext context, string code)
+    {
+        return context.ActiveWarehousesByCode.TryGetValue(NormalizeCode(code), out var warehouse) ? warehouse : null;
+    }
+
+    private static BinLocation? FindPreloadedBin(ImportValidationContext context, int warehouseId, string binCode)
+    {
+        return context.ActiveBinsByWarehouseAndCode.TryGetValue((warehouseId, NormalizeCode(binCode)), out var bin) ? bin : null;
+    }
+
+    private static ItemInstance? FindPreloadedInstance(ImportValidationContext context, Dictionary<string, string> row)
+    {
+        var serial = NormalizeCode(Value(row, "SerialNumber"));
+        var barcode = NormalizeCode(Value(row, "Barcode"));
+        var code = NormalizeCode(Value(row, "ItemCode"));
+        if (!string.IsNullOrWhiteSpace(serial) &&
+            !string.IsNullOrWhiteSpace(code) &&
+            context.InstancesByItemAndSerial.TryGetValue((code, serial), out var instanceByItem))
+        {
+            return instanceByItem;
+        }
+
+        if (!string.IsNullOrWhiteSpace(serial) &&
+            context.InstancesBySerialOrBarcode.TryGetValue(serial, out var instanceBySerial))
+        {
+            return instanceBySerial;
+        }
+
+        return !string.IsNullOrWhiteSpace(barcode) &&
+               context.InstancesBySerialOrBarcode.TryGetValue(barcode, out var instanceByBarcode)
+            ? instanceByBarcode
+            : null;
+    }
+
+    private static bool HasPreloadedInstance(ImportValidationContext context, string itemCode, string serialNumber)
+    {
+        return context.InstancesByItemAndSerial.ContainsKey((NormalizeCode(itemCode), NormalizeCode(serialNumber)));
+    }
+
     private static string NormalizeHeaderKey(string value)
     {
         return value.Trim().Replace(" ", string.Empty).Replace("_", string.Empty).ToUpperInvariant();
@@ -3495,7 +3906,7 @@ public sealed class ImportExportService : IImportService, IExportService
             ["AuditEntity.SystemUser"] = "System User",
             ["AuditEntity.ImportBatch"] = "Import Batch",
 
-            ["Enum.ItemStatus.InStock"] = "Normal",
+            ["Enum.ItemStatus.Normal"] = "Normal",
             ["Enum.ItemStatus.Reserved"] = "Reserved",
             ["Enum.ItemStatus.Repairing"] = "Repairing",
             ["Enum.ItemStatus.LentOut"] = "Lent out",
@@ -3593,7 +4004,7 @@ public sealed class ImportExportService : IImportService, IExportService
             ["ReferenceNo"] = "参考号",
             ["Result"] = "结果",
 
-            ["Enum.ItemStatus.InStock"] = "在库",
+            ["Enum.ItemStatus.Normal"] = "通过",
             ["Enum.ItemStatus.Reserved"] = "已预留",
             ["Enum.ItemStatus.Repairing"] = "维修中",
             ["Enum.ItemStatus.LentOut"] = "已借出",

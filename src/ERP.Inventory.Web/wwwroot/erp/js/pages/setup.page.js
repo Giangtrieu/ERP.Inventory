@@ -518,7 +518,7 @@ async function loadSystemErrors(page = 1, pageSize = AppState.pageSize || 25){
 
     $('#systemErrors').html(`
       <div class="table-wrap">
-        <table class="data-table">
+        <table class="data-table" style="table-layout:fixed;">
           <thead>
             <tr>
               <th class="px-3">${UI.t('Error Code')}</th>

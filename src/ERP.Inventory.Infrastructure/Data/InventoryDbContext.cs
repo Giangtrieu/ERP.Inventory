@@ -113,6 +113,8 @@ public class InventoryDbContext : DbContext
     private static void ConfigureTracking(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<CurrentItemLocation>().HasIndex(x => x.ItemInstanceId).IsUnique();
+        modelBuilder.Entity<CurrentItemLocation>().HasIndex(x => new { x.WarehouseId, x.BinLocationId });
+        modelBuilder.Entity<CurrentItemLocation>().HasIndex(x => new { x.WarehouseId, x.UpdatedLocationAt });
         modelBuilder.Entity<ItemMovementHistory>().HasIndex(x => x.ItemInstanceId);
         modelBuilder.Entity<ItemMovementHistory>().HasIndex(x => x.PerformedAt);
         modelBuilder.Entity<ItemMovementHistory>().HasIndex(x => x.DocumentNo);
