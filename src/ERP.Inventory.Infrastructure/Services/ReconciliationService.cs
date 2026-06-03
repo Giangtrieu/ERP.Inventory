@@ -18,12 +18,18 @@ public sealed class ReconciliationService
     private readonly InventoryDbContext _db;
     private readonly IDocumentNumberService _documentNumbers;
     private readonly IDateTimeProvider _clock;
+    private readonly ILogErrorSystemService _errorLog;
 
-    public ReconciliationService(InventoryDbContext db, IDocumentNumberService documentNumbers, IDateTimeProvider clock)
+    public ReconciliationService(
+        InventoryDbContext db,
+        IDocumentNumberService documentNumbers,
+        IDateTimeProvider clock,
+        ILogErrorSystemService errorLog)
     {
         _db = db;
         _documentNumbers = documentNumbers;
         _clock = clock;
+        _errorLog = errorLog;
     }
 
     // ─── Reference List CRUD ──────────────────────────────────────────────────
@@ -144,13 +150,55 @@ public sealed class ReconciliationService
         }
         catch (Exception ex)
         {
-            return ServiceResult<ImportReferenceListResultDto>.Fail($"File parse error: {ex.Message}");
+            var log = await _errorLog.LogAsync(ex, new LogErrorContext(
+                Module: nameof(ReconciliationService),
+                Action: "ImportReferenceListFromStream",
+                PayloadJson: JsonSerializer.Serialize(new { listId, importMode, fileName }),
+                UserId: user.UserId,
+                UserName: user.UserName), CancellationToken.None);
+            return ServiceResult<ImportReferenceListResultDto>.Fail(SystemErrorMessage(user.LanguageCode, log.ErrorCode, ex));
         }
 
         if (!rows.Any())
             return ServiceResult<ImportReferenceListResultDto>.Fail("File does not contain data rows.");
 
         return await ImportReferenceListAsync(listId, importMode, rows, user, ct);
+    }
+
+    private static string SystemErrorMessage(string? language, string errorCode, Exception? exception = null)
+    {
+        if (IsTimeout(exception))
+        {
+            return language?.ToLowerInvariant() switch
+            {
+                "en" => $"The system is taking too long to respond or is overloaded. Error code: {errorCode}. Please try the operation again.",
+                "zh" => $"系统响应时间过长或负载过高。错误代码：{errorCode}。请稍后重试该操作。",
+                _ => $"Hệ thống phản hồi chậm hoặc đang quá tải. Mã lỗi: {errorCode}. Vui lòng thử lại thao tác sau."
+            };
+        }
+
+        return language?.ToLowerInvariant() switch
+        {
+            "en" => $"System error occurred. Error code: {errorCode}. Please contact TE/IT.",
+            "zh" => $"系统发生错误。错误代码：{errorCode}。请联系 TE/IT 获取支持。",
+            _ => $"Có lỗi hệ thống. Mã lỗi: {errorCode}. Vui lòng liên hệ TE/IT."
+        };
+    }
+
+    private static bool IsTimeout(Exception? exception)
+    {
+        if (exception == null) return false;
+        if (exception is TimeoutException or TaskCanceledException or OperationCanceledException) return true;
+
+        var typeName = exception.GetType().FullName ?? exception.GetType().Name;
+        if (typeName.Contains("SqlException", StringComparison.OrdinalIgnoreCase)
+            && exception.GetType().GetProperty("Number")?.GetValue(exception) is int number
+            && number == -2)
+        {
+            return true;
+        }
+
+        return IsTimeout(exception.InnerException);
     }
 
 

@@ -100,6 +100,8 @@ public sealed class WarehouseMapItemDto
     public string? Status { get; init; }
     public string? Barcode { get; init; }
     public string? MT { get; init; }
+    public decimal Quantity { get; set; } = 1;
+    public string TrackingType { get; set; } = "Serial";
 }
 
 public sealed class WarehouseMapLegendDto

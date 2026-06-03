@@ -19,6 +19,7 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
     public async Task<ServiceResult<PostedDocumentDto>> LendAsync(BorrowLendRequest request, CurrentUserContext user, CancellationToken cancellationToken = default)
     {
         var requiredErrors = new List<string>();
+        if ((!string.IsNullOrEmpty(request.BorrowDepartment) && request.BorrowDepartment.ToUpper() == "TE") || request.DocumentNo == "0000000001") request.DocumentNo = "0000000001";
         if (string.IsNullOrWhiteSpace(request.DocumentNo)) requiredErrors.Add("Borrow document number is required.");
         //if (string.IsNullOrWhiteSpace(request.WarehouseCode)) requiredErrors.Add("Borrow warehouse is required.");
         if (string.IsNullOrWhiteSpace(request.Purpose)) requiredErrors.Add("Purpose is required.");
@@ -109,6 +110,17 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
                 if (!_statePolicy.CanLend(instance.Status))
                     return ServiceResult<PostedDocumentDto>.Fail($"Item instance {line.ItemCode}/{line.SerialNumber} cannot be lent (status: {instance.Status}).");
 
+                if (request.BorrowDepartment.ToUpper() == "TE")
+                {
+                    if(instance.OwnerName?.ToUpper() != "TE") return ServiceResult<PostedDocumentDto>.Fail($"Item {line.ItemCode}/{line.SerialNumber} does not belong to TE");
+                }
+                else
+                {
+                    if (instance.OwnerName?.ToUpper() == "TE") return ServiceResult<PostedDocumentDto>.Fail($"Item {line.ItemCode}/{line.SerialNumber} belongs to TE");
+                }
+
+                if(instance.DocumentNo != request.DocumentNo.Trim()) return ServiceResult<PostedDocumentDto>.Fail($"Item {line.ItemCode}/{line.SerialNumber} does not belong to order code {request.DocumentNo.Trim()}");
+
                 var current = await GetCurrentLocationAsync(instance.Id, cancellationToken);
                 var fromWarehouseId = current.WarehouseId; var fromBinLocationId = current.BinLocationId;
                 if (current.WarehouseId.HasValue && !user.CanAccessWarehouse(current.WarehouseId.Value))
@@ -182,7 +194,19 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
                 return ServiceResult<PostedDocumentDto>.Fail($"Item instance {line.ItemCode}/{line.SerialNumber} is already used in another line.");
             if (!_statePolicy.CanLend(instance.Status))
                 return ServiceResult<PostedDocumentDto>.Fail($"Item instance {line.ItemCode}/{line.SerialNumber} cannot be lent.");
-            
+
+
+            if (request.BorrowDepartment.ToUpper() == "TE")
+            {
+                if (instance.OwnerName?.ToUpper() != "TE") return ServiceResult<PostedDocumentDto>.Fail($"Item {line.ItemCode}/{line.SerialNumber} does not belong to TE");
+            }
+            else
+            {
+                if (instance.OwnerName?.ToUpper() == "TE") return ServiceResult<PostedDocumentDto>.Fail($"Item {line.ItemCode}/{line.SerialNumber} belongs to TE");
+            }
+
+            if (instance.DocumentNo != request.DocumentNo.Trim()) return ServiceResult<PostedDocumentDto>.Fail($"Item {line.ItemCode}/{line.SerialNumber} does not belong to order code {request.DocumentNo.Trim()}");
+
             var current = await GetCurrentLocationAsync(instance.Id, cancellationToken);
             var fromWarehouseId = current.WarehouseId; var fromBinLocationId = current.BinLocationId;
             if (current.WarehouseId.HasValue && !user.CanAccessWarehouse(current.WarehouseId.Value))
@@ -261,6 +285,7 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
         }
         else if (!string.IsNullOrWhiteSpace(request.BorrowDocumentNo))
         {
+            if ((!string.IsNullOrEmpty(request.BorrowDepartment) && request.BorrowDepartment.ToUpper() == "TE") || request.BorrowDocumentNo == "0000000001") request.BorrowDocumentNo = "0000000001";
             var documentNo = request.BorrowDocumentNo.Trim().ToUpperInvariant();
             document = await _db.BorrowDocuments.Include(x => x.Borrower).FirstOrDefaultAsync(x => x.DocumentNo.ToUpper() == documentNo, cancellationToken);
         }
@@ -322,6 +347,18 @@ public sealed class BorrowServiceImpl : InventoryOperationBase, IBorrowService
             var instance = await FindInstanceByCodeAsync(line.ItemCode, line.SerialNumber, cancellationToken);
             if (instance == null) return ServiceResult<PostedDocumentDto>.Fail($"Item {line.ItemCode} with serial {line.SerialNumber} not found.");
             if (instance.Status != ItemStatus.LentOut) return ServiceResult<PostedDocumentDto>.Fail($"Item instance {line.ItemCode}/{line.SerialNumber} is not lent out.");
+
+
+            if (request.BorrowDepartment.ToUpper() == "TE")
+            {
+                if (instance.OwnerName?.ToUpper() != "TE") return ServiceResult<PostedDocumentDto>.Fail($"Item {line.ItemCode}/{line.SerialNumber} does not belong to TE");
+            }
+            else
+            {
+                if (instance.OwnerName?.ToUpper() == "TE") return ServiceResult<PostedDocumentDto>.Fail($"Item {line.ItemCode}/{line.SerialNumber} belongs to TE");
+            }
+
+            if (instance.DocumentNo != request.BorrowDocumentNo.Trim()) return ServiceResult<PostedDocumentDto>.Fail($"Item {line.ItemCode}/{line.SerialNumber} does not belong to order code {request.BorrowDocumentNo.Trim()}");
 
             var targetStatus = _statePolicy.StatusAfterBorrowReturn(line.Condition);
 

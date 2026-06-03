@@ -47,9 +47,11 @@ public sealed class LogErrorSystemService : ILogErrorSystemService
 
     public async Task<LogErrorSystem> LogAsync(Exception exception, LogErrorContext context, CancellationToken cancellationToken = default)
     {
+        var createdAt = DateTime.UtcNow;
         var row = new LogErrorSystem
         {
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = createdAt,
+            ErrorCode = $"ERR-{createdAt:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}"[..40],
             UserId = Trim(context.UserId, 100),
             UserName = Trim(context.UserName, 200),
             RequestPath = Trim(context.RequestPath, 500),
@@ -66,9 +68,6 @@ public sealed class LogErrorSystemService : ILogErrorSystemService
         };
 
         _db.LogErrorSystems.Add(row);
-        await _db.SaveChangesAsync(cancellationToken);
-
-        row.ErrorCode = $"ERR-{row.CreatedAt:yyyyMMdd}-{row.Id:D8}";
         await _db.SaveChangesAsync(cancellationToken);
 
         return row;

@@ -45,7 +45,7 @@ public sealed class LogErrorSystemMiddleware
                 ClientIp: context.Connection.RemoteIpAddress?.ToString(),
                 Browser: context.Request.Headers.UserAgent.ToString());
 
-            var log = await errorLog.LogAsync(ex, logContext, context.RequestAborted);
+            var log = await errorLog.LogAsync(ex, logContext, CancellationToken.None);
             _logger.LogError(ex, "Persisted system exception {ErrorCode}", log.ErrorCode);
 
             if (!context.Response.HasStarted)
@@ -53,7 +53,7 @@ public sealed class LogErrorSystemMiddleware
                 context.Response.Clear();
                 context.Response.StatusCode = StatusCodes.Status500InternalServerError;
                 context.Response.ContentType = "application/json; charset=utf-8";
-                var message = LocalizedSystemError(context, log.ErrorCode);
+                var message = SystemErrorMessages.Create(context, log.ErrorCode, ex);
                 await context.Response.WriteAsync(JsonSerializer.Serialize(new
                 {
                     success = false,
@@ -82,11 +82,4 @@ public sealed class LogErrorSystemMiddleware
         return body.Length <= MaxPayloadLength ? body : body[..MaxPayloadLength];
     }
 
-    private static string LocalizedSystemError(HttpContext context, string errorCode)
-    {
-        var language = context.User.FindFirstValue("language")
-                       ?? context.Request.Query["lang"].FirstOrDefault()
-                       ?? "vi";
-        return string.Format(LocalizationCatalog.Text(language, "SystemError.UserMessage"), errorCode);
-    }
 }

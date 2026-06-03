@@ -5,8 +5,12 @@ using ERP.Inventory.Domain.Entities;
 using ERP.Inventory.Domain.Enums;
 using ERP.Inventory.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using NetTopologySuite.GeometriesGraph;
+using System;
 using System.Collections.Generic;
+using System.Text.Json;
+using System.Threading;
 
 namespace ERP.Inventory.Infrastructure.Services;
 
@@ -14,10 +18,19 @@ namespace ERP.Inventory.Infrastructure.Services;
 public sealed class QuantityInventoryService : InventoryOperationBase, IQuantityInventoryService
 {
     private const string QuantityStockKey = "";
+    private readonly ILogger<QuantityInventoryService> _logger;
+    private readonly ILogErrorSystemService _errorLog;
 
-    public QuantityInventoryService(InventoryDbContext db, IDocumentNumberService documentNumbers, IDateTimeProvider clock)
+    public QuantityInventoryService(
+        InventoryDbContext db,
+        IDocumentNumberService documentNumbers,
+        IDateTimeProvider clock,
+        ILogger<QuantityInventoryService> logger,
+        ILogErrorSystemService errorLog)
         : base(db, documentNumbers, clock)
     {
+        _logger = logger;
+        _errorLog = errorLog;
     }
 
     public Task<ServiceResult<PostedDocumentDto>> ReceiveAsync(QuantityInventoryRequest request, CurrentUserContext user, CancellationToken cancellationToken = default, bool isEdit = false)
@@ -79,7 +92,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             {
                 ItemId = x.ItemId, ItemCode = x.ItemCode, ItemCategoryCode = x.ItemCategoryCode,
                 ItemName = x.ItemName, WarehouseId = x.WarehouseId,
-                WarehouseCode = x.WarehouseCode, Quantity = x.Quantity,
+                WarehouseCode = x.WarehouseCode, BinLocationId = null, BinCode = null, Quantity = x.Quantity,
                 Status = x.Status.ToString(), LastUpdatedAt = x.LastUpdatedAt,
                 OwnerName = "TE", /*ownerDict.TryGetValue(x.ItemId, out var owner) ? owner : null, */
             }).ToArray();
@@ -116,6 +129,8 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
                 ItemCategoryCode = x.Item.Category.CategoryCode,
                 PostedAt = x.PostedAt,
                 ItemCode = x.Item != null ? x.Item.ItemCode : string.Empty,
+                BinLocationId = x.BinLocationId,
+                BinCode = x.BinCode,
                 SnCode = x.SnCode,   Status = x.StatusAfter.ToString(),
                 QuantityDelta = x.QuantityDelta,  PostedBy = x.PostedBy
             }) .ToArrayAsync(cancellationToken);
@@ -124,6 +139,8 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
     // ─── Core Post Logic ─────────────────────────────────────────────
     private async Task<ServiceResult<PostedDocumentDto>> PostAsync(QuantityInventoryRequest request, QuantityInventoryDocumentType type, CurrentUserContext user, CancellationToken cancellationToken, bool isEdit = false)
     {
+        try
+        {
         if(isEdit == false) return await PostQuantityDocumentAsync(request, type, user, cancellationToken);
 
         var errors = ValidateHeader(request, user);
@@ -194,7 +211,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         var oldLines = isNewDocument ? new List<QuantityInventoryDocumentLine>(): await _db.QuantityInventoryDocumentLines
                 .Where(x => x.QuantityInventoryDocumentId == document.Id).ToListAsync(cancellationToken);
         var oldLineGroups = oldLines
-            .GroupBy(x => QuantityLineKey(x.ItemId, x.SnCode), StringComparer.OrdinalIgnoreCase)
+            .GroupBy(x => QuantityLineKey(x.ItemId, x.SnCode, x.BinLocationId), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.ToList(), StringComparer.OrdinalIgnoreCase);
         var postingContext = await PreloadQuantityPostingContextAsync(lines, request.WarehouseId, postingItems.Values, oldLines, cancellationToken);
 
@@ -209,7 +226,8 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
 
             var snCode = QuantityStockKey;
 
-            var lineKey = QuantityLineKey(item.Id, snCode);
+            var bin = ResolveInboundBin(line, postingContext);
+            var lineKey = QuantityLineKey(item.Id, snCode, bin?.Id ?? line.BinLocationId);
             if (!incomingKeys.Add(lineKey))
             {
                 errors.Add($"SN {snCode} is duplicated in this quantity document.");
@@ -250,12 +268,36 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         }
 
         await _db.SaveChangesAsync(cancellationToken);
-        AddPostSideEffects(type.ToString(), nameof(QuantityInventoryDocument), document.Id, documentNo, user, "Quantity inventory posted.");
+        AddPostSideEffects(type.ToString(), nameof(QuantityInventoryDocument), document.Id, documentNo, user, Text(user.LanguageCode, "quantity_inventory_posted"));
         await tx.CommitAsync(cancellationToken);
+        LogQuantityPosted(type, documentNo, request.WarehouseId, lines, postingItems, user);
 
-        return ServiceResult<PostedDocumentDto>.Ok(ToPostedDto("QuantityInventory", document.Id, documentNo, now), "Quantity inventory posted.");
+        return ServiceResult<PostedDocumentDto>.Ok(ToPostedDto("QuantityInventory", document.Id, documentNo, now), Text(user.LanguageCode, "quantity_inventory_posted"));
 
 
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Quantity inventory failed. DocumentNo={DocumentNo}",
+                request.DocumentNo);
+
+            var log = await _errorLog.LogAsync(ex, new LogErrorContext(
+                Module: nameof(QuantityInventoryService),
+                Action: $"Post:{type}",
+                PayloadJson: JsonSerializer.Serialize(new
+                {
+                    request.DocumentNo,
+                    request.WarehouseId,
+                    Type = type.ToString(),
+                    LineCount = request.Lines.Count
+                }),
+                UserId: user.UserId,
+                UserName: user.UserName), CancellationToken.None);
+
+            return ServiceResult<PostedDocumentDto>.Fail(SystemErrorMessage(user.LanguageCode, log.ErrorCode, ex));
+        }
     }
 
     private async Task<ServiceResult<PostedDocumentDto>> PostQuantityDocumentAsync(QuantityInventoryRequest request, QuantityInventoryDocumentType type, CurrentUserContext user, CancellationToken cancellationToken)
@@ -333,7 +375,8 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
                 return ServiceResult<PostedDocumentDto>.Fail("ItemCode is required.");
             }
 
-            var lineKey = QuantityLineKey(item.Id, QuantityStockKey);
+            var bin = ResolveInboundBin(line, postingContext);
+            var lineKey = QuantityLineKey(item.Id, QuantityStockKey, bin?.Id ?? line.BinLocationId);
             if (!incomingKeys.Add(lineKey))
             {
                 errors.Add($"Item {item.ItemCode} is duplicated in this quantity document.");
@@ -351,11 +394,12 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         }
 
         await CleanupZeroQuantityBalancesAsync(cancellationToken);
-        AddPostSideEffects(type.ToString(), nameof(QuantityInventoryDocument), document.Id, documentNo, user, "Quantity inventory posted.");
+        AddPostSideEffects(type.ToString(), nameof(QuantityInventoryDocument), document.Id, documentNo, user, Text(user.LanguageCode, "quantity_inventory_posted"));
         await _db.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
+        LogQuantityPosted(type, documentNo, request.WarehouseId, lines, postingItems, user);
 
-        return ServiceResult<PostedDocumentDto>.Ok(ToPostedDto("QuantityInventory", document.Id, documentNo, now), "Quantity inventory posted.");
+        return ServiceResult<PostedDocumentDto>.Ok(ToPostedDto("QuantityInventory", document.Id, documentNo, now), Text(user.LanguageCode, "quantity_inventory_posted"));
     }
 
     private async Task<ServiceResult<PostedDocumentDto>> PostNewAsync(QuantityInventoryRequest request, QuantityInventoryDocumentType type, CurrentUserContext user, CancellationToken cancellationToken)
@@ -671,6 +715,37 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             .Concat(existingLines?.Select(x => x.Status) ?? Array.Empty<ItemStatus>())
             .Distinct()
             .ToArray();
+        var binCodes = lines
+            .Select(x => NormalizeLookupCode(x.BinCode))
+            .Where(x => x.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var requestedBinIds = lines
+            .Where(x => x.BinLocationId.HasValue && x.BinLocationId.Value > 0)
+            .Select(x => x.BinLocationId!.Value)
+            .Distinct()
+            .ToArray();
+        var bins = binCodes.Length == 0 && requestedBinIds.Length == 0
+          ? new List<BinLocation>()
+          : await _db.BinLocations
+              .AsNoTracking()
+              .Where(x => x.IsActive &&
+                  ((x.WarehouseId == warehouseId && binCodes.Contains(x.BinCode)) ||
+                   requestedBinIds.Contains(x.Id)))
+              .ToListAsync(ct);
+        var binIds = bins.Select(x => x.Id).Distinct().ToArray();
+        var occupiedBinIds = binIds.Length == 0
+           ? new List<int>()
+           : await _db.QuantityStockLocationBalances
+               .AsNoTracking()
+               .Where(x =>
+                   binIds.Contains(x.BinLocationId) &&
+                   x.Item != null &&
+                   x.Item.IsActive )
+               .Select(x => x.BinLocationId)
+               .ToListAsync(ct);
+
+
         var balances = itemIds.Length == 0 || statuses.Length == 0
             ? new List<QuantityStockBalance>()
             : await _db.QuantityStockBalances
@@ -687,9 +762,24 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             var key = QuantityBalanceKey(balance.WarehouseId, balance.ItemId, balance.SnCode, balance.Status);
             context.Balances[key] = balance;
         }
-
+        foreach (var bin in bins)
+        {
+            context.Bins[NormalizeLookupCode(bin.BinCode)] = bin;
+            context.BinsById[bin.Id] = bin;
+        }
+        foreach (var binId in occupiedBinIds)
+        {
+            context.OccupiedBinIds.Add(binId);
+        }
+        foreach (var item in items)
+        {
+            context.Items[NormalizeLookupCode(item.ItemCode)] = item;
+        }
         return context;
     }
+
+    private static string NormalizeLookupCode(string? value)
+       => (value ?? string.Empty).Trim();
 
     private static Item? ResolvePreloadedQuantityItem(QuantityInventoryLineRequest line, IReadOnlyDictionary<string, Item> itemsByCode)
     {
@@ -739,9 +829,17 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
 
         var status = ResolveInboundStatus(line.Status);
 
+        var bin = ResolveInboundBin(line, postingContext);
+        if (bin == null)
+        {
+            var message = ResolveBinValidationMessage(line, user);
+            LogQuantityValidationWarning(document.DocumentNo, request.WarehouseId, line.BinLocationId, item.Id, message);
+            return message;
+        }
+
         if (type == QuantityInventoryDocumentType.Adjust)
         {
-            var error = await ApplyQuantityAdjustmentAsync(document, request, line, item, snCode, status, line.Quantity, user, now, ct, postingContext);
+            var error = await ApplyQuantityAdjustmentAsync(document, request, line, item, snCode, status, line.Quantity, user, now, lifecycleBatchId, ct, postingContext);
             if (error != null) return error;
         }
         else
@@ -754,11 +852,14 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             if (type == QuantityInventoryDocumentType.Issue && balance.Quantity < line.Quantity)
                 return $"Insufficient quantity for item {item.ItemCode}.";
 
-            AddQuantityTransaction(document, type, request.WarehouseId, item.Id, snCode, status, delta, request.DocumentDate, user, lifecycleBatchId);
-
             balance.Quantity += delta;
             balance.UpdatedAt = now;
             balance.UpdatedBy = user.UserName;
+
+            var locationResult = await ApplyQuantityLocationDeltaAsync(document.DocumentNo, request.WarehouseId, bin.Id, item.Id, status, delta, request.DocumentDate, user, now, ct);
+            if (locationResult.Error != null) return locationResult.Error;
+
+            AddQuantityTransaction(document, type, request.WarehouseId, item.Id, bin.Id, locationResult.BinCode, snCode, status, delta, request.DocumentDate, user, lifecycleBatchId);
         }
 
         if (existingLine == null)
@@ -766,6 +867,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             document.Lines.Add(new QuantityInventoryDocumentLine
             {
                 ItemId = item.Id,
+                BinLocationId = bin.Id,
                 SnCode = snCode,
                 Status = status,
                 Quantity = line.Quantity,
@@ -778,6 +880,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         else
         {
             existingLine.ItemId = item.Id;
+            existingLine.BinLocationId = bin.Id;
             existingLine.SnCode = snCode;
             existingLine.Status = status;
             existingLine.Quantity = line.Quantity;
@@ -791,7 +894,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
     }
 
     private async Task<string?> ApplyQuantityAdjustmentAsync(  QuantityInventoryDocument document,  QuantityInventoryRequest request, QuantityInventoryLineRequest line,Item item,  string snCode,
-        ItemStatus targetStatus, decimal quantity,  CurrentUserContext user, DateTime now, CancellationToken ct, QuantityPostingContext? postingContext = null)
+        ItemStatus targetStatus, decimal quantity,  CurrentUserContext user, DateTime now, Guid? lifecycleBatchId, CancellationToken ct, QuantityPostingContext? postingContext = null)
     {
         var delta = ResolveAdjustmentDelta(request, line, quantity);
         var balance = postingContext == null
@@ -801,23 +904,171 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         if (delta < 0 && balance.Quantity < Math.Abs(delta))
             return $"Insufficient quantity for item {item.ItemCode}.";
 
-        AddQuantityTransaction(document, QuantityInventoryDocumentType.Adjust, request.WarehouseId, item.Id, snCode, targetStatus, delta, request.DocumentDate, user, null);
+        balance.Quantity += delta;
+        balance.UpdatedAt = now;
+        balance.UpdatedBy = user.UserName;
+
+        var bin = ResolveInboundBin(line, postingContext);
+        if (bin == null)
+        {
+            var message = ResolveBinValidationMessage(line, user);
+            LogQuantityValidationWarning(document.DocumentNo, request.WarehouseId, line.BinLocationId, item.Id, message);
+            return message;
+        }
+
+        var locationResult = await ApplyQuantityLocationDeltaAsync(document.DocumentNo, request.WarehouseId, bin.Id, item.Id, targetStatus, delta, request.DocumentDate, user, now, ct);
+        if (locationResult.Error != null) return locationResult.Error;
+
+        AddQuantityTransaction(document, QuantityInventoryDocumentType.Adjust, request.WarehouseId, item.Id, bin.Id, locationResult.BinCode, snCode, targetStatus, delta, request.DocumentDate, user, lifecycleBatchId);
+        return null;
+    }
+
+    private async Task<ServiceResult<BinLocation>> ValidateBinLocationAsync(int warehouseId, int? binLocationId, CurrentUserContext user, CancellationToken ct)
+    {
+        if (!binLocationId.HasValue || binLocationId.Value <= 0)
+        {
+            return ServiceResult<BinLocation>.Fail(Text(user.LanguageCode, "quantity_location_required"));
+        }
+
+        var bin = _db.BinLocations.Local.FirstOrDefault(x => x.Id == binLocationId.Value);
+        if (bin == null)
+        {
+            bin = await _db.BinLocations.FirstOrDefaultAsync(x => x.Id == binLocationId.Value, ct);
+        }
+
+        if (bin == null || !bin.IsActive)
+        {
+            return ServiceResult<BinLocation>.Fail(Text(user.LanguageCode, "quantity_location_invalid"));
+        }
+
+        if (bin.WarehouseId != warehouseId)
+        {
+            return ServiceResult<BinLocation>.Fail(Text(user.LanguageCode, "quantity_location_wrong_warehouse"));
+        }
+
+        return ServiceResult<BinLocation>.Ok(bin);
+    }
+
+    private async Task<QuantityStockLocationBalance> GetOrCreateQuantityLocationBalanceAsync(
+        int warehouseId,
+        int binLocationId,
+        int itemId,
+        ItemStatus status,
+        DateTime createdAt,
+        CurrentUserContext user,
+        CancellationToken ct)
+    {
+        var balance = _db.QuantityStockLocationBalances.Local.FirstOrDefault(x =>
+            x.WarehouseId == warehouseId &&
+            x.BinLocationId == binLocationId &&
+            x.ItemId == itemId &&
+            x.Status == status);
+
+        if (balance == null)
+        {
+            balance = await _db.QuantityStockLocationBalances.FirstOrDefaultAsync(x =>
+                x.WarehouseId == warehouseId &&
+                x.BinLocationId == binLocationId &&
+                x.ItemId == itemId &&
+                x.Status == status, ct);
+        }
+
+        if (balance != null)
+        {
+            return balance;
+        }
+
+        balance = new QuantityStockLocationBalance
+        {
+            WarehouseId = warehouseId,
+            BinLocationId = binLocationId,
+            ItemId = itemId,
+            Status = status,
+            Quantity = 0,
+            CreatedAt = createdAt,
+            CreatedBy = user.UserName
+        };
+        _db.QuantityStockLocationBalances.Add(balance);
+        return balance;
+    }
+
+    private async Task<QuantityStockLocationBalance?> FindQuantityLocationBalanceAsync(int warehouseId, int binLocationId, int itemId, ItemStatus status, CancellationToken ct)
+    {
+        var balance = _db.QuantityStockLocationBalances.Local.FirstOrDefault(x =>
+            x.WarehouseId == warehouseId &&
+            x.BinLocationId == binLocationId &&
+            x.ItemId == itemId &&
+            x.Status == status);
+
+        return balance ?? await _db.QuantityStockLocationBalances.FirstOrDefaultAsync(x =>
+            x.WarehouseId == warehouseId &&
+            x.BinLocationId == binLocationId &&
+            x.ItemId == itemId &&
+            x.Status == status, ct);
+    }
+
+    private async Task<QuantityLocationDeltaResult> ApplyQuantityLocationDeltaAsync(
+        string documentNo,
+        int warehouseId,
+        int? binLocationId,
+        int itemId,
+        ItemStatus status,
+        decimal delta,
+        DateTime createdAt,
+        CurrentUserContext user,
+        DateTime now,
+        CancellationToken ct)
+    {
+        var validation = await ValidateBinLocationAsync(warehouseId, binLocationId, user, ct);
+        if (!validation.Success || validation.Data == null)
+        {
+            LogQuantityValidationWarning(documentNo, warehouseId, binLocationId, itemId, validation.Message);
+            return QuantityLocationDeltaResult.Fail(validation.Message);
+        }
+
+        var bin = validation.Data;
+        QuantityStockLocationBalance balance;
+
+        if (delta < 0)
+        {
+            balance = await FindQuantityLocationBalanceAsync(warehouseId, bin.Id, itemId, status, ct)
+                ?? null!;
+
+            if (balance == null)
+            {
+                var message = Text(user.LanguageCode, "quantity_location_item_not_found");
+                LogQuantityValidationWarning(documentNo, warehouseId, binLocationId, itemId, message);
+                return QuantityLocationDeltaResult.Fail(message);
+            }
+
+            if (balance.Quantity < Math.Abs(delta))
+            {
+                var message = Text(user.LanguageCode, "quantity_location_insufficient");
+                LogQuantityValidationWarning(documentNo, warehouseId, binLocationId, itemId, message);
+                return QuantityLocationDeltaResult.Fail(message);
+            }
+        }
+        else
+        {
+            balance = await GetOrCreateQuantityLocationBalanceAsync(warehouseId, bin.Id, itemId, status, createdAt, user, ct);
+        }
 
         balance.Quantity += delta;
         balance.UpdatedAt = now;
         balance.UpdatedBy = user.UserName;
-        return null;
+
+        return QuantityLocationDeltaResult.Ok(bin.BinCode);
     }
 
     private async Task ReverseQuantityEffectsAsync( QuantityInventoryDocument document,  IReadOnlyCollection<QuantityInventoryDocumentLine> existingLines, CurrentUserContext user,  DateTime now, CancellationToken ct,
         QuantityPostingContext? postingContext = null)
     {
-        foreach (var group in existingLines.GroupBy(x => QuantityLineKey(x.ItemId, x.SnCode), StringComparer.OrdinalIgnoreCase))
+        foreach (var group in existingLines.GroupBy(x => QuantityLineKey(x.ItemId, x.SnCode, x.BinLocationId), StringComparer.OrdinalIgnoreCase))
         {
             var line = group.First();
             var snCode = NormalizeSn(line.SnCode);
             var txs = await _db.QuantityInventoryTransactions
-                .Where(x => x.DocumentId == document.Id && x.ItemId == line.ItemId && x.SnCode == snCode)
+                .Where(x => x.DocumentId == document.Id && x.ItemId == line.ItemId && x.SnCode == snCode && x.BinLocationId == line.BinLocationId)
                 .ToListAsync(ct);
 
             if (txs.Count == 0)
@@ -833,6 +1084,10 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
                 if (fallbackDelta != 0)
                 {
                     await ApplyQuantityBalanceDeltaAsync(document.WarehouseId, line.ItemId, snCode, line.Status, -fallbackDelta, user, now, ct, postingContext);
+                    if (line.BinLocationId.HasValue)
+                    {
+                        await ApplyQuantityLocationBalanceDeltaAsync(document.WarehouseId, line.BinLocationId.Value, line.ItemId, line.Status, -fallbackDelta, user, now, ct);
+                    }
                 }
 
                 continue;
@@ -843,6 +1098,10 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
                 if (tx.QuantityDelta != 0)
                 {
                     await ApplyQuantityBalanceDeltaAsync(tx.WarehouseId, tx.ItemId, tx.SnCode, tx.StatusAfter, -tx.QuantityDelta, user, now, ct, postingContext);
+                    if (tx.BinLocationId.HasValue)
+                    {
+                        await ApplyQuantityLocationBalanceDeltaAsync(tx.WarehouseId, tx.BinLocationId.Value, tx.ItemId, tx.StatusAfter, -tx.QuantityDelta, user, now, ct);
+                    }
                 }
             }
 
@@ -856,6 +1115,14 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         var balance = postingContext == null
             ? await GetOrCreateQuantityBalanceAsync(warehouseId, itemId, snCode, status, now, user, ct)
             : GetOrCreateQuantityBalance(postingContext, warehouseId, itemId, snCode, status, now, user);
+        balance.Quantity += delta;
+        balance.UpdatedAt = now;
+        balance.UpdatedBy = user.UserName;
+    }
+
+    private async Task ApplyQuantityLocationBalanceDeltaAsync(int warehouseId, int binLocationId, int itemId, ItemStatus status, decimal delta, CurrentUserContext user, DateTime now, CancellationToken ct)
+    {
+        var balance = await GetOrCreateQuantityLocationBalanceAsync(warehouseId, binLocationId, itemId, status, now, user, ct);
         balance.Quantity += delta;
         balance.UpdatedAt = now;
         balance.UpdatedBy = user.UserName;
@@ -927,7 +1194,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         return balance;
     }
 
-    private void AddQuantityTransaction( QuantityInventoryDocument document,  QuantityInventoryDocumentType type,  int warehouseId,   int itemId,  string snCode, 
+    private void AddQuantityTransaction( QuantityInventoryDocument document,  QuantityInventoryDocumentType type,  int warehouseId,   int itemId,  int? binLocationId, string binCode, string snCode, 
         ItemStatus status, decimal delta,  DateTime postedAt,  CurrentUserContext user,  Guid? lifecycleBatchId)
     {
         _db.QuantityInventoryTransactions.Add(new QuantityInventoryTransaction
@@ -935,6 +1202,8 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             TransactionType = type,
             WarehouseId = warehouseId,
             ItemId = itemId,
+            BinLocationId = binLocationId,
+            BinCode = binCode,
             SnCode = snCode,
             StatusAfter = status,
             QuantityDelta = delta,
@@ -975,6 +1244,24 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         if (zeroBalances.Count > 0)
         {
             _db.QuantityStockBalances.RemoveRange(zeroBalances);
+        }
+
+        var localZeroLocationBalances = _db.QuantityStockLocationBalances.Local
+            .Where(x => x.Quantity == 0)
+            .ToArray();
+
+        if (localZeroLocationBalances.Length > 0)
+        {
+            _db.QuantityStockLocationBalances.RemoveRange(localZeroLocationBalances);
+        }
+
+        var zeroLocationBalances = await _db.QuantityStockLocationBalances
+            .Where(x => x.Quantity == 0)
+            .ToListAsync(ct);
+
+        if (zeroLocationBalances.Count > 0)
+        {
+            _db.QuantityStockLocationBalances.RemoveRange(zeroLocationBalances);
         }
     }
 
@@ -1182,6 +1469,23 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             document.SenderName = string.Empty;
             document.SenderPhone = string.Empty;
         }
+    }
+    private static BinLocation? ResolveInboundBin(QuantityInventoryLineRequest line, QuantityPostingContext? context)
+    {
+        if (context == null)
+        {
+            return null;
+        }
+
+        var binCode = NormalizeLookupCode(line.BinCode);
+        if (binCode.Length > 0 && context.Bins.TryGetValue(binCode, out var byCode))
+        {
+            return byCode;
+        }
+
+        return line.BinLocationId.HasValue && context.BinsById.TryGetValue(line.BinLocationId.Value, out var byId)
+            ? byId
+            : null;
     }
 
     private static decimal ResolveAdjustmentDelta(QuantityInventoryRequest request, QuantityInventoryLineRequest line, decimal quantity)
@@ -1395,14 +1699,136 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         => QuantityStockKey;
 
     private static string QuantityLineKey(int itemId, string snCode)
-        => $"{itemId}:{NormalizeSn(snCode)}";
+        => QuantityLineKey(itemId, snCode, null);
+
+    private static string QuantityLineKey(int itemId, string snCode, int? binLocationId)
+        => $"{itemId}:{NormalizeSn(snCode)}:{binLocationId?.ToString() ?? string.Empty}";
 
     private static string QuantityBalanceKey(int warehouseId, int itemId, string snCode, ItemStatus status)
         => $"{warehouseId}:{itemId}:{NormalizeSn(snCode)}:{(int)status}";
 
+    private void LogQuantityValidationWarning(string documentNo, int warehouseId, int? binLocationId, int itemId, string reason)
+    {
+        _logger.LogWarning(
+            "Quantity issue validation failed. DocumentNo={DocumentNo}, Warehouse={WarehouseId}, Bin={BinLocationId}, Item={ItemId}, Reason={Reason}",
+            documentNo,
+            warehouseId,
+            binLocationId,
+            itemId,
+            reason);
+    }
+
+    private void LogQuantityPosted(QuantityInventoryDocumentType type, string documentNo, int warehouseId, IReadOnlyCollection<QuantityInventoryLineRequest> lines, IReadOnlyDictionary<string, Item> itemsByCode, CurrentUserContext user)
+    {
+        foreach (var line in lines)
+        {
+            var item = ResolvePreloadedQuantityItem(line, itemsByCode);
+            _logger.LogInformation(
+                "Quantity inventory posted. Type={Type}, DocumentNo={DocumentNo}, Warehouse={WarehouseId}, Item={ItemId}, Bin={BinLocationId}, Qty={Qty}, User={User}",
+                type,
+                documentNo,
+                warehouseId,
+                item?.Id,
+                line.BinCode,
+                line.Quantity,
+                user.UserName);
+        }
+    }
+
+    private static string ResolveBinValidationMessage(QuantityInventoryLineRequest line, CurrentUserContext user)
+        => string.IsNullOrWhiteSpace(line.BinCode) && !line.BinLocationId.HasValue
+            ? Text(user.LanguageCode, "quantity_location_required")
+            : Text(user.LanguageCode, "quantity_location_invalid");
+
+    private static string SystemErrorMessage(string? language, string errorCode, Exception? exception = null)
+    {
+        if (IsTimeout(exception))
+        {
+            return language?.ToLowerInvariant() switch
+            {
+                "en" => $"The system is taking too long to respond or is overloaded. Error code: {errorCode}. Please try the operation again.",
+                "zh" => $"系统响应时间过长或负载过高。错误代码：{errorCode}。请稍后重试该操作。",
+                _ => $"Hệ thống phản hồi chậm hoặc đang quá tải. Mã lỗi: {errorCode}. Vui lòng thử lại thao tác sau."
+            };
+        }
+
+        return language?.ToLowerInvariant() switch
+        {
+            "en" => $"System error occurred. Error code: {errorCode}. Please contact TE/IT.",
+            "zh" => $"系统发生错误。错误代码：{errorCode}。请联系 TE/IT 获取支持。",
+            _ => $"Có lỗi hệ thống. Mã lỗi: {errorCode}. Vui lòng liên hệ TE/IT."
+        };
+    }
+
+    private static bool IsTimeout(Exception? exception)
+    {
+        if (exception == null) return false;
+        if (exception is TimeoutException or TaskCanceledException or OperationCanceledException) return true;
+
+        var typeName = exception.GetType().FullName ?? exception.GetType().Name;
+        if (typeName.Contains("SqlException", StringComparison.OrdinalIgnoreCase)
+            && exception.GetType().GetProperty("Number")?.GetValue(exception) is int number
+            && number == -2)
+        {
+            return true;
+        }
+
+        return IsTimeout(exception.InnerException);
+    }
+
+    private static string Text(string language, string key)
+    {
+        var resources = language switch
+        {
+            "en" => En,
+            "zh" => En,
+            _ => Vi
+        };
+
+        return resources.TryGetValue(key, out var value) ? value : key;
+    }
+
+    private static readonly Dictionary<string, string> Vi = new()
+    {
+        ["quantity_location_required"] = "Vị trí là bắt buộc.",
+        ["quantity_location_invalid"] = "Không tìm thấy vị trí.",
+        ["quantity_location_wrong_warehouse"] = "Vị trí không thuộc kho đã chọn.",
+        ["quantity_location_item_not_found"] = "Mặt hàng không tồn tại tại vị trí này.",
+        ["quantity_location_insufficient"] = "Không đủ số lượng tại vị trí.",
+        ["quantity_inventory_posted"] = "Đã ghi sổ tồn kho số lượng.",
+        ["quantity_inventory_failed"] = "Thao tác tồn số lượng thất bại."
+    };
+
+    private static readonly Dictionary<string, string> En = new()
+    {
+        ["quantity_location_required"] = "Location is required.",
+        ["quantity_location_invalid"] = "Location does not exist.",
+        ["quantity_location_wrong_warehouse"] = "Selected location does not belong to warehouse.",
+        ["quantity_location_item_not_found"] = "Item does not exist at selected location.",
+        ["quantity_location_insufficient"] = "Insufficient quantity at selected location.",
+        ["quantity_inventory_posted"] = "Quantity inventory posted.",
+        ["quantity_inventory_failed"] = "Quantity inventory operation failed."
+    };
+
     private sealed class QuantityPostingContext
     {
         public Dictionary<string, QuantityStockBalance> Balances { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, BinLocation> Bins { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<int, BinLocation> BinsById { get; } = new();
+        public HashSet<int> OccupiedBinIds { get; } = new();
+        public Dictionary<string, Item> Items { get; } = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private sealed class QuantityLocationDeltaResult
+    {
+        public string? Error { get; private init; }
+        public string BinCode { get; private init; } = string.Empty;
+
+        public static QuantityLocationDeltaResult Ok(string binCode)
+            => new() { BinCode = binCode };
+
+        public static QuantityLocationDeltaResult Fail(string error)
+            => new() { Error = error };
     }
 
     // ─── Instance Detail Query ────────────────────────────────────────
@@ -1445,6 +1871,8 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
                 actionTypeText =$"Enum.QuantityInventoryDocumentType.{x.TransactionType}",
                 WarehouseCode = x.Warehouse != null  ? x.Warehouse.WarehouseCode
                         : "",
+                x.BinLocationId,
+                x.BinCode,
                 Status = x.StatusAfter,
                 Quantity = x.QuantityDelta,
                 LastUpdatedAt = x.PostedAt,
@@ -1471,7 +1899,9 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             ItemName = x.ItemName,
             ItemCategoryCode = x.ItemCategoryCode,
             WarehouseId = x.WarehouseId,
-            WarehouseCode = x.oldLocation,
+            WarehouseCode = string.IsNullOrWhiteSpace(x.BinCode) ? x.oldLocation : x.BinCode,
+            BinLocationId = x.BinLocationId,
+            BinCode = x.BinCode,
             Status = x.Status.ToString(),
             Quantity = x.Quantity,
             Receiver = x.receiver,

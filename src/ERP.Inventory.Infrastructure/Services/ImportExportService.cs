@@ -1704,12 +1704,18 @@ public sealed class ImportExportService : IImportService, IExportService
         var instancesByItemId = instances.GroupBy(x => x.ItemId).ToDictionary(x => x.Key, x => x.ToList());
 
         var changedItems = new List<Item>();
-        var changedInstances = new List<ItemInstance>();
         var auditLogs = new List<AuditLog>();
         foreach (var row in rows)
         {
-            var item = items[Value(row, "ItemCode")];
-            var before = BuildItemMasterAuditSnapshot(item, instancesByItemId.TryGetValue(item.Id, out var itemInstances) ? itemInstances : Array.Empty<ItemInstance>());
+            if (!items.TryGetValue(Value(row, "ItemCode"), out var item))
+            {
+                continue;
+            }
+
+            IReadOnlyCollection<ItemInstance> itemInstances = instancesByItemId.TryGetValue(item.Id, out var loadedInstances)
+                ? loadedInstances
+                : Array.Empty<ItemInstance>();
+            var before = BuildItemMasterAuditSnapshot(item, itemInstances);
             var changed = false;
 
             var newCategoryCode = Value(row, "NewCategoryCode");
@@ -1744,7 +1750,7 @@ public sealed class ImportExportService : IImportService, IExportService
 
             var ownerChanged = false;
             var newOwnerName = Value(row, "NewOwnerName");
-            if (!string.IsNullOrWhiteSpace(newOwnerName) && itemInstances != null)
+            if (!string.IsNullOrWhiteSpace(newOwnerName))
             {
                 foreach (var instance in itemInstances)
                 {
@@ -1753,7 +1759,6 @@ public sealed class ImportExportService : IImportService, IExportService
                         instance.OwnerName = newOwnerName;
                         instance.UpdatedAt = DateTime.UtcNow;
                         instance.UpdatedBy = user.UserName;
-                        changedInstances.Add(instance);
                         ownerChanged = true;
                     }
                 }
@@ -1767,13 +1772,13 @@ public sealed class ImportExportService : IImportService, IExportService
             item.UpdatedAt = DateTime.UtcNow;
             item.UpdatedBy = user.UserName;
             changedItems.Add(item);
-            var after = BuildItemMasterAuditSnapshot(item, itemInstances != null ? itemInstances : Array.Empty<ItemInstance>());
+            var after = BuildItemMasterAuditSnapshot(item, itemInstances);
             auditLogs.Add(new AuditLog
             {
                 UserId = user.UserId,
                 UserName = user.UserName,
-                Action = "BulkUpdateItemMaster",
-                EntityName = nameof(Item),
+                Action = "UpdateItemMasterByImport",
+                EntityName = "Item",
                 EntityId = item.Id,
                 ReferenceNo = item.ItemCode,
                 BeforeJson = JsonSerializer.Serialize(before, JsonOptions),
@@ -1783,21 +1788,12 @@ public sealed class ImportExportService : IImportService, IExportService
             });
         }
 
-        if (changedItems.Count > 0)
-        {
-            await _db.BulkUpdateAsync(changedItems, cancellationToken: cancellationToken);
-        }
-
-        if (changedInstances.Count > 0)
-        {
-            await _db.BulkUpdateAsync(changedInstances.DistinctBy(x => x.Id).ToList(), cancellationToken: cancellationToken);
-        }
-
         if (auditLogs.Count > 0)
         {
-            await _db.BulkInsertAsync(auditLogs, cancellationToken: cancellationToken);
+            _db.AuditLogs.AddRange(auditLogs);
         }
 
+        await _db.SaveChangesAsync(cancellationToken);
         return changedItems.Count;
     }
 
@@ -3266,7 +3262,7 @@ public sealed class ImportExportService : IImportService, IExportService
     {
         if (!items.TryGetValue(Value(row, "ItemCode"), out var item))
         {
-            return "OK";
+            return "No update field specified.";
         }
 
         var changes = new List<string>();
@@ -3297,11 +3293,13 @@ public sealed class ImportExportService : IImportService, IExportService
         var newSerialManaged = Value(row, "NewIsSerialManaged");
         if (!string.IsNullOrWhiteSpace(newSerialManaged) && TryParseBool(newSerialManaged, out var parsed))
         {
-            changes.Add($"IsSerialManaged: {item.IsSerialManaged} -> {parsed}");
+            changes.Add($"SerialManaged: {FormatBool(item.IsSerialManaged)} -> {FormatBool(parsed)}");
         }
 
-        return changes.Count == 0 ? "OK" : string.Join("; ", changes);
+        return changes.Count == 0 ? "No effective change." : string.Join("; ", changes);
     }
+
+    private static string FormatBool(bool value) => value ? "Yes" : "No";
 
     private static object BuildItemMasterAuditSnapshot(Item item, IEnumerable<ItemInstance> instances)
     {

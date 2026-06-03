@@ -162,7 +162,11 @@ public static class LocalizationCatalog
 
     {
         ["SystemError.UserMessage"] = "Có lỗi hệ thống. Mã lỗi: {0}. Vui lòng liên hệ TE/IT.",
+        ["SystemError.TimeoutMessage"] = "Hệ thống phản hồi chậm hoặc đang quá tải. Mã lỗi: {0}. Vui lòng thử lại thao tác sau.",
+        ["SystemError.ValidationMessage"] = "Dữ liệu chưa hợp lệ. Mã lỗi: {0}. Vui lòng kiểm tra nội dung cảnh báo và thử lại.",
+        ["SystemError.OperationFailureMessage"] = "Thao tác không thành công do điều kiện nghiệp vụ hoặc dữ liệu hiện tại. Mã lỗi: {0}. Vui lòng kiểm tra lại thao tác.",
         ["Error Management"] = "Quản lý lỗi hệ thống",
+        ["Details"] = "Chi tiết",
         ["SuperAdmin Password"] = "Mật khẩu SuperAdmin",
         ["Unlock Error Management"] = "Mở khóa quản lý lỗi",
         ["System Errors"] = "Lỗi hệ thống",
@@ -217,6 +221,15 @@ public static class LocalizationCatalog
         ["Quantity"] = "Số lượng",
 
         ["Quantity inventory posted."] = "Đã ghi sổ tồn kho số lượng.",
+        ["quantity_inventory_posted"] = "Đã ghi sổ tồn kho số lượng.",
+        ["quantity_inventory_failed"] = "Thao tác tồn số lượng thất bại.",
+        ["quantity_location_required"] = "Vị trí là bắt buộc.",
+        ["quantity_location_invalid"] = "Không tìm thấy vị trí.",
+        ["quantity_location_wrong_warehouse"] = "Vị trí không thuộc kho đã chọn.",
+        ["quantity_location_item_not_found"] = "Mặt hàng không tồn tại tại vị trí này.",
+        ["quantity_location_insufficient"] = "Không đủ số lượng tại vị trí.",
+        ["Bin Location"] = "Vị trí bin",
+        ["Location is required."] = "Vị trí là bắt buộc.",
 
         ["Quantity must be greater than zero."] = "Số lượng phải lớn hơn 0.",
 
@@ -336,7 +349,11 @@ public static class LocalizationCatalog
 
     {
         ["SystemError.UserMessage"] = "System error occurred. Error code: {0}. Please contact TE/IT.",
+        ["SystemError.TimeoutMessage"] = "The system is taking too long to respond or is overloaded. Error code: {0}. Please try the operation again.",
+        ["SystemError.ValidationMessage"] = "The submitted data is invalid. Error code: {0}. Please review the validation messages and try again.",
+        ["SystemError.OperationFailureMessage"] = "The operation could not be completed because of current business rules or data state. Error code: {0}. Please review the operation.",
         ["Error Management"] = "Error Management",
+        ["Details"] = "Details",
         ["SuperAdmin Password"] = "SuperAdmin Password",
         ["Unlock Error Management"] = "Unlock Error Management",
         ["System Errors"] = "System Errors",
@@ -390,6 +407,15 @@ public static class LocalizationCatalog
         ["Quantity"] = "Quantity",
 
         ["Quantity inventory posted."] = "Quantity inventory posted.",
+        ["quantity_inventory_posted"] = "Quantity inventory posted.",
+        ["quantity_inventory_failed"] = "Quantity inventory operation failed.",
+        ["quantity_location_required"] = "Location is required.",
+        ["quantity_location_invalid"] = "Location does not exist.",
+        ["quantity_location_wrong_warehouse"] = "Selected location does not belong to warehouse.",
+        ["quantity_location_item_not_found"] = "Item does not exist at selected location.",
+        ["quantity_location_insufficient"] = "Insufficient quantity at selected location.",
+        ["Bin Location"] = "Bin Location",
+        ["Location is required."] = "Location is required.",
 
         ["Quantity must be greater than zero."] = "Quantity must be greater than zero.",
 
@@ -509,7 +535,11 @@ public static class LocalizationCatalog
 
     {
         ["SystemError.UserMessage"] = "系统发生错误。错误代码：{0}。请联系 TE/IT 获取支持。",
+        ["SystemError.TimeoutMessage"] = "系统响应时间过长或负载过高。错误代码：{0}。请稍后重试该操作。",
+        ["SystemError.ValidationMessage"] = "提交的数据无效。错误代码：{0}。请检查校验信息后重试。",
+        ["SystemError.OperationFailureMessage"] = "由于当前业务规则或数据状态，操作无法完成。错误代码：{0}。请检查后重试。",
         ["Error Management"] = "错误管理",
+        ["Details"] = "详细信息",
         ["SuperAdmin Password"] = "SuperAdmin 密码",
         ["Unlock Error Management"] = "解锁错误管理",
         ["System Errors"] = "系统错误",
@@ -564,6 +594,15 @@ public static class LocalizationCatalog
         ["Quantity"] = "数量",
 
         ["Quantity inventory posted."] = "数量库存已过账。",
+        ["quantity_inventory_posted"] = "数量库存已过账。",
+        ["quantity_inventory_failed"] = "数量库存操作失败。",
+        ["quantity_location_required"] = "库位为必填项。",
+        ["quantity_location_invalid"] = "库位不存在。",
+        ["quantity_location_wrong_warehouse"] = "所选库位不属于该仓库。",
+        ["quantity_location_item_not_found"] = "所选库位不存在该物料。",
+        ["quantity_location_insufficient"] = "所选库位数量不足。",
+        ["Bin Location"] = "库位",
+        ["Location is required."] = "库位为必填项。",
 
         ["Quantity must be greater than zero."] = "数量必须大于 0。",
 
@@ -1197,6 +1236,10 @@ public static class LocalizationCatalog
         ["Already selected"] = "Đã chọn",
 
         ["Already selected in another row"] = "Đã được chọn ở dòng khác",
+
+        ["Item {0}/{1} does not belong to TE"] = "Mặt hàng {0}/{1} không thuộc TE",
+        ["Item {0}/{1} belongs to TE"] = "Mặt hàng {0}/{1} thuộc TE",
+        ["Item {0}/{1} does not belong to order code {2}"] = "Mặt hàng {0}/{1} không thuộc mã đầu đơn {2}",
 
         ["Each item can only appear once per inbound document."] = "Mỗi vật tư chỉ được xuất hiện một lần trong phiếu nhập.",
 
@@ -3857,7 +3900,9 @@ public static class LocalizationCatalog
 
         ["Already selected in another row"] = "已在其他行选择",
 
-
+        ["Item {0}/{1} does not belong to TE"] = "物料 {0}/{1} 不属于 TE",
+        ["Item {0}/{1} belongs to TE"] = "物料 {0}/{1} 属于 TE",
+        ["Item {0}/{1} does not belong to order code {2}"] = "物料 {0}/{1} 不属于订单代码 {2}",
 
         ["Each item can only appear once per inbound document."] = "每个物料在同一入库单中只能出现一次。",
 

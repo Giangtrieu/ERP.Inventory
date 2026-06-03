@@ -70,7 +70,10 @@ public abstract class InventoryOperationBase
 
     protected async Task<ExternalParty> GetOrCreatePartyByNameAsync(string name, string code, ExternalPartyType type,string codePrefix, string phone, string userName, DateTime now,CancellationToken cancellationToken)
     {
-        var party = await FindPartyByNameAsync(name, type, cancellationToken);
+        var party = new ExternalParty();
+        if (!string.IsNullOrEmpty(code)) party = await FindPartyByCodeAsync(code, type, cancellationToken);
+        if (party != null) return party;
+        party = await FindPartyByNameAsync(name, type, cancellationToken);
         if (party != null)return party;
 
         party = new ExternalParty

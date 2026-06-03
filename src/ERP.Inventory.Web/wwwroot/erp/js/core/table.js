@@ -389,7 +389,8 @@ window.OperationLineConfig = {
                 type: 'input',
                 inputType: 'text',
                 label: 'Repair Document No',
-                name: 'documentNo'
+                name: 'documentNo',
+                value: () => '0000000001'
             },
             {
                 col: 'col-md-4',
@@ -442,7 +443,8 @@ window.OperationLineConfig = {
                 type: 'input',
                 inputType: 'text',
                 label: 'Repair Document No',
-                name: 'repairDocumentNo'
+                name: 'repairDocumentNo',
+                value: () => '0000000001',
             },
             //{
             //    col: 'col-md-4',

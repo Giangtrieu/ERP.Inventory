@@ -83,7 +83,7 @@
 
     'repair-receive': {
         headers: {
-            repairDocumentNo: 'Repair Document No',
+            /*repairDocumentNo: 'Repair Document No',*/
             resultNote: 'Result'
         },
 

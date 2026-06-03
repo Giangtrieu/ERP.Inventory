@@ -17,7 +17,7 @@ window.OperationPayloadConfig = {
             sourceExternalPartyId: intOrNull(h('sourceExternalPartyId')),
             warehouseId: intOrNull(h('warehouseId')),
             documentDate: h('documentDate'),
-            documentNo: h('documentNo'),
+            documentNo: h('ownerName') == 'TE' ? '0000000001' : h('documentNo'),
             receiverCode: h('receiverCode'),
             receiverName: h('receiverName'),
             receiverPhone: h('receiverPhone'),
@@ -141,7 +141,7 @@ window.OperationPayloadConfig = {
         }),
 
         payload: (h, rows, intOrNull) => ({
-            documentNo: h('documentNo'),
+            documentNo: h('borrowDepartment') == 'TE' ? '0000000001' : h('documentNo'),
             warehouseId: intOrNull(h('warehouseId')),
             borrowerCode: h('borrowerCode'),
             borrowerName: h('borrowerName'),
@@ -167,7 +167,7 @@ window.OperationPayloadConfig = {
         }),
 
         payload: (h, rows, intOrNull) => ({
-            BorrowDocumentNo: h('borrowDocumentNo'),
+            BorrowDocumentNo: h('borrowDepartment') == 'TE' ? '0000000001' : h('borrowDocumentNo'),
             returnDate: h('returnDate'),
             returnerCode: h('returnerCode'),
             returnerName: h('returnerName'),

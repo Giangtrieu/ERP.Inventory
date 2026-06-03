@@ -242,8 +242,8 @@ public sealed class ManagementController : ManagementBaseController
                 Module: nameof(ManagementController),
                 Action: "HardDeleteItemInstance",
                 UserId: user.UserId,
-                UserName: user.UserName), ct);
-            return Json(new { success = false, message = string.Format(LocalizationCatalog.Text(user.LanguageCode, "SystemError.UserMessage"), log.ErrorCode), errorCode = log.ErrorCode });
+                UserName: user.UserName), CancellationToken.None);
+            return Json(new { success = false, message = SystemErrorMessages.Create(HttpContext, log.ErrorCode, ex), errorCode = log.ErrorCode });
         }
     }
 

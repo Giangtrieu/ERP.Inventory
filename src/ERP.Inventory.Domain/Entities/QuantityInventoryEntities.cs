@@ -14,6 +14,21 @@ public class QuantityStockBalance : AuditableEntity
     public decimal Quantity { get; set; }
 }
 
+public class QuantityStockLocationBalance : AuditableEntity
+{
+    public int WarehouseId { get; set; }
+    public Warehouse? Warehouse { get; set; }
+
+    public int BinLocationId { get; set; }
+    public BinLocation? BinLocation { get; set; }
+
+    public int ItemId { get; set; }
+    public Item? Item { get; set; }
+
+    public ItemStatus Status { get; set; } = ItemStatus.Normal;
+    public decimal Quantity { get; set; }
+}
+
 public class QuantityInventoryDocument : AuditableEntity
 {
     public string DocumentNo { get; set; } = string.Empty;
@@ -42,6 +57,8 @@ public class QuantityInventoryDocumentLine : AuditableEntity
     public QuantityInventoryDocument? QuantityInventoryDocument { get; set; }
     public int ItemId { get; set; }
     public Item? Item { get; set; }
+    public int? BinLocationId { get; set; }
+    public BinLocation? BinLocation { get; set; }
     public string SnCode { get; set; } = string.Empty;
     public ItemStatus Status { get; set; } = ItemStatus.Normal;
     public decimal Quantity { get; set; }
@@ -57,6 +74,9 @@ public class QuantityInventoryTransaction
     public Warehouse? Warehouse { get; set; }
     public int ItemId { get; set; }
     public Item? Item { get; set; }
+    public int? BinLocationId { get; set; }
+    public BinLocation? BinLocation { get; set; }
+    public string BinCode { get; set; } = string.Empty;
     public string SnCode { get; set; } = string.Empty;
     public ItemStatus StatusAfter { get; set; } = ItemStatus.Normal;
     public decimal QuantityDelta { get; set; }

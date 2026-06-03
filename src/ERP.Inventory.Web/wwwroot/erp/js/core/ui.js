@@ -76,7 +76,10 @@ window.UI = {
       [/^BinCode (.+) does not belong to warehouse (.+)\.$/, 'BinCode {0} does not belong to warehouse {1}.'],
       [/^Item (.+)\/(.+) cannot be sent to repair\.$/, `Item {0}/{1} cannot be sent to repair.`],
       [/^Item (.+)\/(.+) cannot be lent\.$/, `Item {0}/{1} cannot be lent.`],
-      [/^Found at (.+) instead of expected location\.$/, `Found at { 0} instead of expected location.`],
+        [/^Item (.+)\/(.+) does not belong to TE$/, `Item {0}/{1} does not belong to TE`],
+        [/^Item (.+)\/(.+) belongs to TE$/, `Item {0}/{1} belongs to TE`],
+        [/^Item (.+)\/(.+) does not belong to order code (.+)$/, `Item {0}/{1} does not belong to order code {2}`],
+      [/^Found at (.+) instead of expected location\.$/, `Found at {0} instead of expected location.`],
       [/^Extra item found at (.+)\.$/, `Extra item found at {0}.`],
       [/^Warehouse (.+) not found\.$/, `Warehouse {0} not found.`],
       [/^Item (.+) not found\.$/, `Item {0} not found.`],
@@ -223,8 +226,14 @@ window.UI = {
 
   resultError(result) {
     if (!result) return this.msg('Request failed.');
-    if (Array.isArray(result.errors) && result.errors.length) return result.errors.map(x => this.msg(x)).join('\n');
-    return this.msg(result.message || 'Request failed.');
+    const system = result.systemMessage || (result.errorCode ? result.message : '');
+    const details = Array.isArray(result.errors) && result.errors.length
+      ? result.errors.map(x => this.msg(typeof x === 'string' ? x : (x.message || JSON.stringify(x)))).join('\n')
+      : this.msg(result.message || 'Request failed.');
+    if (system && details && system !== details) {
+      return `${this.msg(system)}\n${this.t('Details')}: ${details}`;
+    }
+    return this.msg(system || details || 'Request failed.');
   },
 
   api(url, options = {}) {
@@ -353,8 +362,12 @@ window.UI = {
     return $.ajax(ajax);
   },
     showError(msg) {
+        const body = String(msg || UI.t('Request failed.'))
+            .split(/\r?\n/)
+            .map(line => UI.esc(UI.msg(line)))
+            .join('<br/>');
         const html = `<div class="alert alert-danger"> <strong>${UI.t('An error occurred while processing the operation.')}
-                    </strong><br/>${msg}</div> `;
+                    </strong><br/>${body}</div> `;
         return UI.confirm(UI.t('Error message'), '', html, null, UI.t('Close'), false);
     },
   toast(msg) { $('#toastLite').text(msg).fadeIn(120).delay(2200).fadeOut(180); },

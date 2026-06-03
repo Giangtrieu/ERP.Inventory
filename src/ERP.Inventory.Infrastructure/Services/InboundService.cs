@@ -67,6 +67,8 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
             await GetOrCreatePartyByNameAsync(request.ReceiverDepartment, "", ExternalPartyType.Department, "DEP", "", user.UserName, now, cancellationToken);
         }
 
+        if ((!string.IsNullOrEmpty(request.OwnerName) && request.OwnerName.ToUpper() == "TE") || request.DocumentNo == "0000000001") request.DocumentNo = "0000000001";
+
         var oldDocument = await FindInboundDocumentByCodeAsync(request.DocumentNo.Trim(), cancellationToken);
 
         if (oldDocument == null)
@@ -107,7 +109,7 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
 
         foreach (var line in request.Lines)
         {
-            AddInboundLineEffects(oldDocument, line, warehouse, request, user, receiverDisplay, request.DepartmentOwner, lifecycleBatchId, postingContext, stockQuantityDelta: line.Quantity, setInstanceDocumentNo: false);
+            AddInboundLineEffects(oldDocument, line, warehouse, request, user, receiverDisplay, request.DepartmentOwner, lifecycleBatchId, postingContext, stockQuantityDelta: line.Quantity, setInstanceDocumentNo: true);
         }
 
         AddPostSideEffects("Inbound", nameof(InboundDocument), oldDocument.Id, oldDocument.DocumentNo, user, "Inbound posted.");
@@ -262,18 +264,8 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
         return party;
     }
 
-    private void AddInboundLineEffects(
-        InboundDocument document,
-        InboundLineRequest line,
-        Warehouse warehouse,
-        InboundRequest request,
-        CurrentUserContext user,
-        string receiverDisplay,
-        string? logDepartmentOwner,
-        Guid lifecycleBatchId,
-        InboundPostingContext context,
-        decimal stockQuantityDelta,
-        bool setInstanceDocumentNo)
+    private void AddInboundLineEffects(InboundDocument document, InboundLineRequest line, Warehouse warehouse, InboundRequest request, CurrentUserContext user, 
+        string receiverDisplay, string? logDepartmentOwner,Guid lifecycleBatchId,  InboundPostingContext context, decimal stockQuantityDelta,  bool setInstanceDocumentNo)
     {
         var item = ResolveInboundItem(line, context)!;
         var bin = ResolveInboundBin(line, context)!;

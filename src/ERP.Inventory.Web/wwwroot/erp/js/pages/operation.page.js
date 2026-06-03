@@ -72,7 +72,7 @@ Router.register('operation', async function (type) {
     applyOperationEditorState(type);
     await loadOperationDocuments(type);
     setTimeout(() => initScanSystem(), 100);
-    loadReportsInventory()
+    if (type == 'inventory-check') loadReportsInventory()
 });
 
 function exportFile(url) {
@@ -414,7 +414,27 @@ function validateRequiredOperation(type, rows, h) {
     const config = window.OperationRequiredConfig[type];
     if (!config) return [];
     const errors = [];
+
+    const shouldSkipHeader = (field) => {
+        if (
+            type === 'inbound' &&
+            field.toLowerCase().includes('mentno') &&
+            String(h('ownerName') || '').trim().toUpperCase() === 'TE'
+        ) {
+            return true;
+        }
+        if (
+            ['borrow-lend', 'borrow-return'].includes(type) &&
+            field.toLowerCase().includes('mentno') &&
+            String(h('borrowDepartment') || '').trim().toUpperCase() === 'TE'
+        ) {
+            return true;
+        }
+
+        return false;
+    };
     const addHeader = (field, label) => {
+        if (shouldSkipHeader(field)) return;
         if (!String(h(field) || '').trim()) {
             errors.push({
                 field,
@@ -542,8 +562,18 @@ function showOperationValidation(errors) {
 }
 
 function operationErrorsFromResult(result) {
+    const mapped = [];
+    const systemMessage = result && (result.systemMessage || (result.errorCode ? result.message : ''));
+    if (systemMessage) {
+        mapped.push({ label: 'System', message: systemMessage });
+    }
+
     const errors = Array.isArray(result && result.errors) && result.errors.length ? result.errors : [result && result.message ? result.message : 'Request failed.'];
-    return errors.map(message => ({ label: 'System', message }));
+    errors.forEach(message => {
+        if (!message || message === systemMessage) return;
+        mapped.push(typeof message === 'string' ? { label: 'System', message } : message);
+    });
+    return mapped;
 }
 
 async function uploadOperationAttachments(entityName, entityId) {

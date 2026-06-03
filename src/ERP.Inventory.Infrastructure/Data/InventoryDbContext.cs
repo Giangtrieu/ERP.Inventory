@@ -30,6 +30,7 @@ public class InventoryDbContext : DbContext
     public DbSet<StockBalance> StockBalances => Set<StockBalance>();
     public DbSet<InventoryTransaction> InventoryTransactions => Set<InventoryTransaction>();
     public DbSet<QuantityStockBalance> QuantityStockBalances => Set<QuantityStockBalance>();
+    public DbSet<QuantityStockLocationBalance> QuantityStockLocationBalances => Set<QuantityStockLocationBalance>();
     public DbSet<QuantityInventoryDocument> QuantityInventoryDocuments => Set<QuantityInventoryDocument>();
     public DbSet<QuantityInventoryDocumentLine> QuantityInventoryDocumentLines => Set<QuantityInventoryDocumentLine>();
     public DbSet<QuantityInventoryTransaction> QuantityInventoryTransactions => Set<QuantityInventoryTransaction>();
@@ -141,6 +142,17 @@ public class InventoryDbContext : DbContext
         modelBuilder.Entity<QuantityStockBalance>()
             .HasOne(x => x.Item).WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Restrict);
 
+        modelBuilder.Entity<QuantityStockLocationBalance>().Property(x => x.Quantity).HasPrecision(18, 4);
+        modelBuilder.Entity<QuantityStockLocationBalance>()
+            .HasIndex(x => new { x.WarehouseId, x.BinLocationId, x.ItemId, x.Status })
+            .IsUnique();
+        modelBuilder.Entity<QuantityStockLocationBalance>()
+            .HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<QuantityStockLocationBalance>()
+            .HasOne(x => x.BinLocation).WithMany().HasForeignKey(x => x.BinLocationId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<QuantityStockLocationBalance>()
+            .HasOne(x => x.Item).WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Restrict);
+
         modelBuilder.Entity<QuantityInventoryDocument>().HasIndex(x => x.DocumentNo).IsUnique();
         modelBuilder.Entity<QuantityInventoryDocument>().Property(x => x.OperatorUserId).HasMaxLength(100);
         modelBuilder.Entity<QuantityInventoryDocument>().Property(x => x.OperatorUserCode).HasMaxLength(100);
@@ -162,15 +174,20 @@ public class InventoryDbContext : DbContext
             .HasOne(x => x.QuantityInventoryDocument).WithMany(x => x.Lines).HasForeignKey(x => x.QuantityInventoryDocumentId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<QuantityInventoryDocumentLine>()
             .HasOne(x => x.Item).WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<QuantityInventoryDocumentLine>()
+            .HasOne(x => x.BinLocation).WithMany().HasForeignKey(x => x.BinLocationId).OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<QuantityInventoryTransaction>().Property(x => x.QuantityDelta).HasPrecision(18, 4);
         modelBuilder.Entity<QuantityInventoryTransaction>().Property(x => x.SnCode).HasMaxLength(100);
+        modelBuilder.Entity<QuantityInventoryTransaction>().Property(x => x.BinCode).HasMaxLength(100);
         modelBuilder.Entity<QuantityInventoryTransaction>().HasIndex(x => new { x.DocumentNo, x.ItemId, x.SnCode });
         modelBuilder.Entity<QuantityInventoryTransaction>().HasIndex(x => new { x.DocumentId, x.TransactionType, x.LifecycleBatchId });
         modelBuilder.Entity<QuantityInventoryTransaction>()
             .HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<QuantityInventoryTransaction>()
             .HasOne(x => x.Item).WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<QuantityInventoryTransaction>()
+            .HasOne(x => x.BinLocation).WithMany().HasForeignKey(x => x.BinLocationId).OnDelete(DeleteBehavior.Restrict);
     }
 
     private static void ConfigureDocuments(ModelBuilder modelBuilder)

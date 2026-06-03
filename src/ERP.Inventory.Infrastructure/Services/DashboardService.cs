@@ -313,35 +313,69 @@ public sealed class DashboardService : IDashboardService
             .ToArrayAsync(cancellationToken);
 
         var binIds = binRows.Select(x => x.BinLocationId).ToArray();
-        var locationRows = await _db.CurrentItemLocations
-    .AsNoTracking()
-    .Where(x =>
-        x.WarehouseId == warehouseId &&
-        x.BinLocationId.HasValue &&
-        x.BinLocation != null &&
-        x.BinLocation.IsActive &&
-        x.BinLocation.WarehouseId == warehouseId &&
-        x.ItemInstance != null &&
-        x.ItemInstance.IsActive &&
-        x.ItemInstance.Status != ItemStatus.Lost &&
-        x.ItemInstance.Status != ItemStatus.Disposed)
-    .Select(x => new WarehouseMapItemRow(
-        x.BinLocationId!.Value,
-        x.ItemInstance!.Item != null
-            ? x.ItemInstance.Item.ItemCode
-            : "Unknown",
-        x.ItemInstance.Item != null
-            ? x.ItemInstance.Item.DefaultName
-            : null,
-        x.ItemInstance.SerialNumber,
-        x.ItemInstance.Item != null &&
-        x.ItemInstance.Item.Category != null
-            ? x.ItemInstance.Item.Category.CategoryCode
-            : "Unknown",
-        x.ItemInstance.Status,
-        x.ItemInstance.Barcode
-    ))
-    .ToArrayAsync(cancellationToken);
+        var serialLocationRows = await _db.CurrentItemLocations
+     .AsNoTracking()
+     .Where(x =>
+         x.WarehouseId == warehouseId &&
+         x.BinLocationId.HasValue &&
+         x.BinLocation != null &&
+         x.BinLocation.IsActive &&
+         x.BinLocation.WarehouseId == warehouseId &&
+         x.ItemInstance != null &&
+         x.ItemInstance.IsActive &&
+         x.ItemInstance.Status != ItemStatus.Lost &&
+         x.ItemInstance.Status != ItemStatus.Disposed)
+     .Select(x => new WarehouseMapItemRow(
+         x.BinLocationId!.Value,
+         x.ItemInstance!.Item != null
+             ? x.ItemInstance.Item.ItemCode
+             : "Unknown",
+         x.ItemInstance.Item != null
+             ? x.ItemInstance.Item.DefaultName
+             : null,
+         x.ItemInstance.SerialNumber,
+         x.ItemInstance.Item != null &&
+         x.ItemInstance.Item.Category != null
+             ? x.ItemInstance.Item.Category.CategoryCode
+             : "Unknown",
+         x.ItemInstance.Status,
+         x.ItemInstance.Barcode,
+                 1,
+            "Serial"
+     ))
+     .ToArrayAsync(cancellationToken);
+
+        var quantityLocationRows = await _db.QuantityStockLocationBalances
+            .AsNoTracking()
+            .Where(x =>
+                x.WarehouseId == warehouseId &&
+                x.Quantity > 0 &&
+                x.BinLocation != null &&
+                x.BinLocation.IsActive &&
+                x.BinLocation.WarehouseId == warehouseId &&
+                x.Item != null &&
+                x.Item.IsActive)
+            .Select(x => new WarehouseMapItemRow(
+                x.BinLocationId,
+                x.Item != null
+                    ? x.Item.ItemCode
+                    : "Unknown",
+                x.Item != null ? x.Item.DefaultName : null,
+                $"",
+                x.Item != null &&
+                x.Item.Category != null
+                    ? x.Item.Category.CategoryCode
+                    : "Unknown",
+                x.Status,
+                string.Empty,
+               x.Quantity,
+                 "Quantity"
+            ))
+            .ToArrayAsync(cancellationToken);
+
+        var locationRows = serialLocationRows
+            .Concat(quantityLocationRows)
+            .ToArray();
 
         var itemsByBin = locationRows
             .GroupBy(x => x.BinLocationId)
@@ -353,7 +387,9 @@ public sealed class DashboardService : IDashboardService
 
         var racks = binRows
             .GroupBy(x => new { x.RackId, x.RackCode, x.RackName })
-            .OrderBy(x => x.Key.RackCode)
+            .OrderBy(x => string.Equals(x.Key.RackCode, "PALET", StringComparison.OrdinalIgnoreCase)? 1 : 0)
+            .ThenBy(x => x.Key.RackCode)
+            .ThenBy(x => x.Key.RackId)
             .Select(rackGroup =>
             {
                 var shelves = rackGroup
@@ -524,25 +560,28 @@ public sealed class DashboardService : IDashboardService
             BinCode = binCode,
             FullPath = fullPath,
             IsOccupied = items.Length > 0,
-            ItemCount = items.Length,
+
+            ItemCount = (int)items.Sum(x => x.Quantity),
 
             ItemCodes = items
-        .Select(x => x.ItemCode)
-        .Where(x => !string.IsNullOrWhiteSpace(x))
-        .Distinct()
-        .ToArray(),
+           .Select(x => x.ItemCode)
+           .Where(x => !string.IsNullOrWhiteSpace(x))
+           .Distinct()
+           .ToArray(),
 
             SerialNumbers = items
-        .Select(x => x.SerialNumber)
-        .Where(x => !string.IsNullOrWhiteSpace(x))
-        .Distinct()
-        .ToArray(),
+           .Where(x => x.TrackingType == "Serial")
+           .Select(x => x.SerialNumber)
+           .Where(x => !string.IsNullOrWhiteSpace(x))
+           .Distinct()
+           .ToArray(),
 
             Barcodes = items
-        .Select(x => x.Barcode)
-        .Where(x => !string.IsNullOrWhiteSpace(x))
-        .Distinct()
-        .ToArray(),
+           .Where(x => x.TrackingType == "Serial")
+           .Select(x => x.Barcode)
+           .Where(x => !string.IsNullOrWhiteSpace(x))
+           .Distinct()
+           .ToArray(),
 
             Items = items.Select(x => new WarehouseMapItemDto
             {
@@ -551,7 +590,9 @@ public sealed class DashboardService : IDashboardService
                 SerialNumber = x.SerialNumber,
                 Barcode = x.Barcode,
                 CategoryCode = x.CategoryCode,
-                Status = x.Status.ToString()
+                Status = x.Status.ToString(),
+                Quantity = x.Quantity,
+                TrackingType = x.TrackingType
             }).ToArray(),
 
             Color = color,
@@ -684,13 +725,16 @@ public sealed class DashboardService : IDashboardService
     }
 
     private sealed record WarehouseMapItemRow(
-         int BinLocationId,
-    string ItemCode,
-    string? ItemName,
-    string? SerialNumber,
-    string? CategoryCode,
-    ItemStatus Status,
-    string? Barcode);
+        int BinLocationId,
+        string ItemCode,
+        string? ItemName,
+        string? SerialNumber,
+        string? CategoryCode,
+        ItemStatus Status,
+        string? Barcode,
+        decimal Quantity,
+        string TrackingType
+    );
 
     private IQueryable<CurrentItemLocation> ApplyCurrentLocationWarehouseScope(IQueryable<CurrentItemLocation> query, int? warehouseId, CurrentUserContext user)
     {

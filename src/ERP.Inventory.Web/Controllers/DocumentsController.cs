@@ -222,7 +222,8 @@ public sealed class DocumentsController : Controller
     {
         var doc = await Scope(_db.InboundDocuments.AsNoTracking()
             .Include(x => x.Warehouse).Include(x => x.SourceExternalParty)
-            .Include(x => x.Lines).ThenInclude(x => x.Item)
+            //.Include(x => x.Lines).ThenInclude(x => x.Item)
+            .Include(x => x.Lines).ThenInclude(x => x.ItemInstance).ThenInclude(x => x.Item)
             .Include(x => x.Lines).ThenInclude(x => x.BinLocation)
             .AsQueryable(), x => x.WarehouseId)
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
@@ -273,7 +274,7 @@ public sealed class DocumentsController : Controller
         return new
         {
             header = Header(doc, language, doc.Warehouse?.WarehouseCode, doc.SourceExternalParty?.Name),
-            lines = doc.Lines.Select(x => new { item = x.Item?.ItemCode, serial = x.SerialNumber, barcode = x.Barcode, bin = x.BinLocation?.BinCode, condition = x.Condition, note = x.Note }),
+            lines = doc.Lines.Select(x => new { item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, barcode = x.Barcode, bin = x.BinLocation?.BinCode, condition = x.Condition, note = x.Note }),
             history
         };
     }
@@ -401,6 +402,7 @@ public sealed class DocumentsController : Controller
         var doc = await Scope(_db.QuantityInventoryDocuments.AsNoTracking()
             .Include(x => x.Warehouse)
             .Include(x => x.Lines).ThenInclude(x => x.Item)!.ThenInclude(x => x.Category)
+            .Include(x => x.Lines).ThenInclude(x => x.BinLocation)
             .AsQueryable(), x => x.WarehouseId)
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 
@@ -419,13 +421,15 @@ public sealed class DocumentsController : Controller
                 status = x.StatusAfter.ToString(),
                 statusText = LocalizationCatalog.Text(language, x.StatusAfter.ToString()),
                 quantityDelta = x.QuantityDelta,
+                binLocationId = x.BinLocationId,
+                binCode = x.BinCode,
                 receiver =string.IsNullOrWhiteSpace(x.ReceiverCode) && string.IsNullOrWhiteSpace(x.ReceiverName) ? null
                             : $"{x.ReceiverCode}-{x.ReceiverName}",
 
                 sender =string.IsNullOrWhiteSpace(x.SenderCode) && string.IsNullOrWhiteSpace(x.SenderName) ? null
                             : $"{x.SenderCode}-{x.SenderName}",
                 department = "TE",
-                oldLocation = x.QuantityDelta > 0 ? x.Warehouse.Name : "",
+                oldLocation = !string.IsNullOrWhiteSpace(x.BinCode) ? x.BinCode : (x.QuantityDelta > 0 ? x.Warehouse.Name : ""),
                 receiverPhone = string.IsNullOrWhiteSpace(x.ReceiverPhone)  ? x.SenderPhone : x.ReceiverPhone,
                 performedBy = x.PostedBy,
                 itemCategory = x.Item != null ? x.Item.Category.CategoryCode : null,
@@ -449,7 +453,7 @@ public sealed class DocumentsController : Controller
                 doc.PostedAt,
                 doc.Note
             },
-            lines = history.Select(x => new { x.itemCategory, item =  x.itemCode,  quantity = x.quantityDelta, note = "", location = x.quantityDelta > 0 ? x.oldLocation : "", }),
+            lines = doc.Lines.Select(x => new { itemCategory = x.Item?.Category?.CategoryCode, item = x.Item?.ItemCode, quantity = x.Quantity, note = x.Note, binLocationId = x.BinLocationId, binCode = x.BinLocation?.BinCode ?? string.Empty, location = x.BinLocation?.BinCode ?? string.Empty }),
             history
         };
     }

@@ -61,7 +61,7 @@ public sealed class InboundRequest
     public string ReceiverDepartment { get; init; } = string.Empty;
     public string DepartmentOwner { get; init; } = string.Empty;
     public string ApprovedBy { get; init; } = string.Empty;
-    public string DocumentNo { get; init; } = string.Empty;
+    public string DocumentNo { get; set; } = string.Empty;
     public string WarehouseCode { get; init; } = string.Empty;
     public int WarehouseId { get; init; }
     public DateTime DocumentDate { get; init; } = DateTime.UtcNow;
@@ -166,7 +166,7 @@ public sealed class RepairReceiveLineRequest
 // ─── Borrow ─────────────────────────────────────────────────
 public sealed class BorrowLendRequest
 {
-    public string DocumentNo { get; init; } = string.Empty;
+    public string DocumentNo { get; set; } = string.Empty;
     public int WarehouseId { get; init; } 
     public string WarehouseCode { get; init; } = string.Empty;
     /// <summary>Text code for borrower. Backend resolves to ExternalParty Id.</summary>
@@ -204,7 +204,7 @@ public sealed class BorrowReturnRequest
     public string ApprovedBy { get; init; } = string.Empty;
     public string BorrowerPhone { get; init; } = string.Empty;
     public string DepartmentOwner { get; init; } = string.Empty;
-    public string? BorrowDocumentNo { get; init; }
+    public string? BorrowDocumentNo { get; set; } = string.Empty;
     public DateTime ReturnDate { get; init; } = DateTime.UtcNow;
     public string? ReturnLocationBinCode { get; init; }
     public string? Note { get; init; }
@@ -314,9 +314,24 @@ public sealed class QuantityInventoryLineRequest
 {
     public string ItemCategoryCode { get; init; } = string.Empty;
     public string ItemCode { get; init; } = string.Empty;
+    public int? BinLocationId { get; init; }
+    public string? BinCode { get; init; }
     public string SnCode { get; init; } = string.Empty;
     public string Status { get; init; } =string.Empty;
     public string AdjustmentDirection { get; init; } = string.Empty;
+    public decimal Quantity { get; init; }
+    public string? Note { get; init; }
+}
+
+public sealed class QuantityInventoryDocumentLineDto
+{
+    public int ItemId { get; init; }
+    public string ItemCategoryCode { get; init; } = string.Empty;
+    public string ItemCode { get; init; } = string.Empty;
+    public int? BinLocationId { get; init; }
+    public string? BinCode { get; init; }
+    public string SnCode { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
     public decimal Quantity { get; init; }
     public string? Note { get; init; }
 }
@@ -330,6 +345,8 @@ public sealed class QuantityStockBalanceDto
     public int Id { get; init; }
     public int WarehouseId { get; init; }
     public string WarehouseCode { get; init; } = string.Empty;
+    public int? BinLocationId { get; init; }
+    public string? BinCode { get; init; }
     public int ItemId { get; init; }
     public string ItemCategoryCode { get; init; } = string.Empty;
     public string ItemCode { get; init; } = string.Empty;
@@ -355,6 +372,8 @@ public sealed class QuantityInventoryTransactionDto
     public DateTime PostedAt { get; init; }
     public string ItemCategoryCode { get; init; } = string.Empty;
     public string ItemCode { get; init; } = string.Empty;
+    public int? BinLocationId { get; init; }
+    public string? BinCode { get; init; }
     public string SnCode { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
     public decimal QuantityDelta { get; init; }

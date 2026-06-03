@@ -299,6 +299,15 @@
     function showBinInfo(bin) {
         const items = Array.isArray(bin.items) ? bin.items : [];
 
+        const totalQty = items.reduce((sum, x) => {
+            return sum + Number(x.quantity || 1);
+        }, 0);
+
+        const formatQty = (value) => {
+            const num = Number(value || 0);
+            return Number.isInteger(num) ? String(num) : num.toFixed(4).replace(/\.?0+$/, '');
+        };
+
         const html = `
     <div class="warehouse-map-bin-panel-backdrop"></div>
 
@@ -319,26 +328,35 @@
 
         <div>
           <b>${UI.t('Total items')}:</b>
-          ${UI.esc(bin.itemCount || items.length || 0)}
+          ${UI.esc(formatQty(totalQty))}
         </div>
 
         ${items.length
-                ? items.map((item, index) => `
-              <div class="warehouse-map-bin-item">
-                <div><b>#${index + 1}</b></div>
-                <div><b>${UI.t('PN')}:</b> ${UI.esc(item.itemCode || '-')}</div>
-                <div><b>${UI.t('SN')}:</b> ${UI.esc(item.serialNumber || '-')}</div>
-                <div><b>${UI.t('Category Code')}:</b> ${UI.esc(item.categoryCode || '-')}</div>
-                <div>
-                  <b>${UI.t('Status')}:</b>
-                  ${UI.esc(
-                    UI.enum('ItemStatus', item.status || '')
-                    || item.status
-                    || '-'
-                )}
-                </div>
-              </div>
-            `).join('')
+                ? items.map((item, index) => {
+                    const isQuantity = String(item.trackingType || '').toLowerCase() === 'quantity';
+
+                    return `
+                  <div class="warehouse-map-bin-item">
+                    <div><b>#${index + 1}</b></div>
+                    <div><b>${UI.t('PN')}:</b> ${UI.esc(item.itemCode || '-')}</div>
+
+                    ${isQuantity
+                            ? `<div><b>${UI.t('Qty')}:</b> ${UI.esc(formatQty(item.quantity))}</div>`
+                            : `<div><b>${UI.t('SN')}:</b> ${UI.esc(item.serialNumber || '-')}</div>`
+                        }
+
+                    <div><b>${UI.t('Category Code')}:</b> ${UI.esc(item.categoryCode || '-')}</div>
+                    <div>
+                      <b>${UI.t('Status')}:</b>
+                      ${UI.esc(
+                            UI.enum('ItemStatus', item.status || '')
+                            || item.status
+                            || '-'
+                        )}
+                    </div>
+                  </div>
+                `;
+                }).join('')
                 : `<div>${UI.t('Empty')}</div>`
             }
       </div>

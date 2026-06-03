@@ -1,6 +1,7 @@
 // ── State ─────────────────────────────────────────────────────────────
 let qtyBalanceRows = [];
 let qtyActiveView = 'inventory'; // 'inventory' | 'receive' | 'issue' | 'adjust' | 'history'
+let qtyBinOptions = [];
 let qtySelectedItem = null;      // { itemCode, itemName } — for detail drill-down
 
 // ── Route Handler ─────────────────────────────────────────────────────
@@ -66,6 +67,7 @@ Router.register('quantity-inventory', async function () {
     clearQuantityValidation();
   });
     $(document).off('click.qtyPost').on('click.qtyPost', '#btnPostQuantity', postQuantityInventory);
+    //$(document).off('change.qtyWarehouseBins').on('change.qtyWarehouseBins', '#qtyContent [name="operationWarehouseId"]', reloadQuantityBinOptions);
     $(document).off('click.cancelQuantityEdit').on('click.cancelQuantityEdit', '#btnCancelQuantityEdit', () => {
         const viewType = AppState.documentEditor && String(AppState.documentEditor.type || '').startsWith('quantity-') ? AppState.documentEditor.type.replace('quantity-', '') : 'inventory';
         AppState.documentEditor = null;
@@ -332,6 +334,7 @@ function loadQtyFormPanel(operation) {
             <th class="col-stt">#</th>
             <th>${UI.t('Category Code')}</th>
             <th>${UI.t('PN')}</th>
+            <th>${UI.t('Bin Location')}</th>
             <th>${UI.t('Quantity')}</th>
             <th class="quantity-col-action"></th>
           </tr></thead>
@@ -347,6 +350,7 @@ function loadQtyFormPanel(operation) {
     updateQuantityLineIndex();
     ScanQtySystem.init();
     applyQuantityEditorState(operation);
+    //reloadQuantityBinOptions();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -407,6 +411,7 @@ async function loadQuantityTransactions() {
         <th >${UI.t('Category Code')}</th>
         <th>${UI.t('Operation')}</th>
         <th>${UI.t('Item')}</th>
+        <th>${UI.t('Bin Location')}</th>
         <th>${UI.t('Qty')}</th>
         <th>${UI.t('User')}</th>
       </tr></thead>
@@ -416,6 +421,7 @@ async function loadQuantityTransactions() {
         <td>${UI.t(r.itemCategoryCode)}</td>
         <td>${UI.t(r.transactionType)}</td>
         <td>${UI.esc(r.itemCode)}</td>
+        <td>${UI.esc(r.binCode || '-')}</td>
         <td class="${r.quantityDelta < 0 ? 'text-danger' : 'text-success'} fw-bold">${r.quantityDelta > 0 ? '+' : ''}${UI.esc(r.quantityDelta)}</td>
         <td class="small text-muted">${UI.esc(r.postedBy)}</td>
       </tr>`).join('')}</tbody>
@@ -459,6 +465,7 @@ async function postQuantityInventory() {
       return {
           itemCategoryCode: row.find('[name="itemCategoryCode"]').val() || '',
           itemCode: row.find('[name="quantityItemCode"]').val() || '',
+          binCode: (row.find('[name="binCode"]').val() || '').trim(),
           snCode: '',
           quantity: parseFloat(row.find('[name="quantity"]').val() || '0'),
           status:   row.find('[name="lineStatus"]').val() || 'Normal'
@@ -549,6 +556,7 @@ function applyQuantityEditorState(operation) {
     const line = lines[index] || {};
     $(this).find('[name="itemCategoryCode"]').val(line.itemCategoryCode || '');
     $(this).find('[name="quantityItemCode"]').val(line.itemCode || '');
+    $(this).find('[name="binCode"]').attr('data-selected-bin', line.binCode || '').val(line.binCode || '');
     $(this).find('[name="quantity"]').val(line.quantity || 0);
     $(this).find('[name="lineStatus"]').val(line.status || 'Normal');
   });
@@ -585,10 +593,20 @@ function showQuantityValidation(errors) {
 }
 
 function quantityErrorsFromResult(result) {
+  const mapped = [];
+  const systemMessage = result && (result.systemMessage || (result.errorCode ? result.message : ''));
+  if (systemMessage) {
+    mapped.push({ label: 'System', message: systemMessage });
+  }
+
   const errors = Array.isArray(result && result.errors) && result.errors.length
     ? result.errors
     : [result && result.message ? result.message : 'Request failed.'];
-  return errors.map(message => ({ label: 'System', message }));
+  errors.forEach(message => {
+    if (!message || message === systemMessage) return;
+    mapped.push(typeof message === 'string' ? { label: 'System', message } : message);
+  });
+  return mapped;
 }
 
 function validateQuantityBeforePost() {
@@ -600,6 +618,8 @@ function validateQuantityBeforePost() {
       const row = $(this);
       if (!row.find('[name="quantityItemCode"]').val().trim())
           errors.push({ field: 'quantityItemCode', label: 'Item Code', message: 'Item Code is required.' });
+    if (!row.find('[name="binCode"]').val())
+      errors.push({ row: index + 1, field: 'binCode', label: 'Bin Location', message: UI.t('Location is required.') });
     const qty = parseFloat(row.find('[name="quantity"]').val() || '0');
     if (qty <= 0) errors.push({ row: index + 1, field: 'quantity', label: 'Qty', message: 'Quantity must be greater than zero.' });
   });
@@ -614,10 +634,27 @@ function renderQuantityLine() {
     <td class="col-stt"></td>
     <td>${UI.input('Category Code', 'text', '', 'itemCategoryCode')}</td>
     <td>${UI.input('PN', 'text', '', 'quantityItemCode')}</td>
+    <td class="col-bin"><input class="form-control form-control-sm" name="binCode"></td>
     <td>${UI.input('Quantity', 'number', '1', 'quantity')}</td>
     <td><button class="btn btn-light btn-sm btn-remove-quantity-line" type="button"><i class="bi bi-x-lg"></i></button></td>
   </tr>`;
 }
+
+function renderQuantityBinSelect(selected = '') {
+    return UI.select('Bin Location', 'binCode', qtyBinOptions, selected);
+}
+
+//async function reloadQuantityBinOptions() {
+//    const warehouseId = $('#qtyContent [name="operationWarehouseId"]').val() || null;
+//    qtyBinOptions = warehouseId ? await UI.api('/Lookup/Bins', { query: { warehouseId } }) : [];
+
+//    $('#quantityLineBody tr').each(function () {
+//        const row = $(this);
+//        const current = row.find('[name="binCode"]').val() || row.find('[name="binCode"]').attr('data-selected-bin') || '';
+//        row.find('td').eq(3).html(renderQuantityBinSelect(current));
+//        row.find('[name="binCode"]').attr('data-selected-bin', current);
+//    });
+//}
 
 function updateQuantityLineIndex() {
     $('.quantity-line-table tbody tr').each(function (index) {

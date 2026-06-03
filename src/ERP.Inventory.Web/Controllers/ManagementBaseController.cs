@@ -2,9 +2,12 @@ using ERP.Inventory.Application.Interfaces;
 using ERP.Inventory.Domain.Common;
 using ERP.Inventory.Domain.Entities;
 using ERP.Inventory.Infrastructure.Data;
+using ERP.Inventory.Infrastructure.Services;
+using ERP.Inventory.Web.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ERP.Inventory.Web.Controllers;
 
@@ -58,9 +61,25 @@ public abstract class ManagementBaseController : Controller
             await Db.SaveChangesAsync(cancellationToken);
             return Json(new { success = true });
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex)
         {
-            return Json(new { success = false, message = "Cannot hard delete this record because it is referenced by operational data. Use soft delete instead." });
+            var user = CurrentUserService.GetCurrentUser();
+            var errorLog = HttpContext.RequestServices.GetRequiredService<ILogErrorSystemService>();
+            var log = await errorLog.LogAsync(ex, new LogErrorContext(
+                Module: GetType().Name,
+                Action: "HardDelete",
+                RequestPath: HttpContext.Request.Path.Value,
+                HttpMethod: HttpContext.Request.Method,
+                UserId: user.UserId,
+                UserName: user.UserName,
+                ClientIp: HttpContext.Connection.RemoteIpAddress?.ToString(),
+                Browser: HttpContext.Request.Headers.UserAgent.ToString()), CancellationToken.None);
+            return Json(new
+            {
+                success = false,
+                message = SystemErrorMessages.Create(HttpContext, log.ErrorCode, ex),
+                errorCode = log.ErrorCode
+            });
         }
     }
 

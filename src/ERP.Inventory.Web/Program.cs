@@ -3,6 +3,7 @@ using ERP.Inventory.Infrastructure;
 using ERP.Inventory.Infrastructure.Data;
 using ERP.Inventory.Infrastructure.Seed;
 using ERP.Inventory.Infrastructure.Services;
+using ERP.Inventory.Web.Filters;
 using ERP.Inventory.Web.Middleware;
 using ERP.Inventory.Web.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -25,7 +26,11 @@ builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath))
     .SetApplicationName("ERP.Inventory");
 
-builder.Services.AddControllersWithViews()
+builder.Services.AddControllersWithViews(options =>
+    {
+        options.Filters.Add<LogErrorSystemExceptionFilter>();
+        options.Filters.Add<ApiFailureLoggingResultFilter>();
+    })
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
