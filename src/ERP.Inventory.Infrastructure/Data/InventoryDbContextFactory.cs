@@ -7,7 +7,7 @@ public sealed class InventoryDbContextFactory : IDesignTimeDbContextFactory<Inve
 {
     public InventoryDbContext CreateDbContext(string[] args)
     {
-        const string connectionString = "Server=LAPTOP-R99AS0H4\\SQLEXPRESS;Database=WarehouseManager2;User ID=giang;Password=123456;TrustServerCertificate=True;MultipleActiveResultSets=true";
+        const string connectionString = "Server=DESKTOP-8895O66;Database=WarehouseManager5;User ID=sa;Password=foxconn168;TrustServerCertificate=True;MultipleActiveResultSets=true";
         var options = new DbContextOptionsBuilder<InventoryDbContext>()
             .UseSqlServer(connectionString)
             .Options;

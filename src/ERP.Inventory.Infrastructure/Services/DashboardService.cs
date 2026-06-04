@@ -443,8 +443,7 @@ public sealed class DashboardService : IDashboardService
 
         var racks = binRows
             .GroupBy(x => new { x.RackId, x.RackCode, x.RackName })
-            .OrderBy(x => string.Equals(x.Key.RackCode, "PALET", StringComparison.OrdinalIgnoreCase)? 1 : 0)
-            .ThenBy(x => x.Key.RackCode)
+            .OrderBy(x => x.Key.RackCode)
             .ThenBy(x => x.Key.RackId)
             .Select(rackGroup =>
             {

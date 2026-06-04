@@ -1035,7 +1035,7 @@ button.card:hover {
 .warehouse-map-bin {
   position: relative;
   /*aspect-ratio: 1;*/
-  min-width: 225px;
+  min-width: 200px;
   width: 100%;
   border: 1px solid rgba(15, 23, 42, .28);
   border-radius: 6px;

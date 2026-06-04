@@ -85,8 +85,8 @@ public sealed class TrackingService : ITrackingService
                 LocationPath = GetLocationPath(x.BinCode, x.ExternalLocationText, x.ExternalPartyName, x.WarehouseName),
                 UpdatedAt = x.UpdatedLocationAt,
                 UpdatedBy = x.UpdatedLocationBy,
-                CanMove = x.Status == ItemStatus.Normal ||  x.Status == ItemStatus.Damaged ||  
-                          x.Status == ItemStatus.Scrapped || x.Status == ItemStatus.InStock,
+                CanMove = (string.IsNullOrEmpty(x.BinCode) &&  (x.Status == ItemStatus.Normal || x.Status == ItemStatus.Damaged ||
+                          x.Status == ItemStatus.Scrapped || x.Status == ItemStatus.InStock)),
                 CanSendRepair =  x.Status == ItemStatus.Normal ||  x.Status == ItemStatus.InStock || x.Status == ItemStatus.Damaged,
                 CanLend =  x.Status == ItemStatus.Normal ||  x.Status == ItemStatus.InStock,
                 ReferenceDocumentId = x.ReferenceDocumentId,
@@ -391,7 +391,8 @@ public sealed class TrackingService : ITrackingService
             return externalPartyName;
         }
 
-        return warehouseName ?? "Unknown";
+        return "Unknown";
+        //return warehouseName ?? "Unknown";
     }
 
     private static string CurrentLocationDisplay(CurrentItemLocation location)

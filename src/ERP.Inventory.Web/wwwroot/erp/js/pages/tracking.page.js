@@ -146,7 +146,7 @@ async function renderTrackingDetail(item){
     <div class="form-title">${UI.t('Item Information')} ${item.serialNumber}</div>
     <div class="col-lg-4 d-flex"><div class="card info-card w-100"><div class="card-body"><h3>${UI.esc(item.itemCode)}</h3><p class="text-muted mb-2">${UI.esc(item.itemName)}</p><p class="mb-1">${UI.t('Serial')}: <b>${UI.esc(item.serialNumber || '-')}</b></p><p class="mb-0">${UI.t('Barcode')}: ${UI.esc(item.barcode || '-')}</p></div></div></div>
     <div class="col-lg-4 d-flex"><div class="card info-card w-100"><div class="card-body">${UI.badge(item.status)}<p class="mt-3 mb-1">${UI.t('Holder')}: <b>${UI.esc(item.holderName)}</b></p><p class="mb-0">${UI.t('Document No')}: <b>${UI.esc(item.referenceDocumentNo || '-')}</b></p></div></div></div>
-    <div class="col-lg-4 d-flex"><div class="card info-card w-100"><div class="card-body"><h3>${UI.t('Current Location')}</h3><p>${UI.esc(item.locationPath)}</p><p class="small text-muted">${UI.t('Updated')}: ${UI.formatDate(item.updatedAt)} ${UI.t('by')} ${UI.esc(item.updatedBy)}</p>${renderQuickActions(item)}</div></div></div>
+    <div class="col-lg-4 d-flex"><div class="card info-card w-100"><div class="card-body"><h3>${UI.t('Current Location')}</h3><p>${UI.esc(UI.t(item.locationPath))}</p><p class="small text-muted">${UI.t('Updated')}: ${UI.formatDate(item.updatedAt)} ${UI.t('by')} ${UI.esc(item.updatedBy)}</p>${renderQuickActions(item)}</div></div></div>
   </div></div>  
   <ul class="nav nav-tabs mt-3">
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#timelineTab">${UI.t('Timeline')}</button></li>

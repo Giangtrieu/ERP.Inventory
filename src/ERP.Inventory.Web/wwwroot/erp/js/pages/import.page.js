@@ -64,7 +64,8 @@ async function loadImportRows(id){
 $(document).on('click', '.btn-import-rows', function(){ loadImportRows($(this).data('id')); });
 $(document).on('click', '.btn-import-validate', async function(){
   const result = await UI.api(`/Import/Validate/${$(this).data('id')}`, { method: 'POST', data: {} });
-    UI.showError(UI.msg(result.message || 'Import batch is valid.'));
+    if (!result.success) UI.showError(UI.msg(result.message));
+    else UI.toast(UI.msg(result.message))
   await loadImportBatches();
   await loadImportRows($(this).data('id'));
 });

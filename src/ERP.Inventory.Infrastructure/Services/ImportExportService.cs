@@ -205,7 +205,8 @@ public sealed class ImportExportService : IImportService, IExportService
         batch.UpdatedAt = DateTime.UtcNow;
         batch.UpdatedBy = user.UserName;
         await _db.SaveChangesAsync(cancellationToken);
-        return ServiceResult<int>.Ok(blocking, blocking == 0 ? "Import batch is valid." : "Import batch has blocking errors.");
+        if(blocking > 0) return ServiceResult<int>.Fail("Import batch has blocking errors.");
+        return ServiceResult<int>.Ok(blocking, "Import batch is valid.");
     }
 
     public async Task<ServiceResult<int>> ConfirmAsync(int importBatchId, CurrentUserContext user, CancellationToken cancellationToken = default)
