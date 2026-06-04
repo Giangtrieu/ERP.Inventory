@@ -97,10 +97,14 @@ public sealed class LookupController : Controller
     }
 
     [HttpGet("BinCodes")]
-    public async Task<IActionResult> BinCodes([FromQuery] string? keyword, CancellationToken cancellationToken)
+    public async Task<IActionResult> BinCodes([FromQuery] string? keyword, [FromQuery] string? usageType, CancellationToken cancellationToken)
     {
-        var query = _db.BinLocations .AsNoTracking() .Where(x => x.IsActive);
-        query = query.Where(x => !_db.CurrentItemLocations.Any(cl => cl.BinLocationId == x.Id));
+        var normalizedUsageType = ParseBinUsageType(usageType) ?? BinLocationUsageType.LocationTracked;
+        var query = _db.BinLocations .AsNoTracking() .Where(x => x.IsActive && x.UsageType == normalizedUsageType);
+        if (normalizedUsageType == BinLocationUsageType.LocationTracked)
+        {
+            query = query.Where(x => !_db.CurrentItemLocations.Any(cl => cl.BinLocationId == x.Id));
+        }
         if (!string.IsNullOrWhiteSpace(keyword))
         {
             query = query.Where(x => x.BinCode.Contains(keyword));
@@ -111,6 +115,8 @@ public sealed class LookupController : Controller
             {
                 id = x.Id,
                 text = x.BinCode,
+                binCode = x.BinCode,
+                usageType = x.UsageType.ToString()
             })
             .OrderBy(x => x.text)
             .ToArrayAsync(cancellationToken);
@@ -196,10 +202,15 @@ public sealed class LookupController : Controller
     }
 
     [HttpGet("Bins")]
-    public async Task<IActionResult> Bins([FromQuery] int? warehouseId, CancellationToken cancellationToken)
+    public async Task<IActionResult> Bins([FromQuery] int? warehouseId, [FromQuery] string? usageType, [FromQuery] bool availableOnly = false, CancellationToken cancellationToken = default)
     {
         var user = _currentUserService.GetCurrentUser();
         var query = _db.BinLocations.AsNoTracking().Where(x => x.IsActive);
+        var normalizedUsageType = ParseBinUsageType(usageType);
+        if (normalizedUsageType.HasValue)
+        {
+            query = query.Where(x => x.UsageType == normalizedUsageType.Value);
+        }
 
         if (warehouseId.HasValue)
         {
@@ -212,9 +223,14 @@ public sealed class LookupController : Controller
             query = query.Where(x => user.WarehouseIds.Contains(x.WarehouseId));
         }
 
+        if (availableOnly && (!normalizedUsageType.HasValue || normalizedUsageType == BinLocationUsageType.LocationTracked))
+        {
+            query = query.Where(x => !_db.CurrentItemLocations.Any(cl => cl.BinLocationId == x.Id));
+        }
+
         var rows = await query
             .OrderBy(x => x.BinCode)
-            .Select(x => new { x.Id, x.BinCode })
+            .Select(x => new { x.Id, x.BinCode, UsageType = x.UsageType.ToString() })
             .ToArrayAsync(cancellationToken);
 
         return Json(rows);
@@ -348,6 +364,16 @@ public sealed class LookupController : Controller
     // ─── Shared helpers ──────────────────────────────────────
 
     private string Language() => User.FindFirst("language")?.Value ?? "vi";
+
+    private static BinLocationUsageType? ParseBinUsageType(string? usageType)
+    {
+        if (string.IsNullOrWhiteSpace(usageType) || string.Equals(usageType, "All", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return Enum.TryParse<BinLocationUsageType>(usageType.Trim(), true, out var parsed) ? parsed : null;
+    }
 
     private async Task<int[]?> AllowedBinIds(CancellationToken cancellationToken)
     {

@@ -24,6 +24,23 @@ internal static class SimpleExcel
         throw new InvalidOperationException("Only .xlsx, .csv and .tsv files are supported.");
     }
 
+    public static async Task<IReadOnlyCollection<Dictionary<string, string>>> ReadTableByOrderAsync(Stream stream, string fileName, IReadOnlyList<string> orderedKeys, CancellationToken cancellationToken)
+    {
+        if (fileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".tsv", StringComparison.OrdinalIgnoreCase))
+        {
+            using var reader = new StreamReader(stream, Encoding.UTF8, true, leaveOpen: true);
+            var text = await reader.ReadToEndAsync();
+            return ReadDelimitedByOrder(text, fileName.EndsWith(".tsv", StringComparison.OrdinalIgnoreCase) ? '\t' : ',', orderedKeys);
+        }
+
+        if (fileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+        {
+            return ReadXlsxByOrder(stream, orderedKeys);
+        }
+
+        throw new InvalidOperationException("Only .xlsx, .csv and .tsv files are supported.");
+    }
+
     public static byte[] CreateWorkbook(IReadOnlyCollection<string> headers, IReadOnlyCollection<IReadOnlyCollection<object?>> rows, string sheetName = "Data")
     {
         using var output = new MemoryStream();
@@ -79,6 +96,22 @@ internal static class SimpleExcel
             return headers.Select((header, index) => new { header, value = index < values.Count ? values[index] : string.Empty })
                 .Where(x => !string.IsNullOrWhiteSpace(x.header))
                 .ToDictionary(x => x.header, x => x.value.Trim(), StringComparer.OrdinalIgnoreCase);
+            }).ToArray();
+    }
+
+    private static IReadOnlyCollection<Dictionary<string, string>> ReadDelimitedByOrder(string text, char delimiter, IReadOnlyList<string> orderedKeys)
+    {
+        var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        if (lines.Length <= 1)
+        {
+            return Array.Empty<Dictionary<string, string>>();
+        }
+
+        return lines.Skip(1).Select(line =>
+        {
+            var values = ParseDelimitedLine(line, delimiter);
+            return orderedKeys.Select((key, index) => new { key, value = index < values.Count ? values[index] : string.Empty })
+                .ToDictionary(x => x.key, x => x.value.Trim(), StringComparer.OrdinalIgnoreCase);
         }).ToArray();
     }
 
@@ -123,6 +156,52 @@ internal static class SimpleExcel
                 .Where(x => !string.IsNullOrWhiteSpace(x.Header))
                 .ToDictionary(x => x.Header, x => row.TryGetValue(x.Key, out var value) ? value.Trim() : string.Empty, StringComparer.OrdinalIgnoreCase))
             .ToArray();
+    }
+
+    private static IReadOnlyCollection<Dictionary<string, string>> ReadXlsxByOrder(Stream stream, IReadOnlyList<string> orderedKeys)
+    {
+        var rows = ReadXlsxRows(stream);
+        if (rows.Length <= 1)
+        {
+            return Array.Empty<Dictionary<string, string>>();
+        }
+
+        return rows.Skip(1).Select(row => orderedKeys
+                .Select((key, index) => new { key, value = row.TryGetValue(index + 1, out var value) ? value.Trim() : string.Empty })
+                .ToDictionary(x => x.key, x => x.value, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+    }
+
+    private static SortedDictionary<int, string>[] ReadXlsxRows(Stream stream)
+    {
+        using var zip = new ZipArchive(stream, ZipArchiveMode.Read, true);
+        var sharedStrings = ReadSharedStrings(zip);
+        var sheetEntry = zip.GetEntry("xl/worksheets/sheet1.xml") ?? zip.Entries.FirstOrDefault(x => x.FullName.StartsWith("xl/worksheets/", StringComparison.OrdinalIgnoreCase));
+        if (sheetEntry == null)
+        {
+            return Array.Empty<SortedDictionary<int, string>>();
+        }
+
+        using var sheetStream = sheetEntry.Open();
+        var doc = XDocument.Load(sheetStream);
+        XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        return doc.Descendants(ns + "row").Select(row =>
+        {
+            var values = new SortedDictionary<int, string>();
+            foreach (var cell in row.Elements(ns + "c"))
+            {
+                var reference = cell.Attribute("r")?.Value ?? string.Empty;
+                var column = ColumnIndex(reference);
+                var type = cell.Attribute("t")?.Value;
+                var raw = cell.Element(ns + "v")?.Value ?? cell.Element(ns + "is")?.Element(ns + "t")?.Value ?? string.Empty;
+                var value = type == "s" && int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var sharedIndex) && sharedIndex < sharedStrings.Count
+                    ? sharedStrings[sharedIndex]
+                    : raw;
+                values[column] = value;
+            }
+
+            return values;
+        }).Where(x => x.Count > 0).ToArray();
     }
 
     private static List<string> ReadSharedStrings(ZipArchive zip)

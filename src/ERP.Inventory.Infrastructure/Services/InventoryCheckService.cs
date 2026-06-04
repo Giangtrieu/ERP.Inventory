@@ -5,6 +5,7 @@ using ERP.Inventory.Domain.Entities;
 using ERP.Inventory.Domain.Enums;
 using ERP.Inventory.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using System.Net.NetworkInformation;
 
 namespace ERP.Inventory.Infrastructure.Services;
 
@@ -76,19 +77,115 @@ public sealed class InventoryCheckService : InventoryOperationBase
         if (document == null) return ServiceResult<ScanBatchResultDto>.Fail("Inventory check document not found.");
         if (document.SessionStatus == "Finalized") return ServiceResult<ScanBatchResultDto>.Fail("This inventory check session has already been finalized.");
         if (!user.CanAccessWarehouse(document.WarehouseId)) return ServiceResult<ScanBatchResultDto>.Fail("Permission denied.");
-        if (!request.Lines.Any()) return ServiceResult<ScanBatchResultDto>.Fail("At least one scan line is required.");
+        var scanLines = request.Lines.ToArray();
+        if (!scanLines.Any()) return ServiceResult<ScanBatchResultDto>.Fail("At least one scan line is required.");
 
         var warehouse = document.Warehouse!;
 
         // Validate lines trước
-        foreach (var line in request.Lines)
+        foreach (var line in scanLines)
         {
             if (string.IsNullOrWhiteSpace(line.ItemCode)) return ServiceResult<ScanBatchResultDto>.Fail("ItemCode is required for every check line.");
             if (string.IsNullOrWhiteSpace(line.SerialNumber)) return ServiceResult<ScanBatchResultDto>.Fail("SerialNumber is required for every check line.");
             if (string.IsNullOrWhiteSpace(line.BinCode)) return ServiceResult<ScanBatchResultDto>.Fail("BinCode is required for every check line.");
-            var bin = await FindBinByCodeAsync(line.BinCode, cancellationToken);
-            if (bin == null) return ServiceResult<ScanBatchResultDto>.Fail($"BinCode {line.BinCode} not found.");
-            if (bin.WarehouseId != document.WarehouseId) return ServiceResult<ScanBatchResultDto>.Fail($"BinCode {line.BinCode} does not belong to this warehouse.");
+        }
+
+        var binCodes = scanLines.Select(x => x.BinCode.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var actualBinRows = new List<BinLocation>();
+        foreach (var chunk in BatchLookup(binCodes))
+        {
+            actualBinRows.AddRange(await _db.BinLocations
+                .AsNoTracking()
+                .Where(x =>
+                    x.IsActive &&
+                    x.WarehouseId == document.WarehouseId &&
+                    x.UsageType == BinLocationUsageType.LocationTracked &&
+                    chunk.Contains(x.BinCode))
+                .ToListAsync(cancellationToken));
+        }
+        var actualBins = actualBinRows.ToDictionary(x => LookupKey(x.BinCode));
+        foreach (var line in scanLines)
+        {
+            if (!actualBins.ContainsKey(LookupKey(line.BinCode)))
+            {
+                return ServiceResult<ScanBatchResultDto>.Fail($"BinCode {line.BinCode} not found or is not a location-tracked bin in this warehouse.");
+            }
+        }
+
+        var itemCodes = scanLines.Select(x => x.ItemCode.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var serialNumbers = scanLines.Select(x => x.SerialNumber.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var itemRows = new List<Item>();
+        foreach (var chunk in BatchLookup(itemCodes))
+        {
+            itemRows.AddRange(await _db.Items
+                .AsNoTracking()
+                .Where(x => x.IsActive && chunk.Contains(x.ItemCode))
+                .ToListAsync(cancellationToken));
+        }
+        var itemsByCode = itemRows.ToDictionary(x => LookupKey(x.ItemCode));
+        var instances = new List<ItemInstance>();
+        foreach (var itemChunk in BatchLookup(itemCodes, 500))
+        {
+            foreach (var serialChunk in BatchLookup(serialNumbers, 500))
+            {
+                instances.AddRange(await _db.ItemInstances
+                    .Include(x => x.Item)
+                    .Where(x =>
+                        x.IsActive &&
+                        x.TrackingType == ItemTrackingType.LocationTracked &&
+                        x.Item != null &&
+                        itemChunk.Contains(x.Item.ItemCode) &&
+                        x.SerialNumber != null &&
+                        serialChunk.Contains(x.SerialNumber))
+                    .ToListAsync(cancellationToken));
+            }
+        }
+        var instancesByItemSerial = instances
+            .Where(x => x.Item != null && !string.IsNullOrWhiteSpace(x.SerialNumber))
+            .GroupBy(x => (LookupKey(x.Item!.ItemCode), LookupKey(x.SerialNumber)))
+            .ToDictionary(x => x.Key, x => x.First());
+
+        var instanceIds = instances.Select(x => x.Id).Distinct().ToArray();
+        var currentLocations = new List<CurrentItemLocation>();
+        foreach (var chunk in BatchLookup(instanceIds))
+        {
+            currentLocations.AddRange(await _db.CurrentItemLocations
+                .Include(x => x.BinLocation)
+                .Where(x => chunk.Contains(x.ItemInstanceId))
+                .ToListAsync(cancellationToken));
+        }
+        var locationsByInstanceId = currentLocations.ToDictionary(x => x.ItemInstanceId);
+
+        var stockWarehouseIds = currentLocations
+            .Select(x => x.WarehouseId)
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .Append(warehouse.Id)
+            .Distinct()
+            .ToArray();
+        var stockBinIds = currentLocations
+            .Select(x => x.BinLocationId)
+            .Concat(actualBins.Values.Select(x => (int?)x.Id))
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .Distinct()
+            .ToArray();
+        var stockItemIds = instances.Select(x => x.ItemId).Concat(itemsByCode.Values.Select(x => x.Id)).Distinct().ToArray();
+        if (stockWarehouseIds.Length > 0 && stockBinIds.Length > 0 && stockItemIds.Length > 0)
+        {
+            foreach (var binChunk in BatchLookup(stockBinIds, 500))
+            {
+                foreach (var itemChunk in BatchLookup(stockItemIds, 500))
+                {
+                    await _db.StockBalances
+                        .Where(x =>
+                            stockWarehouseIds.Contains(x.WarehouseId) &&
+                            x.BinLocationId.HasValue &&
+                            binChunk.Contains(x.BinLocationId.Value) &&
+                            itemChunk.Contains(x.ItemId))
+                        .LoadAsync(cancellationToken);
+                }
+            }
         }
 
         await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
@@ -101,11 +198,12 @@ public sealed class InventoryCheckService : InventoryOperationBase
             .ToListAsync(cancellationToken)).ToHashSet();
 
         int matched = 0, wrongLocation = 0, extra = 0, skipped = 0;
+        var pendingExtraEvents = new List<(ItemInstance Instance, Item Item, BinLocation Bin, string? Note)>();
 
-        foreach (var line in request.Lines)
+        foreach (var line in scanLines)
         {
-            var actualBin = (await FindBinByCodeAsync(line.BinCode, cancellationToken))!;
-            var instance = await FindInstanceByCodeAsync(line.ItemCode, line.SerialNumber, cancellationToken);
+            var actualBin = actualBins[LookupKey(line.BinCode)];
+            instancesByItemSerial.TryGetValue((LookupKey(line.ItemCode), LookupKey(line.SerialNumber)), out var instance);
 
             // INV-002 fix: duplicate validation is now item/serial-based via alreadyScannedInstanceIds,
             // not bin-based. Multiple serials in the same bin are now allowed.
@@ -113,8 +211,7 @@ public sealed class InventoryCheckService : InventoryOperationBase
             if (instance == null)
             {
                 // === EXTRA: item không có trong DB → tạo mới ===
-                var item = await FindItemByCodeAsync(line.ItemCode, cancellationToken);
-                if (item == null)
+                if (!itemsByCode.TryGetValue(LookupKey(line.ItemCode), out var item))
                 {
                     // Bỏ qua dòng này, ghi warning vào note
                     _db.InventoryCheckLines.Add(new InventoryCheckLine
@@ -138,7 +235,6 @@ public sealed class InventoryCheckService : InventoryOperationBase
                     CreatedAt = now, CreatedBy = user.UserName
                 };
                 _db.ItemInstances.Add(newInstance);
-                await _db.SaveChangesAsync(cancellationToken);
 
                 _db.CurrentItemLocations.Add(new CurrentItemLocation
                 {
@@ -150,7 +246,7 @@ public sealed class InventoryCheckService : InventoryOperationBase
                     CreatedAt = now, CreatedBy = user.UserName
                 });
                 await ApplyStockDeltaAsync(warehouse.Id, actualBin.Id, item.Id, ItemStatus.Normal, 1, user, cancellationToken);
-                AddInventoryTransaction(InventoryTransactionType.InventoryCheck, item.Id, newInstance.Id, warehouse.Id, actualBin.Id, 1, ItemStatus.Normal, nameof(InventoryCheckDocument), document.Id, document.DocumentNo, user);
+                pendingExtraEvents.Add((newInstance, item, actualBin, line.Note));
 
                 _db.InventoryCheckLines.Add(new InventoryCheckLine
                 {
@@ -172,7 +268,7 @@ public sealed class InventoryCheckService : InventoryOperationBase
                 }
                 alreadyScannedInstanceIds.Add(instance.Id);
 
-                var current = await _db.CurrentItemLocations.FirstOrDefaultAsync(x => x.ItemInstanceId == instance.Id, cancellationToken);
+                locationsByInstanceId.TryGetValue(instance.Id, out var current);
                 var systemBinId = current?.BinLocationId;
 
                 if (systemBinId.HasValue && systemBinId.Value == actualBin.Id)
@@ -187,7 +283,7 @@ public sealed class InventoryCheckService : InventoryOperationBase
                         CreatedAt = now, CreatedBy = user.UserName
                     });
                     // Đảm bảo status = InStock nếu đang ở trạng thái lệch
-                    if (instance.Status != ItemStatus.InStock && instance.Status != ItemStatus.Normal)
+                    if (instance.Status == ItemStatus.InStock || instance.Status == ItemStatus.Normal)
                         instance.Status = ItemStatus.Normal;
                     matched++;
                 }
@@ -219,10 +315,8 @@ public sealed class InventoryCheckService : InventoryOperationBase
                         current.UpdatedLocationAt = now;
                         current.UpdatedLocationBy = user.UserName;
 
-                        var bin = await FindBinByIdAsync(oldBinId, cancellationToken);
-
                         await ApplyStockDeltaAsync(warehouse.Id, actualBin.Id, instance.ItemId, instance.Status, 1, user, cancellationToken);
-                        AddHistory(instance.Id, MovementActionType.MoveLocation, LocationType.BinLocation, oldBinId, $"Bin {bin?.FullPath}", LocationType.BinLocation,
+                        AddHistory(instance.Id, MovementActionType.MoveLocation, LocationType.BinLocation, oldBinId, $"Bin {current.BinLocation?.FullPath}", LocationType.BinLocation,
                             actualBin.Id, actualBin.FullPath, instance.Status, instance.Status, nameof(InventoryCheckDocument), document.Id, document.DocumentNo, "Inventory check: wrong location corrected", user);
                         AddInventoryTransaction(InventoryTransactionType.InventoryCheck, instance.ItemId, instance.Id, warehouse.Id, actualBin.Id, 0, instance.Status, nameof(InventoryCheckDocument), document.Id, document.DocumentNo, user);
                     }
@@ -232,6 +326,16 @@ public sealed class InventoryCheckService : InventoryOperationBase
         }
 
         // Update SessionStatus vẫn là InProgress
+        if (pendingExtraEvents.Count > 0)
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+            foreach (var pending in pendingExtraEvents)
+            {
+                AddHistory(pending.Instance.Id, MovementActionType.InventoryCheck, null, null, "Supplier", LocationType.BinLocation, pending.Bin.Id, pending.Bin.FullPath, ItemStatus.Reserved, ItemStatus.Normal, nameof(InventoryCheckDocument), document.Id, document.DocumentNo, pending.Note, user);
+                AddInventoryTransaction(InventoryTransactionType.InventoryCheck, pending.Item.Id, pending.Instance.Id, warehouse.Id, pending.Bin.Id, 1, ItemStatus.Normal, nameof(InventoryCheckDocument), document.Id, document.DocumentNo, user);
+            }
+        }
+
         document.UpdatedAt = now;
         document.UpdatedBy = user.UserName;
 
@@ -275,11 +379,59 @@ public sealed class InventoryCheckService : InventoryOperationBase
             .Select(x => x.ItemInstanceId!.Value).ToListAsync(cancellationToken)).ToHashSet();
 
         // === MISSING: items InStock trong kho chưa được scan ===
-        var allInStockLocations = await _db.CurrentItemLocations
+        var stockCandidateQuery = _db.CurrentItemLocations
             .Include(x => x.ItemInstance)
-            .Where(x => x.WarehouseId == document.WarehouseId && x.ItemInstance != null && x.ItemInstance.IsActive
-                && (x.ItemInstance.Status == ItemStatus.InStock || x.ItemInstance.Status == ItemStatus.Normal || x.ItemInstance.Status == ItemStatus.Damaged || x.ItemInstance.Status == ItemStatus.Scrapped)
-                && !scannedInstanceIds.Contains(x.ItemInstanceId)).ToListAsync(cancellationToken);
+            .Include(x => x.BinLocation)
+            .Where(x =>
+                x.WarehouseId == document.WarehouseId &&
+                x.BinLocation != null &&
+                x.BinLocation.UsageType == BinLocationUsageType.LocationTracked &&
+                x.ItemInstance != null &&
+                x.ItemInstance.IsActive &&
+                x.ItemInstance.TrackingType == ItemTrackingType.LocationTracked &&
+                (x.ItemInstance.Status == ItemStatus.InStock ||
+                 x.ItemInstance.Status == ItemStatus.Normal ||
+                 x.ItemInstance.Status == ItemStatus.Damaged ||
+                 x.ItemInstance.Status == ItemStatus.Scrapped));
+
+        var scannedInstanceIdArray = scannedInstanceIds.ToArray();
+        var filterScannedInSql = scannedInstanceIdArray.Length <= 1800;
+        if (filterScannedInSql)
+        {
+            stockCandidateQuery = stockCandidateQuery.Where(x => !scannedInstanceIdArray.Contains(x.ItemInstanceId));
+        }
+
+        var stockCandidateLocations = await stockCandidateQuery.ToListAsync(cancellationToken);
+        var allInStockLocations = filterScannedInSql
+            ? stockCandidateLocations
+            : stockCandidateLocations.Where(x => !scannedInstanceIds.Contains(x.ItemInstanceId)).ToList();
+
+        var missingBinIds = allInStockLocations
+            .Select(x => x.BinLocationId)
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .Distinct()
+            .ToArray();
+        var missingItemIds = allInStockLocations
+            .Select(x => x.ItemInstance!.ItemId)
+            .Distinct()
+            .ToArray();
+        if (missingBinIds.Length > 0 && missingItemIds.Length > 0)
+        {
+            foreach (var binChunk in BatchLookup(missingBinIds, 500))
+            {
+                foreach (var itemChunk in BatchLookup(missingItemIds, 500))
+                {
+                    await _db.StockBalances
+                        .Where(x =>
+                            x.WarehouseId == document.WarehouseId &&
+                            x.BinLocationId.HasValue &&
+                            binChunk.Contains(x.BinLocationId.Value) &&
+                            itemChunk.Contains(x.ItemId))
+                        .LoadAsync(cancellationToken);
+                }
+            }
+        }
 
         foreach (var missingLoc in allInStockLocations)
         {
@@ -310,9 +462,7 @@ public sealed class InventoryCheckService : InventoryOperationBase
             missingLoc.UpdatedLocationBy = user.UserName;
 
             if(missingInstance.Status == ItemStatus.Normal || missingInstance.Status == ItemStatus.InStock) missingInstance.Status = ItemStatus.Lost;
-            var bin = await FindBinByIdAsync(oldBinId, cancellationToken);
-
-            AddHistory(missingInstance.Id, MovementActionType.InventoryCheck, LocationType.BinLocation, oldBinId, $"Bin {bin?.FullPath}", null, null, "Unknown", oldStatus, missingInstance.Status, nameof(InventoryCheckDocument), documentId, document.DocumentNo, "Missing: not found during inventory check", user);
+            AddHistory(missingInstance.Id, MovementActionType.InventoryCheck, LocationType.BinLocation, oldBinId, $"Bin {missingLoc.BinLocation?.FullPath}", null, null, "Unknown", oldStatus, missingInstance.Status, nameof(InventoryCheckDocument), documentId, document.DocumentNo, "Missing: not found during inventory check", user);
             AddInventoryTransaction(InventoryTransactionType.InventoryCheck, missingInstance.ItemId, missingInstance.Id, oldWarehouseId, oldBinId, -1, missingInstance.Status, nameof(InventoryCheckDocument), documentId, document.DocumentNo, user);
         }
 
@@ -332,6 +482,30 @@ public sealed class InventoryCheckService : InventoryOperationBase
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
+
+    private static string LookupKey(string? value)
+        => (value ?? string.Empty).Trim().ToUpperInvariant();
+
+    private static IEnumerable<T[]> BatchLookup<T>(IReadOnlyCollection<T> values, int size = 900)
+    {
+        var buffer = new List<T>(size);
+        foreach (var value in values)
+        {
+            buffer.Add(value);
+            if (buffer.Count < size)
+            {
+                continue;
+            }
+
+            yield return buffer.ToArray();
+            buffer.Clear();
+        }
+
+        if (buffer.Count > 0)
+        {
+            yield return buffer.ToArray();
+        }
+    }
 
     private void AddFinalizeNotification(InventoryCheckDocument document, int scannedCount, int missingCount, CurrentUserContext user)
     {

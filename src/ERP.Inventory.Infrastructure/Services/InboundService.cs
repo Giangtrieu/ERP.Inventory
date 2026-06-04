@@ -151,7 +151,10 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
             ? new List<BinLocation>()
             : await _db.BinLocations
                 .AsNoTracking()
-                .Where(x => binCodes.Contains(x.BinCode) && x.IsActive)
+                .Where(x =>
+                    binCodes.Contains(x.BinCode) &&
+                    x.UsageType == BinLocationUsageType.LocationTracked &&
+                    x.IsActive)
                 .ToListAsync(cancellationToken);
 
         var itemIds = items.Select(x => x.Id).Distinct().ToArray();

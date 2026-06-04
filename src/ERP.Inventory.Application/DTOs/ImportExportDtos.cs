@@ -9,6 +9,16 @@ public sealed class ImportBatchDto
     public string Status { get; init; } = string.Empty;
     public int TotalRows { get; init; }
     public int BlockingErrorRows { get; init; }
+    public bool HasOriginalFile { get; init; }
+    public bool HasValidationErrors => BlockingErrorRows > 0;
+    public bool HasPreview => TotalRows > 0;
+}
+
+public sealed class ImportBatchFileDto
+{
+    public string FileName { get; init; } = string.Empty;
+    public string ContentType { get; init; } = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    public byte[] Content { get; init; } = Array.Empty<byte>();
 }
 
 public sealed class ImportValidationRowDto

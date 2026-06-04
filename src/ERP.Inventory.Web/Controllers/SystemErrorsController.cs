@@ -32,6 +32,7 @@ public sealed class SystemErrorsController : Controller
         var query = _db.LogErrorSystems.AsNoTracking().AsQueryable();
 
         if (request.IsResolved.HasValue) query = query.Where(x => x.IsResolved == request.IsResolved.Value);
+        if (!string.IsNullOrWhiteSpace(request.Category)) query = query.Where(x => x.Category == request.Category);
         if (request.FromDate.HasValue) query = query.Where(x => x.CreatedAt >= request.FromDate.Value);
         if (request.ToDate.HasValue)
         {
@@ -66,6 +67,8 @@ public sealed class SystemErrorsController : Controller
                 x.HttpMethod,
                 x.Module,
                 x.Action,
+                x.Category,
+                x.StatusCode,
                 x.ErrorMessage,
                 x.IsResolved,
                 x.ResolvedAt,
@@ -98,6 +101,13 @@ public sealed class SystemErrorsController : Controller
                 row.HttpMethod,
                 row.Module,
                 row.Action,
+                row.Category,
+                row.Severity,
+                row.TechnicalMessage,
+                row.ExceptionType,
+                row.SqlErrorNumber,
+                row.StatusCode,
+                row.DurationMs,
                 row.ErrorMessage,
                 row.InnerException,
                 row.StackTrace,
@@ -129,6 +139,28 @@ public sealed class SystemErrorsController : Controller
         return Json(new { success = true });
     }
 
+    [HttpPost("{id:long}/Delete")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(long id, [FromBody] SuperAdminRequest request, CancellationToken cancellationToken)
+    {
+        var row = await _db.LogErrorSystems.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (row == null) return NotFound(new { success = false, message = "Error log not found." });
+
+        _db.LogErrorSystems.Remove(row);
+        await _db.SaveChangesAsync(cancellationToken);
+        return Json(new { success = true });
+    }
+
+    [HttpPost("DeleteAll")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteAll([FromBody] SuperAdminRequest request, CancellationToken cancellationToken)
+    {
+        var rows = await _db.LogErrorSystems.ToListAsync(cancellationToken);
+        _db.LogErrorSystems.RemoveRange(rows);
+        await _db.SaveChangesAsync(cancellationToken);
+        return Json(new { success = true, deleted = rows.Count });
+    }
+
     public class SuperAdminRequest
     {
         public string? SuperAdminPassword { get; init; }
@@ -139,6 +171,7 @@ public sealed class SystemErrorsController : Controller
         public int Page { get; init; } = 1;
         public int PageSize { get; init; } = 25;
         public bool? IsResolved { get; init; }
+        public string? Category { get; init; }
         public DateTime? FromDate { get; init; }
         public DateTime? ToDate { get; init; }
         public string? Keyword { get; init; }

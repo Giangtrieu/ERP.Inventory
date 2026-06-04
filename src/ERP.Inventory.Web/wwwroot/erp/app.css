@@ -414,6 +414,14 @@ button.card:hover {
   table-layout: fixed;
 }
 
+.data-table-detail-exxcel
+{
+    width: 100%;
+    min-width: 1050px;
+    border-collapse: collapse;
+    /*table-layout: fixed;*/
+}
+}
 .data-table-adjust th {
     height: var(--row-h);
     background: #f8fafc;
@@ -427,19 +435,22 @@ button.card:hover {
 
 .data-table-detail th,
 .data-table-detail td,
+.data-table-detail-exxcel th,
+.data-table-detail-exxcel td,
 .data-table-detail-history th,
-.data-table-detail-history td{
-  padding: 6px 8px;
-  border: 1px solid #e5e7eb;
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.data-table-detail-history td {
+    padding: 6px 8px;
+    border: 1px solid #e5e7eb;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.data-table-detail th {
-  background: #f9fafb;
-  font-weight: 600;
+.data-table-detail th,
+.data-table-detail-exxcel th {
+    background: #f9fafb;
+    font-weight: 600;
 }
 
 .data-table-detail-history {
@@ -462,13 +473,15 @@ button.card:hover {
 
 /* Detail table inputs */
 .data-table-detail input,
-.data-table-detail select {
-  width: 100%;
-  height: 28px;
-  font-size: 13px;
-  padding: 2px 6px;
-  box-sizing: border-box;
-  font-family: monospace;
+.data-table-detail select,
+.data-table-detail-exxcel input,
+.data-table-detail-exxcel select {
+    width: 100%;
+    height: 28px;
+    font-size: 13px;
+    padding: 2px 6px;
+    box-sizing: border-box;
+    font-family: monospace;
 }
 
 .link-item-tracking {
@@ -931,10 +944,10 @@ button.card:hover {
 
 /* Warehouse map */
 .warehouse-map-controls {
-  display: grid;
+  display: flex;
   grid-template-columns: minmax(220px, 1fr) minmax(180px, 220px);
   gap: 10px;
-  width: min(520px, 100%);
+  width: min(680px, 100%);
 }
 
 .warehouse-map-legend {
@@ -1554,4 +1567,96 @@ button.card:hover {
     max-height: 450px;
     overflow-y: auto;
     border: 1px solid #dee2e6;
+}
+.utilization-gauge-wrap {
+    position: relative;
+    height: 190px;
+    margin-bottom: 12px;
+}
+
+.utilization-css-gauge {
+    width: 210px;
+    height: 105px;
+    margin: 18px auto 0;
+    border-radius: 210px 210px 0 0;
+    background: conic-gradient( from 270deg, #0d6efd calc(var(--value) * 1.8deg), #e8f1ff 0deg 180deg, transparent 180deg );
+    position: relative;
+    overflow: hidden;
+}
+
+.utilization-css-gauge-inner {
+    position: absolute;
+    left: 26px;
+    right: 26px;
+    bottom: 0;
+    height: 79px;
+    background: #fff;
+    border-radius: 160px 160px 0 0;
+}
+
+.utilization-main-number {
+    position: absolute;
+    left: 50%;
+    top: 62%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    width: 100%;
+}
+
+.utilization-percent {
+    font-size: 2.5rem;
+    font-weight: 800;
+    line-height: 1;
+    color: #111827;
+}
+
+.utilization-main-label {
+    margin-top: 6px;
+    font-size: 0.9rem;
+    color: #6b7280;
+}
+
+.utilization-used {
+    margin-top: 4px;
+    font-size: 1.5rem;
+    font-weight: 800;
+    line-height: 1;
+    color: #0d6efd;
+}
+
+.utilization-stats {
+    border-top: 1px solid #e5e7eb;
+    padding-top: 10px;
+    text-align: left;
+}
+
+.utilization-stat-row {
+    display: grid;
+    grid-template-columns: 1fr auto 62px;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+    .utilization-stat-row:last-child {
+        border-bottom: 0;
+    }
+
+    .utilization-stat-row em {
+        text-align: center;
+        font-style: normal;
+        font-weight: 600;
+        border-radius: 999px;
+        padding: 2px 8px;
+        background: #eef4ff;
+        color: #0d6efd;
+    }
+
+.utilization-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    margin-right: 8px;
 }

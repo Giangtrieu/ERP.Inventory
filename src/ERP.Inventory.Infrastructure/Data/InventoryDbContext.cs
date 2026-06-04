@@ -1,4 +1,5 @@
 using ERP.Inventory.Domain.Entities;
+using ERP.Inventory.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace ERP.Inventory.Infrastructure.Data;
@@ -98,6 +99,8 @@ public class InventoryDbContext : DbContext
         modelBuilder.Entity<Shelf>().HasIndex(x => new { x.RackId, x.ShelfCode }).IsUnique();
         modelBuilder.Entity<BinLocation>().HasIndex(x => new { x.WarehouseId, x.BinCode }).IsUnique();
         modelBuilder.Entity<BinLocation>().HasIndex(x => x.FullPath);
+        modelBuilder.Entity<BinLocation>().Property(x => x.UsageType).HasConversion<string>().HasMaxLength(30).HasDefaultValue(BinLocationUsageType.LocationTracked);
+        modelBuilder.Entity<BinLocation>().HasIndex(x => new { x.WarehouseId, x.UsageType });
     }
 
     private static void ConfigureMasterData(ModelBuilder modelBuilder)
@@ -251,13 +254,17 @@ public class InventoryDbContext : DbContext
         modelBuilder.Entity<LogErrorSystem>().HasIndex(x => x.ErrorCode).IsUnique();
         modelBuilder.Entity<LogErrorSystem>().HasIndex(x => x.CreatedAt);
         modelBuilder.Entity<LogErrorSystem>().HasIndex(x => x.IsResolved);
+        modelBuilder.Entity<LogErrorSystem>().HasIndex(x => x.Category);
         modelBuilder.Entity<LogErrorSystem>().Property(x => x.ErrorCode).HasMaxLength(40);
+        modelBuilder.Entity<LogErrorSystem>().Property(x => x.Category).HasMaxLength(50);
+        modelBuilder.Entity<LogErrorSystem>().Property(x => x.Severity).HasMaxLength(30);
         modelBuilder.Entity<LogErrorSystem>().Property(x => x.UserId).HasMaxLength(100);
         modelBuilder.Entity<LogErrorSystem>().Property(x => x.UserName).HasMaxLength(200);
         modelBuilder.Entity<LogErrorSystem>().Property(x => x.RequestPath).HasMaxLength(500);
         modelBuilder.Entity<LogErrorSystem>().Property(x => x.HttpMethod).HasMaxLength(20);
         modelBuilder.Entity<LogErrorSystem>().Property(x => x.Module).HasMaxLength(100);
         modelBuilder.Entity<LogErrorSystem>().Property(x => x.Action).HasMaxLength(100);
+        modelBuilder.Entity<LogErrorSystem>().Property(x => x.ExceptionType).HasMaxLength(300);
         modelBuilder.Entity<LogErrorSystem>().Property(x => x.ClientIp).HasMaxLength(100);
         modelBuilder.Entity<LogErrorSystem>().Property(x => x.Browser).HasMaxLength(500);
         modelBuilder.Entity<LogErrorSystem>().Property(x => x.ResolvedBy).HasMaxLength(200);

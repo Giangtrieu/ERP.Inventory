@@ -1,4 +1,5 @@
 using ERP.Inventory.Domain.Common;
+using ERP.Inventory.Domain.Enums;
 
 namespace ERP.Inventory.Domain.Entities;
 
@@ -68,6 +69,7 @@ public class BinLocation : AuditableEntity
     public Warehouse? Warehouse { get; set; }
     public string BinCode { get; set; } = string.Empty;
     public string FullPath { get; set; } = string.Empty;
+    public BinLocationUsageType UsageType { get; set; } = BinLocationUsageType.LocationTracked;
     public bool IsActive { get; set; } = true;
 }
 

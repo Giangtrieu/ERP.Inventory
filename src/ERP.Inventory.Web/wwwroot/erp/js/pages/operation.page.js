@@ -107,7 +107,7 @@ function operationUsesAvailableBins(type) {
 }
 
 function loadOperationBins(type, warehouseId) {
-    return UI.api('/Lookup/Bins', { query: { warehouseId, availableOnly: operationUsesAvailableBins(type), includeOccupancy: type === 'move' } });
+    return UI.api('/Lookup/Bins', { query: { warehouseId, usageType: 'LocationTracked', availableOnly: operationUsesAvailableBins(type), includeOccupancy: type === 'move' } });
 }
 
 function renderOperationLines(type, vm) {
@@ -372,7 +372,7 @@ async function postInventoryCheckSession(payload) {
     }
     const d = scanResult.data || {};
     const summary = `${UI.t('Matched')}: ${d.batchMatched || 0} | ${UI.t('WrongLocation')}: ${d.batchWrongLocation || 0} | ${UI.t('Extra')}: ${d.batchExtra || 0}`;
-    UI.toast(`${UI.t('Inventory check session created.')} ${documentNo || ''} — ${summary}`);
+    UI.toast(`${UI.t('Inventory check session created.')} ${documentNo || ''} - ${summary}`);
     AppState.currentTrackingKeyword = '';
     await loadLookups();
     Router.go('inventory-check');
@@ -640,9 +640,13 @@ $(document).on('click', '.btn-doc-finalize', function () {
 
 $(document).on('change', '#app [name="warehouseId"]', loadReportsInventory);
 
-$(document).on('click', '#btnPrintVoucher', function () {
+$(document).on('click', '#btnPrintVoucher', async function () {
     if (window._currentDocDetail && window._currentDocType) {
-        PrintVoucher.print(window._currentDocType, window._currentDocDetail);
+        const result = await UI.api('/Documents/PdfData', { query: { type: window._currentDocType, id: window._currentDocId, action: window._currentDocType } });
+        if (!result.success) { UI.showError(UI.resultError(result)); return; }
+        const data = result.data || {};
+        data.lines = data.rows || data.lines || [];
+        PrintVoucher.print(data.templateType || window._currentDocType, data);
     }
 });
 
@@ -660,7 +664,7 @@ function renderDocumentDetail(detail, docType) {
     const auditHtml = detail.audit && detail.audit.length ? `
       <div class="form-section-title mt-3">${UI.t('Audit Trail')}</div>
       <div class="table-wrap report-scroll-wrap"><table class="data-table-detail-history"><thead><tr><th>${UI.t('Time')}</th><th>${UI.t('Action')}</th><th>${UI.t('By')}</th><th>${UI.t('Reason')}</th></tr></thead>
-        <tbody>${detail.audit.map(x => `<tr><td class="text-muted small">${UI.formatDate(x.timestamp)}</td><td><span class="badge text-bg-light">${UI.esc(UI.auditAction(x.action))}</span></td><td>${UI.esc(x.operator || '-')}</td><td class="small text-muted">${UI.esc(UI.t(x.reason || '-'))}</td></tr>`).join('')}</tbody>
+        <tbody>${detail.audit.map(x => `<tr><td class="text-muted small">${UI.formatDate(x.timestamp)}</td><td><span class="badge text-bg-light">${UI.esc(UI.auditAction(x.action))}</span></td><td>${UI.esc(x.operator || '-')}</td><td class="small text-muted">${UI.esc(UI.msg(x.reason || '-'))}</td></tr>`).join('')}</tbody>
       </table></div>` : '';
     if (docType.startsWith('quantity-') ) {
         const historyHtml = detail.history && detail.history.length ? `

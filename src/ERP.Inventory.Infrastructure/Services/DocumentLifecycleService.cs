@@ -31,6 +31,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
     private readonly AdjustmentService _adjustmentService;
     private readonly IDocumentRollbackService _rollbackService;
     private readonly ILogErrorSystemService _errorLog;
+    private readonly IInboundCascadeCleanupService _inboundCascadeCleanup;
 
     public DocumentLifecycleService(
         InventoryDbContext db,
@@ -43,7 +44,8 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         IQuantityInventoryService quantityService,
         AdjustmentService adjustmentService,
         IDocumentRollbackService rollbackService,
-        ILogErrorSystemService errorLog)
+        ILogErrorSystemService errorLog,
+        IInboundCascadeCleanupService inboundCascadeCleanup)
     {
         _db = db;
         _clock = clock;
@@ -56,6 +58,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         _adjustmentService = adjustmentService;
         _rollbackService = rollbackService;
         _errorLog = errorLog;
+        _inboundCascadeCleanup = inboundCascadeCleanup;
     }
 
     public async Task<ServiceResult<DocumentMutationResultDto>> DeleteAsync(string type, int id, CurrentUserContext user, CancellationToken cancellationToken = default)
@@ -618,7 +621,10 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
                 continue;
             }
 
-            var bin = await _db.BinLocations.AsNoTracking().FirstOrDefaultAsync(x => x.BinCode == incomingLine.Line.TargetBinCode.Trim() && x.IsActive, cancellationToken);
+            var bin = await _db.BinLocations.AsNoTracking().FirstOrDefaultAsync(x =>
+                x.BinCode == incomingLine.Line.TargetBinCode.Trim() &&
+                x.UsageType == BinLocationUsageType.LocationTracked &&
+                x.IsActive, cancellationToken);
             if (bin == null) return ServiceResult<DocumentMutationResultDto>.Fail($"Target bin {incomingLine.Line.TargetBinCode} not found.");
             incomingTargetBins[incomingLine.Instance.Id] = bin.Id;
         }
@@ -671,7 +677,10 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             }
 
             var binCode = incomingLine.Line.TargetBinCode.Trim();
-            var bin = await _db.BinLocations.AsNoTracking().FirstOrDefaultAsync(x => x.BinCode == binCode && x.IsActive, cancellationToken);
+            var bin = await _db.BinLocations.AsNoTracking().FirstOrDefaultAsync(x =>
+                x.BinCode == binCode &&
+                x.UsageType == BinLocationUsageType.LocationTracked &&
+                x.IsActive, cancellationToken);
             if (bin == null) return ServiceResult<DocumentMutationResultDto>.Fail($"Target bin {incomingLine.Line.TargetBinCode} not found.");
             incomingTargetBins[incomingLine.Instance.Id] = bin.Id;
         }
@@ -740,7 +749,10 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         foreach (var line in request.Lines)
         {
             var item = await _db.Items.FirstOrDefaultAsync(x => x.ItemCode == line.ItemCode.Trim() && x.IsActive, cancellationToken);
-            var bin = await _db.BinLocations.FirstOrDefaultAsync(x => x.BinCode == line.BinCode.Trim() && x.IsActive, cancellationToken);
+            var bin = await _db.BinLocations.FirstOrDefaultAsync(x =>
+                x.BinCode == line.BinCode.Trim() &&
+                x.UsageType == BinLocationUsageType.LocationTracked &&
+                x.IsActive, cancellationToken);
             if (item == null) { errors.Add($"Item {line.ItemCode} not found."); continue; }
             if (bin == null) { errors.Add($"BinCode {line.BinCode} not found."); continue; }
             if (bin.WarehouseId != document.WarehouseId) { errors.Add($"BinCode {line.BinCode} does not belong to selected warehouse."); continue; }
@@ -775,7 +787,15 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         var changedExisting = incoming.Where(x => x.Existing?.ItemInstanceId != null && x.SideEffectsChanged).Select(x => x.Existing!).ToArray();
         var affectedIds = removed.Concat(changedExisting).Where(x => x.ItemInstanceId.HasValue).Select(x => x.ItemInstanceId!.Value).Distinct().ToArray();
         var deps = await FindLaterHistoryDependenciesAsync(nameof(InboundDocument), id, affectedIds, cancellationToken);
-        if (deps.Count > 0) return ServiceResult<DocumentMutationResultDto>.Fail(deps);
+        var cascadeDeps = await _inboundCascadeCleanup.PreviewAsync(new InboundCascadeCleanupRequest
+        {
+            InboundDocumentId = id,
+            RemovedLineIds = removed.Select(x => x.Id).ToArray(),
+            ItemInstanceIds = affectedIds,
+            DryRun = true
+        }, cancellationToken);
+        deps.AddRange(cascadeDeps.Reasons);
+        if (deps.Count > 0) return await BusinessDependencyFailAsync(deps, "EditInbound", id, user, cancellationToken);
 
         await UpdateDocumentHeaderAsync(id, "inbound", payload, user, cancellationToken);
         await ReverseInboundLinesAsync(document, removed, changedExisting, user, cancellationToken);
@@ -908,7 +928,10 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             BinLocation? targetBin = null;
             if (!string.IsNullOrWhiteSpace(line.TargetBinCode))
             {
-                targetBin = await _db.BinLocations.FirstOrDefaultAsync(x => x.BinCode == line.TargetBinCode.Trim() && x.IsActive, cancellationToken);
+                targetBin = await _db.BinLocations.FirstOrDefaultAsync(x =>
+                    x.BinCode == line.TargetBinCode.Trim() &&
+                    x.UsageType == BinLocationUsageType.LocationTracked &&
+                    x.IsActive, cancellationToken);
                 if (targetBin == null) { errors.Add($"Target bin {line.TargetBinCode} not found."); continue; }
                 if (targetBin.WarehouseId != document.WarehouseId) { errors.Add($"Target bin {line.TargetBinCode} does not belong to warehouse."); continue; }
                 if (await _db.CurrentItemLocations.AnyAsync(x => x.BinLocationId == targetBin.Id && x.ItemInstanceId != instance.Id && x.ItemInstance != null && x.ItemInstance.IsActive && x.ItemInstance.Status != ItemStatus.Lost && x.ItemInstance.Status != ItemStatus.Disposed, cancellationToken))
@@ -981,7 +1004,10 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         foreach (var line in request.Lines.Where(x => !string.IsNullOrWhiteSpace(x.ItemCode) && !string.IsNullOrWhiteSpace(x.SerialNumber)))
         {
             var instance = await FindInstanceByCodeAsync(line.ItemCode, line.SerialNumber, ct);
-            var targetBin = await _db.BinLocations.FirstOrDefaultAsync(x => x.BinCode == line.TargetBinCode.Trim() && x.IsActive, ct);
+            var targetBin = await _db.BinLocations.FirstOrDefaultAsync(x =>
+                x.BinCode == line.TargetBinCode.Trim() &&
+                x.UsageType == BinLocationUsageType.LocationTracked &&
+                x.IsActive, ct);
             if (instance == null) { errors.Add($"Item {line.ItemCode} with serial {line.SerialNumber} not found."); continue; }
             if (targetBin == null) { errors.Add($"BinCode {line.TargetBinCode} not found."); continue; }
             if (targetBin.WarehouseId != request.WarehouseId) { errors.Add($"BinCode {line.TargetBinCode} does not belong to selected warehouse."); continue; }
@@ -1708,9 +1734,17 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         var instanceIds = logsToRevert.Select(x => x.ItemInstanceId).Distinct().ToArray();
         var laterDeps = await FindLaterPhaseDependenciesAsync(nameof(InboundDocument), id, MovementActionType.Inbound, instanceIds, cancellationToken);
         laterDeps.AddRange(await FindInventoryCheckReferenceDependenciesAsync(instanceIds, cancellationToken));
+        var cascadeDeps = await _inboundCascadeCleanup.PreviewAsync(new InboundCascadeCleanupRequest
+        {
+            InboundDocumentId = id,
+            RemovedLineIds = document.Lines.Where(x => x.ItemInstanceId.HasValue && instanceIds.Contains(x.ItemInstanceId.Value)).Select(x => x.Id).ToArray(),
+            ItemInstanceIds = instanceIds,
+            DryRun = true
+        }, cancellationToken);
+        laterDeps.AddRange(cascadeDeps.Reasons);
         if (laterDeps.Count > 0)
         {
-            return ServiceResult<DocumentMutationResultDto>.Fail(laterDeps);
+            return await BusinessDependencyFailAsync(laterDeps, "DeleteInbound", id, user, cancellationToken);
         }
 
         var itemIds = document.Lines.Where(x => x.ItemInstanceId.HasValue && instanceIds.Contains(x.ItemInstanceId.Value)).Select(x => x.ItemId).Distinct().ToArray();
@@ -1732,7 +1766,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         var document = await _db.MoveDocuments.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (document == null)
         {
-            return ServiceResult<DocumentMutationResultDto>.Fail("Move document not found.");
+            return ServiceResult<DocumentMutationResultDto>.Fail(Text(user.LanguageCode, "move-document-not-found"));
         }
 
         var instanceIds = document.Lines.Select(x => x.ItemInstanceId).Distinct().ToArray();
@@ -1759,7 +1793,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         var document = await _db.AdjustmentDocuments.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (document == null)
         {
-            return ServiceResult<DocumentMutationResultDto>.Fail("Adjustment document not found.");
+            return ServiceResult<DocumentMutationResultDto>.Fail(Text(user.LanguageCode, "adjustment-document-not-found"));
         }
 
         var instanceIds = document.Lines.Select(x => x.ItemInstanceId).Distinct().ToArray();
@@ -1791,7 +1825,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (document == null)
         {
-            return ServiceResult<DocumentMutationResultDto>.Fail("Inventory check document not found.");
+            return ServiceResult<DocumentMutationResultDto>.Fail(Text(user.LanguageCode, "inventory-check-document-not-found"));
         }
 
         var instanceIds = document.Lines
@@ -1811,16 +1845,87 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             .Distinct()
             .ToArrayAsync(cancellationToken);
 
+        var itemExtraIds = document.Lines
+            .Where(x => x.ItemInstanceId.HasValue && x.Result == InventoryCheckLineResult.Extra)
+            .Select(x => x.ItemInstanceId!.Value)
+            .Distinct()
+            .ToArray();
+
+        var unsafeExtraReasons = await FindUnsafeInventoryCheckExtraDeleteReasonsAsync(id, itemExtraIds, user.LanguageCode, cancellationToken);
+        if (unsafeExtraReasons.Count > 0)
+        {
+            return await BusinessDependencyFailAsync(unsafeExtraReasons, "DeleteInventoryCheck", id, user, cancellationToken);
+        }
+
+        var rebuildInstanceIds = instanceIds.Except(itemExtraIds).ToArray();
+
         _db.InventoryTransactions.RemoveRange(_db.InventoryTransactions.Where(x => x.DocumentType == nameof(InventoryCheckDocument) && x.DocumentId == id));
         _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x => x.DocumentType == nameof(InventoryCheckDocument) && x.DocumentId == id));
+        _db.CurrentItemLocations.RemoveRange(_db.CurrentItemLocations.Where(x => itemExtraIds.Contains(x.ItemInstanceId)));
+        _db.ItemInstances.RemoveRange(_db.ItemInstances.Where(x => itemExtraIds.Contains(x.Id)));
         _db.InventoryCheckLines.RemoveRange(document.Lines);
         _db.InventoryCheckDocuments.Remove(document);
-
+        AddAuditLog(user, "Delete", nameof(InventoryCheckDocument), document.Id, document.DocumentNo,
+            $"Deleted inventory check document. Removed {itemExtraIds.Length} surplus item instance(s) created by this inventory check.");
         await _db.SaveChangesAsync(cancellationToken);
-        await RebuildLocationTrackedInstancesAsync(instanceIds, cancellationToken);
+        await RebuildLocationTrackedInstancesAsync(rebuildInstanceIds, cancellationToken);
         await CleanupPostSideEffectsAsync(nameof(InventoryCheckDocument), id, document.DocumentNo, cancellationToken);
         await RecalculateLocationTrackedStockAsync(itemIds, cancellationToken);
         return Deleted("inventory-check", document.Id, document.DocumentNo);
+    }
+
+    private async Task<List<string>> FindUnsafeInventoryCheckExtraDeleteReasonsAsync(int documentId, IReadOnlyCollection<int> itemExtraIds, string language, CancellationToken cancellationToken)
+    {
+        if (itemExtraIds.Count == 0)
+        {
+            return new List<string>();
+        }
+
+        var locationCreatedByThisDocument = await _db.CurrentItemLocations
+            .AsNoTracking()
+            .Where(x => itemExtraIds.Contains(x.ItemInstanceId)
+                        && x.ReferenceDocumentType == nameof(InventoryCheckDocument)
+                        && x.ReferenceDocumentId == documentId)
+            .Select(x => x.ItemInstanceId)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+
+        var historyCreatedByThisDocument = await _db.ItemMovementHistories
+            .AsNoTracking()
+            .Where(x => itemExtraIds.Contains(x.ItemInstanceId)
+                        && x.DocumentType == nameof(InventoryCheckDocument)
+                        && x.DocumentId == documentId
+                        && x.ActionType == MovementActionType.InventoryCheck
+                        && x.FromLocationType == null
+                        && x.ToLocationType == LocationType.BinLocation)
+            .Select(x => x.ItemInstanceId)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+
+        var transactionCreatedByThisDocument = await _db.InventoryTransactions
+            .AsNoTracking()
+            .Where(x => x.ItemInstanceId.HasValue
+                        && itemExtraIds.Contains(x.ItemInstanceId.Value)
+                        && x.DocumentType == nameof(InventoryCheckDocument)
+                        && x.DocumentId == documentId
+                        && x.TransactionType == InventoryTransactionType.InventoryCheck
+                        && x.QuantityDelta > 0)
+            .Select(x => x.ItemInstanceId!.Value)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+
+        var safeIds = locationCreatedByThisDocument
+            .Intersect(historyCreatedByThisDocument)
+            .Intersect(transactionCreatedByThisDocument)
+            .ToHashSet();
+
+        var reasons = itemExtraIds
+            .Where(id => !safeIds.Contains(id))
+            .Select(_ => Text(language, "cannot-delete-inventory-check-surplus-source-unverified"))
+            .Distinct()
+            .ToList();
+
+        return reasons;
     }
 
     private async Task<ServiceResult<DocumentMutationResultDto>> DeleteBorrowLendAsync(int id, CurrentUserContext user, CancellationToken cancellationToken)
@@ -2796,7 +2901,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
          .Where(current => laterHistories.Any(later =>
              later.ItemInstanceId == current.ItemInstanceId &&
              (later.PerformedAt > current.LastPerformedAt ||
-              (later.PerformedAt == current.LastPerformedAt && later.Id > current.LastId))))
+               (later.PerformedAt == current.LastPerformedAt && later.Id > current.LastId))))
          .Select(item => $"Item instance {item.SerialNumber} has downstream operations.")
             .ToList();
     }
@@ -2821,6 +2926,31 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             .Distinct()
             .Select(x => $"Item instance {x.SerialNumber} is referenced by inventory check document {x.DocumentNo}. Delete or rebuild the inventory check document first.")
             .ToListAsync(cancellationToken);
+    }
+
+    private async Task<ServiceResult<DocumentMutationResultDto>> BusinessDependencyFailAsync(
+        IEnumerable<string> reasons,
+        string action,
+        int documentId,
+        CurrentUserContext user,
+        CancellationToken cancellationToken)
+    {
+        var list = reasons.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray();
+        var message = list.FirstOrDefault() ?? "Delete is blocked by downstream dependency.";
+        var log = await _errorLog.LogAsync(
+            new InvalidOperationException(string.Join(Environment.NewLine, list)),
+            new LogErrorContext(
+                Module: nameof(DocumentLifecycleService),
+                Action: action,
+                PayloadJson: JsonSerializer.Serialize(new { documentId, reasons = list }),
+                UserId: user.UserId,
+                UserName: user.UserName,
+                Category: SystemErrorCategory.BusinessDependency,
+                StatusCode: 409,
+                SafeMessage: message),
+            cancellationToken);
+
+        return ServiceResult<DocumentMutationResultDto>.Fail(list, SystemErrorCategory.BusinessDependency.ToString(), log.ErrorCode);
     }
 
     private async Task<List<string>> FindLaterPhaseDependenciesAsync(string documentType, int documentId, MovementActionType actionType, IEnumerable<int> instanceIds, CancellationToken cancellationToken)
@@ -3442,6 +3572,10 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         ["repair-receive"] = "Nhận sửa chữa",
         ["adjustment"] = "Điều chỉnh kho",
         ["inventory-check"] = "Kiểm kê",
+        ["move-document-not-found"] = "Không tìm thấy phiếu chuyển kho.",
+        ["adjustment-document-not-found"] = "Không tìm thấy phiếu điều chỉnh kho.",
+        ["inventory-check-document-not-found"] = "Không tìm thấy phiếu kiểm kê.",
+        ["cannot-delete-inventory-check-surplus-source-unverified"] = "Không thể xóa phiếu kiểm kê vì không xác minh được mặt hàng dư do chính phiếu này tạo.",
         ["quantity_legacy_batch_required"] = "Chứng từ tồn số lượng cũ thiếu mã lô xử lý nên không thể đảo ảnh hưởng an toàn.",
         ["quantity_legacy_location_rebuild_blocked"] = "Chứng từ tồn số lượng cũ thiếu vị trí bin nên không thể rebuild. Vui lòng tạo chứng từ điều chỉnh có vị trí bin.",
     };
@@ -3458,6 +3592,10 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         ["repair-receive"] = "Receive from Repair",
         ["adjustment"] = "Adjustment",
         ["inventory-check"] = "Inventory Check",
+        ["move-document-not-found"] = "Move document not found.",
+        ["adjustment-document-not-found"] = "Adjustment document not found.",
+        ["inventory-check-document-not-found"] = "Inventory check document not found.",
+        ["cannot-delete-inventory-check-surplus-source-unverified"] = "Cannot delete inventory check document because a surplus item cannot be verified as created by this inventory check.",
         ["quantity_legacy_batch_required"] = "Legacy quantity document is missing a lifecycle batch and cannot be safely reversed.",
         ["quantity_legacy_location_rebuild_blocked"] = "Legacy quantity document is missing bin location data and cannot be rebuilt. Create a correcting quantity document with bin locations.",
     };
@@ -3474,6 +3612,10 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         ["repair-receive"] = "维修收回",
         ["adjustment"] = "库存调整",
         ["inventory-check"] = "盘点",
+        ["move-document-not-found"] = "未找到移库单。",
+        ["adjustment-document-not-found"] = "未找到库存调整单。",
+        ["inventory-check-document-not-found"] = "未找到盘点单。",
+        ["cannot-delete-inventory-check-surplus-source-unverified"] = "无法删除盘点单，因为无法确认盘盈物料由此盘点单创建。",
         ["quantity_legacy_batch_required"] = "旧数量单据缺少生命周期批次，无法安全反向处理。",
         ["quantity_legacy_location_rebuild_blocked"] = "旧数量单据缺少库位数据，无法重建。请创建带库位的更正数量单据。",
     };

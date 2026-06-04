@@ -5,6 +5,11 @@
     { id: 'itemCode', text: 'Item Code' },
     { id: 'categoryCode', text: 'Category Code' }
   ];
+  const usageTypes = [
+    { id: 'All', text: 'All bin types' },
+    { id: 'LocationTracked', text: 'Location tracked bins' },
+    { id: 'Quantity', text: 'Quantity bins' }
+  ];
 
     let currentBins = [];
 
@@ -17,7 +22,8 @@
           <div class="text-muted small" id="warehouseMapSummary">${UI.esc(UI.t('Physical bin status by rack, shelf and bin.'))}</div>
         </div>
         <div class="warehouse-map-controls">
-          ${UI.select('Warehouse', 'mapWarehouseId', AppState.lookups.warehouses, defaultWarehouseId)}
+          <div class="col-md-3">${UI.select('Warehouse', 'mapWarehouseId', AppState.lookups.warehouses, defaultWarehouseId)}</div>
+          <div class="col-md-4">${UI.select('Bin Type', 'mapBinUsageType', usageTypes.map(x => ({ id: x.id, text: UI.t(x.text) })), 'All')}</div>
           ${UI.select('View Mode', 'mapViewMode', viewModes.map(x => ({ id: x.id, text: UI.t(x.text) })), 'occupancy')}
         </div>
       </div>
@@ -28,7 +34,7 @@
       <input type="text"
         class="form-control"
         name="mapSearchValues"
-        placeholder="VD: 007, PN001, SN001">
+        placeholder="${UI.esc(UI.t('Example bin search'))}">
     </div>
 
     <button type="button" class="btn btn-outline-secondary" id="btnClearWarehouseMapHighlight">
@@ -47,6 +53,7 @@
   async function load() {
     const warehouseId = $('#app [name="mapWarehouseId"]').val() || '';
     const viewMode = $('#app [name="mapViewMode"]').val() || 'occupancy';
+    const binUsageType = $('#app [name="mapBinUsageType"]').val() || 'All';
     if (!warehouseId) {
       $('#warehouseMapSummary').text(UI.t('Select a warehouse to view the map.'));
       $('#warehouseMapLegend').empty();
@@ -56,7 +63,7 @@
 
     $('#warehouseMapBody').html(UI.loading());
     try {
-      const data = await UI.api('/Dashboard/WarehouseMap', { query: { warehouseId, viewMode } });
+      const data = await UI.api('/Dashboard/WarehouseMap', { query: { warehouseId, viewMode, binUsageType } });
       render(data);
     } catch (err) {
       const status = err && err.status;
@@ -73,7 +80,7 @@
     const empty = Number(data?.emptyBinCount || 0);
     const title = [data?.warehouseCode, data?.warehouseName].filter(Boolean).join(' - ');
 
-    $('#warehouseMapSummary').text(`${title || UI.t('Warehouse')} | ${UI.t('Occupied bins')}: ${occupied}/${bins} | ${UI.t('Empty bins')}: ${empty}`);
+    $('#warehouseMapSummary').text(`${title || UI.t('Warehouse')} | ${UI.t('Bin Type')}: ${UI.t(data?.binUsageType || 'All')} | ${UI.t('Occupied bins')}: ${occupied}/${bins} | ${UI.t('Empty bins')}: ${empty}`);
     $('#warehouseMapLegend').html(renderLegend(data?.legend || []));
 
     if (!racks.length || !bins) {
@@ -82,11 +89,75 @@
     }
       currentBins = (racks || []).flatMap(r => r.shelves || []).flatMap(s => s.bins || []);
       const $body = $('#warehouseMapBody');
+      const groupedRacks = {
+          location: [],
+          quantity: []
+      };
+
+      (racks || []).forEach(rack => {
+          const shelves = (rack.shelves || []).map(shelf => {
+              const locationBins = (shelf.bins || [])
+                  .filter(x =>
+                      String(x.usageType || x.UsageType || '')
+                          .toLowerCase() === 'locationtracked');
+
+              const quantityBins = (shelf.bins || [])
+                  .filter(x =>
+                      String(x.usageType || x.UsageType || '')
+                          .toLowerCase() === 'quantity');
+
+              return {
+                  ...shelf,
+                  locationBins,
+                  quantityBins
+              };
+          });
+
+          if (shelves.some(x => x.locationBins.length)) {
+              groupedRacks.location.push({
+                  ...rack,
+                  shelves: shelves.map(x => ({
+                      ...x,
+                      bins: x.locationBins
+                  }))
+              });
+          }
+
+          if (shelves.some(x => x.quantityBins.length)) {
+              groupedRacks.quantity.push({
+                  ...rack,
+                  shelves: shelves.map(x => ({
+                      ...x,
+                      bins: x.quantityBins
+                  }))
+              });
+          }
+      });
 
       $body.html(`
-  <div class="warehouse-map-grid">
-    ${racks.map(renderRack).join('')}
-  </div>
+    ${groupedRacks.location.length ? `
+        <div class="warehouse-map-section mb-4">
+            <h5 class="fw-bold border-bottom pb-2">
+                ${UI.t('LOCATION TRACKED BIN LIST')}
+            </h5>
+
+            <div class="warehouse-map-grid">
+                ${groupedRacks.location.map(renderRack).join('')}
+            </div>
+        </div>
+    ` : ''}
+
+    ${groupedRacks.quantity.length ? `
+        <div class="warehouse-map-section">
+            <h5 class="fw-bold border-bottom pb-2">
+                ${UI.t('QUANTITY BIN LIST')}
+            </h5>
+
+            <div class="warehouse-map-grid">
+                ${groupedRacks.quantity.map(renderRack).join('')}
+            </div>
+        </div>
+    ` : ''}
 `);
 
       $body
@@ -107,10 +178,13 @@
 
     function renderLegend(rows) {
         if (!rows || !rows.length) return '';
+        const viewMode = $('#app [name="mapViewMode"]').val() || 'occupancy';
 
         return rows.map(x => `
     <button type="button"
       class="warehouse-map-legend-item"
+      data-legend-key="${UI.esc(x.key || '')}"
+      data-legend-mode="${UI.esc(viewMode)}"
       data-legend-color="${UI.esc(x.color || '#ffffff')}">
       <span class="warehouse-map-swatch" style="background:${UI.esc(x.color || '#ffffff')}"></span>
       <span>${UI.esc(UI.t(x.label || x.key || '-'))}</span>
@@ -163,7 +237,10 @@
   aria-label="${UI.esc(tooltip)}"
   data-bin-id="${UI.esc(bin.binLocationId)}"
   data-color="${UI.esc(color)}"
+  data-usage-type="${UI.esc(bin.usageType || bin.UsageType || '')}"
   data-item-codes="${UI.esc((bin.itemCodes || bin.ItemCodes || []).join('|'))}"
+  data-category-codes="${UI.esc(items.map(x => x.categoryCode).filter(Boolean).join('|'))}"
+  data-statuses="${UI.esc(items.map(x => x.status).filter(Boolean).join('|'))}"
   data-serial-numbers="${UI.esc((bin.serialNumbers || bin.SerialNumbers || []).join('|'))}"
   data-barcodes="${UI.esc((bin.barcodes || bin.Barcodes || []).join('|'))}"
   data-mts="${UI.esc((bin.mTs || bin.MTs || bin.mts || []).join('|'))}">
@@ -203,21 +280,39 @@
 
                 $(this).toggleClass('is-active');
 
-                const selectedColors = $('#warehouseMapLegend .warehouse-map-legend-item.is-active')
+                const selected = $('#warehouseMapLegend .warehouse-map-legend-item.is-active')
                     .map(function () {
-                        return String($(this).attr('data-legend-color') || '').toLowerCase();
+                        return {
+                            key: String($(this).attr('data-legend-key') || '').toLowerCase(),
+                            mode: String($(this).attr('data-legend-mode') || '').toLowerCase(),
+                            color: String($(this).attr('data-legend-color') || '').toLowerCase()
+                        };
                     })
                     .get()
-                    .filter(Boolean);
+                    .filter(x => x.key || x.color);
 
-                if (!selectedColors.length) {
+                if (!selected.length) {
                     clearWarehouseMapHighlight();
                     return;
                 }
 
                 highlightWarehouseMapBins(function ($bin) {
-                    const binColor = String($bin.attr('data-color') || '').toLowerCase();
-                    return selectedColors.includes(binColor);
+                    return selected.some(entry => {
+                        if (entry.mode === 'itemcode') {
+                            return pipeTokens($bin.attr('data-item-codes')).includes(entry.key);
+                        }
+
+                        if (entry.mode === 'categorycode') {
+                            return pipeTokens($bin.attr('data-category-codes')).includes(entry.key);
+                        }
+
+                        if (entry.mode === 'itemstatus') {
+                            return pipeTokens($bin.attr('data-statuses')).includes(entry.key);
+                        }
+
+                        const binColor = String($bin.attr('data-color') || '').toLowerCase();
+                        return entry.color && binColor === entry.color;
+                    });
                 });
             });
 
@@ -240,15 +335,12 @@
 
                 highlightWarehouseMapBins(function ($bin) {
                     const tokens = [
-                        String($bin.attr('data-item-codes') || ''),
-                        String($bin.attr('data-serial-numbers') || ''),
-                        String($bin.attr('data-barcodes') || ''),
-                        String($bin.attr('data-mts') || '')
-                    ]
-                        .join('|')
-                        .split('|')
-                        .map(x => x.trim().toLowerCase())
-                        .filter(Boolean);
+                        ...pipeTokens($bin.attr('data-item-codes')),
+                        ...pipeTokens($bin.attr('data-category-codes')),
+                        ...pipeTokens($bin.attr('data-serial-numbers')),
+                        ...pipeTokens($bin.attr('data-barcodes')),
+                        ...pipeTokens($bin.attr('data-mts'))
+                    ];
 
                     return tokens.some(token =>
                         values.some(value => token.includes(value))
@@ -292,6 +384,13 @@
         $('.warehouse-map-bin').removeClass('is-highlight is-dim');
         $('.warehouse-map-legend-item').removeClass('is-active');
         $('#warehouseMapHighlightResult').text('');
+    }
+
+    function pipeTokens(value) {
+        return String(value || '')
+            .split('|')
+            .map(x => x.trim().toLowerCase())
+            .filter(Boolean);
     }
 
     return { renderShell, load, render };

@@ -1,5 +1,7 @@
+using ERP.Inventory.Domain.Enums;
 using ERP.Inventory.Infrastructure.Services;
 using ERP.Inventory.Web.Services;
+using ERP.Inventory.Web.Middleware;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
@@ -85,12 +87,18 @@ public sealed class ApiFailureLoggingResultFilter : IAsyncResultFilter
                         ? context.HttpContext.User.Identity.Name
                         : null,
                     ClientIp: context.HttpContext.Connection.RemoteIpAddress?.ToString(),
-                    Browser: request.Headers.UserAgent.ToString()),
+                    Browser: request.Headers.UserAgent.ToString(),
+                    Category: ToCategory(failure.Kind),
+                    StatusCode: StatusCodeFor(failure.Kind),
+                    SafeMessage: failure.Message),
                 CancellationToken.None);
 
             envelope["errorCode"] = log.ErrorCode;
             envelope["errorType"] = failure.Kind.ToString();
+            envelope["correlationId"] = log.ErrorCode;
+            envelope["statusCode"] = log.StatusCode;
             envelope["systemMessage"] = SystemErrorMessages.CreateForFailure(context.HttpContext, log.ErrorCode, failure.Kind);
+            context.HttpContext.Items[LogErrorSystemMiddleware.LoggedItemKey] = log.ErrorCode;
             _logger.LogWarning("Persisted API failure {ErrorCode} for {Path}", log.ErrorCode, request.Path.Value);
         }
         catch (Exception ex)
@@ -186,7 +194,16 @@ public sealed class ApiFailureLoggingResultFilter : IAsyncResultFilter
     }
 
     private static bool HasErrorCode(JsonObject envelope)
-        => !string.IsNullOrWhiteSpace(ReadString(envelope, "errorCode"));
+    {
+        var errorCode = ReadString(envelope, "errorCode");
+        if (!string.IsNullOrWhiteSpace(errorCode)) return true;
+
+        var correlationId = ReadString(envelope, "correlationId");
+        if (string.IsNullOrWhiteSpace(correlationId)) return false;
+
+        envelope["errorCode"] = correlationId;
+        return true;
+    }
 
     private static bool TryAttachEmbeddedErrorCode(ResultExecutingContext context, JsonObject envelope)
     {
@@ -204,12 +221,55 @@ public sealed class ApiFailureLoggingResultFilter : IAsyncResultFilter
     {
         var message = ReadString(envelope, "message") ?? "Request failed.";
         var errors = ReadErrors(envelope);
-        var kind = errors.Count > 0
-            ? SystemErrorKind.Validation
-            : SystemErrorKind.OperationFailure;
+        var kind = ParseErrorType(ReadString(envelope, "errorType"))
+            ?? (errors.Count > 0 ? SystemErrorKind.Validation : SystemErrorKind.OperationFailure);
 
         return new ApiFailure(kind, errors.Count > 0 ? string.Join("; ", errors) : message);
     }
+
+    private static SystemErrorKind? ParseErrorType(string? errorType)
+    {
+        if (string.IsNullOrWhiteSpace(errorType)) return null;
+        return errorType.Trim() switch
+        {
+            "BusinessValidation" => SystemErrorKind.Validation,
+            "BusinessDependency" => SystemErrorKind.BusinessDependency,
+            "Timeout" => SystemErrorKind.Timeout,
+            "Deadlock" => SystemErrorKind.Deadlock,
+            "Unauthorized" => SystemErrorKind.Unauthorized,
+            "Forbidden" => SystemErrorKind.Forbidden,
+            "NotFound" => SystemErrorKind.NotFound,
+            "DbUpdateException" => SystemErrorKind.DbUpdateException,
+            _ => null
+        };
+    }
+
+    private static SystemErrorCategory ToCategory(SystemErrorKind kind)
+        => kind switch
+        {
+            SystemErrorKind.Validation => SystemErrorCategory.BusinessValidation,
+            SystemErrorKind.BusinessDependency => SystemErrorCategory.BusinessDependency,
+            SystemErrorKind.Timeout => SystemErrorCategory.Timeout,
+            SystemErrorKind.Deadlock => SystemErrorCategory.Deadlock,
+            SystemErrorKind.Unauthorized => SystemErrorCategory.Unauthorized,
+            SystemErrorKind.Forbidden => SystemErrorCategory.Forbidden,
+            SystemErrorKind.NotFound => SystemErrorCategory.NotFound,
+            SystemErrorKind.DbUpdateException => SystemErrorCategory.DbUpdateException,
+            _ => SystemErrorCategory.UnhandledException
+        };
+
+    private static int StatusCodeFor(SystemErrorKind kind)
+        => kind switch
+        {
+            SystemErrorKind.Validation => StatusCodes.Status400BadRequest,
+            SystemErrorKind.BusinessDependency => StatusCodes.Status409Conflict,
+            SystemErrorKind.Timeout => StatusCodes.Status504GatewayTimeout,
+            SystemErrorKind.Deadlock => StatusCodes.Status409Conflict,
+            SystemErrorKind.Unauthorized => StatusCodes.Status401Unauthorized,
+            SystemErrorKind.Forbidden => StatusCodes.Status403Forbidden,
+            SystemErrorKind.NotFound => StatusCodes.Status404NotFound,
+            _ => StatusCodes.Status500InternalServerError
+        };
 
     private static string? ReadString(JsonObject envelope, string propertyName)
     {

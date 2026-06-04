@@ -50,6 +50,7 @@ public sealed class WarehouseStructureController : ManagementBaseController
                 shelf = x.Shelf != null ? x.Shelf.ShelfCode : string.Empty,
                 bin = x.BinCode,
                 fullPath = x.FullPath,
+                usageType = x.UsageType.ToString(),
                 isActive = x.IsActive
             });
 
@@ -120,6 +121,7 @@ public sealed class WarehouseStructureController : ManagementBaseController
         {
             WarehouseId = warehouse.Id, ShelfId = shelf.Id, BinCode = binCode,
             FullPath = $"{warehouse.WarehouseCode} / {zone.ZoneCode} / {rack.RackCode} / {shelf.ShelfCode} / {binCode}",
+            UsageType = request.UsageType,
             IsActive = request.IsActive, CreatedBy = userName
         }).Entity;
         await Db.SaveChangesAsync(cancellationToken);
@@ -151,7 +153,7 @@ public sealed class WarehouseStructureController : ManagementBaseController
                 RackName = x.Shelf != null && x.Shelf.Rack != null ? x.Shelf.Rack.Name : string.Empty,
                 ShelfCode = x.Shelf != null ? x.Shelf.ShelfCode : string.Empty,
                 ShelfName = x.Shelf != null ? x.Shelf.Name : string.Empty,
-                x.BinCode, x.IsActive
+                x.BinCode, UsageType = x.UsageType.ToString(), x.IsActive
             }).FirstOrDefaultAsync(cancellationToken);
         if (row == null) return NotFound();
 
@@ -216,6 +218,7 @@ public sealed class WarehouseStructureController : ManagementBaseController
 
         bin.WarehouseId = warehouse.Id; bin.ShelfId = shelf.Id; bin.BinCode = binCode;
         bin.FullPath = $"{warehouse.WarehouseCode} / {zone.ZoneCode} / {rack.RackCode} / {shelf.ShelfCode} / {binCode}";
+        bin.UsageType = request.UsageType;
         bin.IsActive = request.IsActive;
         Touch(bin); AddAudit("Update", nameof(BinLocation), bin.Id, bin.BinCode);
         await Db.SaveChangesAsync(cancellationToken);
@@ -282,6 +285,7 @@ public sealed class WarehouseStructureController : ManagementBaseController
         public string ShelfCode { get; init; } = string.Empty;
         public string ShelfName { get; init; } = string.Empty;
         public string BinCode { get; init; } = string.Empty;
+        public BinLocationUsageType UsageType { get; init; } = BinLocationUsageType.LocationTracked;
         public bool IsActive { get; init; } = true;
     }
 }

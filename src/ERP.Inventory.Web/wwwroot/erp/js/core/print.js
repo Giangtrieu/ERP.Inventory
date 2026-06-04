@@ -249,24 +249,130 @@ window.PrintVoucher = {
 
     },
 
+  localizedConfig(type) {
+    const t = key => UI.t(key);
+    const col = (labelKey, key, width) => ({ label: t(labelKey), key, width });
+    const baseHeader = [
+      { label: t('Document No'), key: 'documentNo' },
+      { label: t('Document Date'), key: 'documentDate' },
+      { label: t('Warehouse'), key: 'warehouse' },
+      { label: t('PIC'), key: 'createdBy' },
+      { label: t('Remark'), key: 'note' }
+    ];
+    const configs = {
+      inbound: {
+        title: t('pdf-inbound-title'),
+        headerFields: [
+          { label: t('Document No'), key: 'documentNo' },
+          { label: t('Inbound Date'), key: 'documentDate' },
+          { label: t('Warehouse'), key: 'warehouse' },
+          { label: t('Supplier / Source Party'), key: 'party' },
+          { label: t('Owner'), key: 'createdBy' },
+          { label: t('PIC'), key: 'approvedBy' },
+          { label: t('Remark'), key: 'note' }
+        ],
+        columns: [col('No', '_index', '5%'), col('Item Code', 'item', '14%'), col('Item Name', 'itemName', '18%'), col('Serial Number', 'serial', '14%'), col('Barcode', 'barcode', '12%'), col('Quantity', 'qty', '8%'), col('UOM', 'uom', '8%'), col('Bin Location', 'bin', '12%'), col('Remark', 'note', '15%')],
+        signatures: [t('Prepared By'), t('Checked By'), t('Approved By')]
+      },
+      move: {
+        title: t('pdf-move-title'),
+        headerFields: [
+          { label: t('Move No'), key: 'documentNo' },
+          { label: t('Move Date'), key: 'documentDate' },
+          { label: t('From Warehouse'), key: 'warehouse' },
+          { label: t('To Warehouse'), key: 'toWarehouse' },
+          { label: t('PIC'), key: 'createdBy' },
+          { label: t('Reason'), key: 'party' },
+          { label: t('Remark'), key: 'note' }
+        ],
+        columns: [col('No', '_index', '5%'), col('Item Code', 'item', '16%'), col('Item Name', 'itemName', '18%'), col('Serial Number', 'serial', '14%'), col('Barcode', 'barcode', '12%'), col('Quantity', 'qty', '8%'), col('From Bin', 'from', '12%'), col('To Bin', 'to', '12%'), col('Remark', 'note', '13%')],
+        signatures: [t('Prepared By'), t('Transferred By'), t('Received By'), t('Approved By')]
+      },
+      adjustment: {
+        title: t('pdf-adjustment-title'),
+        headerFields: [
+          { label: t('Adjustment No'), key: 'documentNo' },
+          { label: t('Adjustment Date'), key: 'documentDate' },
+          { label: t('Warehouse'), key: 'warehouse' },
+          { label: t('Reason'), key: 'party' },
+          { label: t('PIC'), key: 'createdBy' },
+          { label: t('Remark'), key: 'note' }
+        ],
+        columns: [col('No', '_index', '5%'), col('Item Code', 'item', '14%'), col('Item Name', 'itemName', '16%'), col('Serial Number', 'serial', '13%'), col('Barcode', 'barcode', '11%'), col('Before Qty', 'beforeQty', '9%'), col('Adjust Qty', 'qty', '9%'), col('After Qty', 'afterQty', '9%'), col('Bin Location', 'bin', '12%'), col('Remark', 'note', '12%')],
+        signatures: [t('Prepared By'), t('Checked By'), t('Approved By')]
+      },
+      'borrow-lend': {
+        title: t('pdf-borrow-lend-title'),
+        headerFields: [
+          { label: t('Borrow No'), key: 'documentNo' },
+          { label: t('Borrow Date'), key: 'documentDate' },
+          { label: t('Borrow Department'), key: 'borrowDepartment' },
+          { label: t('Warehouse'), key: 'warehouse' },
+          { label: t('Borrower'), key: 'party' },
+          { label: t('Expected Return Date'), key: 'dueDate' },
+          { label: t('PIC'), key: 'createdBy' },
+          { label: t('Remark'), key: 'note' }
+        ],
+        extraFields: ['purpose', 'borrowDepartment', 'borrowerPhone', 'departmentOwner', 'dueDate'],
+        columns: [col('No', '_index', '5%'), col('Item Code', 'item', '16%'), col('Item Name', 'itemName', '18%'), col('Serial Number', 'serial', '14%'), col('Barcode', 'barcode', '12%'), col('Quantity', 'qty', '8%'), col('UOM', 'uom', '8%'), col('Bin Location', 'fromBin', '13%'), col('Return Status', 'condition', '12%'), col('Remark', 'note', '12%')],
+        signatures: [t('Borrower'), t('Warehouse Keeper'), t('Approved By')]
+      },
+      'borrow-return': {
+        title: t('pdf-borrow-return-title'),
+        headerFields: [
+          { label: t('Return No'), key: 'documentNo' },
+          { label: t('Return Date'), key: 'documentDate' },
+          { label: t('Borrow Department'), key: 'borrowDepartment' },
+          { label: t('Warehouse'), key: 'warehouse' },
+          { label: t('Original Borrow No'), key: 'documentNo' },
+          { label: t('PIC'), key: 'createdBy' },
+          { label: t('Remark'), key: 'note' }
+        ],
+        columns: [col('No', '_index', '5%'), col('Item Code', 'item', '16%'), col('Item Name', 'itemName', '18%'), col('Serial Number', 'serial', '14%'), col('Barcode', 'barcode', '12%'), col('Borrowed Qty', 'borrowedQty', '9%'), col('Returned Qty', 'qty', '9%'), col('Remaining Qty', 'remainingQty', '9%'), col('Bin Location', 'targetBin', '13%'), col('Remark', 'note', '12%')],
+        signatures: [t('Returned By'), t('Received By'), t('Checked By'), t('Approved By')]
+      },
+      'inventory-check': {
+        title: t('pdf-inventory-check-title'),
+        headerFields: [
+          { label: t('Check No'), key: 'documentNo' },
+          { label: t('Check Date'), key: 'documentDate' },
+          { label: t('Warehouse'), key: 'warehouse' },
+          { label: t('Checker'), key: 'party' },
+          { label: t('Status'), key: 'status' },
+          { label: t('Remark'), key: 'note' }
+        ],
+        columns: [col('No', '_index', '5%'), col('Item Code', 'item', '14%'), col('Item Name', 'itemName', '16%'), col('Serial Number', 'serial', '13%'), col('Barcode', 'barcode', '11%'), col('System Qty', 'systemQty', '9%'), col('Actual Qty', 'qty', '9%'), col('Variance', 'variance', '8%'), col('Variance Type', 'result', '12%'), col('Bin Location', 'bin', '12%'), col('Remark', 'note', '12%')],
+        signatures: [t('Checked By'), t('Warehouse Keeper'), t('Approved By')]
+      },
+      'quantity-receive': { title: t('pdf-quantity-title'), headerFields: baseHeader, columns: [col('No', '_index', '5%'), col('Item Code', 'itemCode', '18%'), col('Item Name', 'itemName', '24%'), col('Serial Number', 'snCode', '14%'), col('Quantity', 'qty', '10%'), col('UOM', 'uom', '8%'), col('Bin Location', 'binCode', '14%'), col('Remark', 'note', '15%')], signatures: [t('Prepared By'), t('Checked By'), t('Approved By')] },
+      'quantity-issue': { title: t('pdf-quantity-title'), headerFields: baseHeader, columns: [col('No', '_index', '5%'), col('Item Code', 'itemCode', '18%'), col('Item Name', 'itemName', '24%'), col('Serial Number', 'snCode', '14%'), col('Quantity', 'qty', '10%'), col('UOM', 'uom', '8%'), col('Bin Location', 'binCode', '14%'), col('Remark', 'note', '15%')], signatures: [t('Prepared By'), t('Checked By'), t('Approved By')] },
+      'quantity-adjust': { title: t('pdf-quantity-title'), headerFields: baseHeader, columns: [col('No', '_index', '5%'), col('Item Code', 'itemCode', '18%'), col('Item Name', 'itemName', '24%'), col('Serial Number', 'snCode', '14%'), col('Quantity', 'qty', '10%'), col('UOM', 'uom', '8%'), col('Bin Location', 'binCode', '14%'), col('Remark', 'note', '15%')], signatures: [t('Prepared By'), t('Checked By'), t('Approved By')] }
+    };
+    return configs[type] || configs.inbound;
+  },
+
   // Generate and show print voucher from document detail
   show(type, detail) {
-    const config = this.configs[type] || this.configs['inbound'];
+    const config = this.localizedConfig(type);
     const header = detail.header || {};
     const extra = header.extra || {};
-    const lines = detail.lines || [];
+    const lines = detail.rows || detail.lines || [];
 
-    // Header info rows
-    //const infoHtml = config.headerFields.map(f => {
-    //  let val = header[f.key] || '';
-    //  if (f.key === 'documentDate') val = UI.formatDate(val);
-    //  return `<div class="voucher-info-row col-md-4"><span class="info-label">${f.label}:</span><span>${UI.esc(val || '-')}</span></div>`;
-    //}).join('');
+    const headerValue = key => {
+      if (Object.prototype.hasOwnProperty.call(header, key)) return header[key];
+      if (Object.prototype.hasOwnProperty.call(extra, key)) return extra[key];
+      return '';
+    };
+    const infoHtml = config.headerFields.map(f => {
+      let val = headerValue(f.key);
+      if (f.key === 'documentDate' || f.key === 'dueDate') val = UI.formatDate(val);
+      return `<div class="voucher-info-row col-md-4"><span class="info-label">${UI.esc(f.label)}:</span><span>${UI.esc(val || '-')}</span></div>`;
+    }).join('');
 
     // Extra info for borrow-lend
     let extraHtml = '';
     if (config.extraFields && Object.keys(extra).length) {
-      const labels = { purpose: 'Mục đích', borrowDepartment: 'Bộ phận', borrowerPhone: 'SĐT', departmentOwner: 'Chủ quản BP', dueDate: 'Ngày hẹn trả' };
+      const labels = { purpose: UI.t('Purpose'), borrowDepartment: UI.t('Borrow Department'), borrowerPhone: UI.t('Phone'), departmentOwner: UI.t('Department Owner'), dueDate: UI.t('Expected Return Date') };
       extraHtml = config.extraFields.map(key => {
         let val = extra[key] || '';
         if (key === 'dueDate') val = UI.formatDate(val);
@@ -274,27 +380,30 @@ window.PrintVoucher = {
       }).join('');
     }
 
-    // Note/reason
-    //const noteHtml = header.note ? `<div class="voucher-reason"><div class="voucher-reason-label">Lý do / Ghi chú:</div><div class="voucher-reason-text">${UI.esc(header.note)}</div></div>` : '';
+    const noteHtml = header.note ? `<div class="voucher-reason"><div class="voucher-reason-label">${UI.esc(UI.t('Remark'))}:</div><div class="voucher-reason-text">${UI.esc(header.note)}</div></div>` : '';
 
     // Table
     const thead = config.columns.map(c => `<th style="width:${c.width}">${c.label}</th>`).join('');
     const tbody = lines.map((line, i) => {
       const cells = config.columns.map(c => {
           if (c.key === '_index') return `<td class="col-stt" style="text-align:center">${i + 1}</td>`;
-          else if (c.key === 'qty') return `<td class="col-stt" style="text-align:center">1</td>`;
+          else if (c.key === 'qty') return `<td class="col-stt" style="text-align:center">${UI.esc(line.qty ?? line.quantity ?? line.quantityDelta ?? 1)}</td>`;
         return `<td>${UI.esc(UI.t(line[c.key] || '-'))}</td>`;
       }).join('');
       return `<tr>${cells}</tr>`;
     }).join('');
 
     // Signatures
-    //const sigHtml = config.signatures.map(s => `<div class="voucher-sig-block"><div class="voucher-sig-title">${s}</div><div class="voucher-sig-name">(Ký, ghi rõ họ tên)</div></div>`).join('');
+    const sigHtml = config.signatures.map(s => `<div class="voucher-sig-block"><div class="voucher-sig-title">${UI.esc(s)}</div><div class="voucher-sig-name">${UI.esc(UI.t('Sign and full name'))}</div></div>`).join('');
     const documentDate = UI.formatDate(header.documentDate);
     const dueDate = UI.formatDate(extra.dueDate);
     const table = `<table class="voucher-table"><thead><tr>${thead}</tr></thead><tbody> ${tbody}</tbody></table>`;
 
-      const tpl = VoucherTemplate[type];
+      const tpl = { ...(VoucherTemplate[type] || {}) };
+      if (detail.borrowText && (type === 'borrow-lend' || type === 'borrow-return')) {
+          tpl.vi = type === 'borrow-return' ? detail.borrowText.returnVi : detail.borrowText.vi;
+          tpl.cn = type === 'borrow-return' ? detail.borrowText.returnZh : detail.borrowText.zh;
+      }
 
       const data = {
           documentNo: header.documentNo,
@@ -305,12 +414,15 @@ window.PrintVoucher = {
           department: extra.borrowDepartment,
           purpose: extra.purpose,
           dueDate,
+          partyCode: extra.partyCode,
+          itemCategoryCode: (lines[0] && (lines[0].itemCategoryCode || lines[0].item)) || '',
           phone: extra.borrowerPhone,
           departmentOwner: extra.departmentOwner
       };
 
-      if (tpl) {
-          html = renderVoucherLayout(tpl, data, table, config, header);
+      let html = `<button class="btn-close-voucher"onclick="PrintVoucher.close()">x</button><div class="voucher-header"><div class="voucher-title">${UI.esc(config.title)}</div><div class="voucher-subtitle">${UI.esc(header.documentNo || '')}</div></div><div class="voucher-info row">${infoHtml}${extraHtml}</div>${noteHtml}${table}<div class="voucher-signatures">${sigHtml}</div>`;
+      if (tpl && tpl.vi && tpl.cn) {
+          html = renderVoucherLayout(tpl, data, table, config, header, infoHtml, extraHtml, noteHtml);
       }
 
     let container = document.getElementById('printVoucher');
@@ -343,7 +455,7 @@ function fillTemplate(text, data) {
 function renderSignRows(rows, data, column = false) {
     return ` <div class="${column ? 'sign-row-column' : 'sign-row'}">${rows.map(x => `<div>${fillTemplate(x, data)}</div>`).join('')}</div>`;
 }
-function renderVoucherLayout(configTemplate, data, table, config, header) {
+function renderVoucherLayout(configTemplate, data, table, config, header, infoHtml = '', extraHtml = '', noteHtml = '') {
 
     const companyName = UI.t('Default CompanyName');
     const branchName = UI.t('Default BranchName');
@@ -358,6 +470,8 @@ function renderVoucherLayout(configTemplate, data, table, config, header) {
         <div class="voucher-subtitle">${UI.esc(header.documentNo || '')}</div>
     </div>
     <div class="borrow-paper">
+        <div class="voucher-info row">${infoHtml}${extraHtml}</div>
+        ${noteHtml}
         <div class="borrow-content">
             <div class="borrow-text-cn"> <p>${fillTemplate(configTemplate.cn, data)}</p></div>
             <div class="borrow-text-vi"> <p>${fillTemplate(configTemplate.vi, data)}</p></div>

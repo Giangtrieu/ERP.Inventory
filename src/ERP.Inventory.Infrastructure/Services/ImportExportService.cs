@@ -17,6 +17,8 @@ namespace ERP.Inventory.Infrastructure.Services;
 
 public sealed class ImportExportService : IImportService, IExportService
 {
+    private const int MaxStoredOriginalFileBytes = 20 * 1024 * 1024;
+
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     private readonly InventoryDbContext _db;
     private readonly IDocumentNumberService _documentNumbers;
@@ -99,7 +101,13 @@ public sealed class ImportExportService : IImportService, IExportService
             return ServiceResult<int>.Fail("Current role cannot use this import type.");
         }
 
-        var rows = (await SimpleExcel.ReadTableAsync(fileStream, fileName, cancellationToken))
+        var orderedHeaders = ImportHeaders[importType];
+        using var uploaded = new MemoryStream();
+        await fileStream.CopyToAsync(uploaded, cancellationToken);
+        var originalBytes = uploaded.ToArray();
+        uploaded.Position = 0;
+
+        var rows = (await SimpleExcel.ReadTableByOrderAsync(uploaded, fileName, orderedHeaders, cancellationToken))
             .Select(row => CanonicalizeImportRow(importType, row))
             .Where(x => !IsInstructionRow(x))
             .ToArray();
@@ -108,24 +116,24 @@ public sealed class ImportExportService : IImportService, IExportService
             return ServiceResult<int>.Fail("File does not contain data rows.");
         }
 
+        var shouldStoreOriginal = originalBytes.Length <= MaxStoredOriginalFileBytes;
         var batch = new ImportBatch
         {
             BatchNo = _documentNumbers.Next("IMP", DateTime.UtcNow),
             ImportType = importType,
             FileName = fileName,
+            OriginalFileContent = shouldStoreOriginal ? originalBytes : null,
+            OriginalContentType = shouldStoreOriginal ? ContentTypeForFile(fileName) : null,
             Status = ImportBatchStatus.Uploaded,
             TotalRows = rows.Length,
             CreatedBy = user.UserName
         };
-        _db.ImportBatches.Add(batch);
-        await _db.SaveChangesAsync(cancellationToken);
 
         var rowNumber = 2;
         foreach (var row in rows)
         {
-            _db.ImportBatchRows.Add(new ImportBatchRow
+            batch.Rows.Add(new ImportBatchRow
             {
-                ImportBatchId = batch.Id,
                 RowNumber = rowNumber++,
                 RawJson = JsonSerializer.Serialize(row, JsonOptions),
                 Severity = ValidationSeverity.Info,
@@ -134,7 +142,18 @@ public sealed class ImportExportService : IImportService, IExportService
             });
         }
 
-        await _db.SaveChangesAsync(cancellationToken);
+        var autoDetectChanges = _db.ChangeTracker.AutoDetectChangesEnabled;
+        try
+        {
+            _db.ChangeTracker.AutoDetectChangesEnabled = false;
+            _db.ImportBatches.Add(batch);
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        finally
+        {
+            _db.ChangeTracker.AutoDetectChangesEnabled = autoDetectChanges;
+        }
+
         return ServiceResult<int>.Ok(batch.Id, "File uploaded.");
     }
 
@@ -307,7 +326,8 @@ public sealed class ImportExportService : IImportService, IExportService
                 FileName = x.FileName,
                 Status = x.Status.ToString(),
                 TotalRows = x.TotalRows,
-                BlockingErrorRows = x.BlockingErrorRows
+                BlockingErrorRows = x.BlockingErrorRows,
+                HasOriginalFile = x.OriginalFileContent != null
             })
             .ToArrayAsync(cancellationToken);
         return ServiceResult<IReadOnlyCollection<ImportBatchDto>>.Ok(rows);
@@ -344,6 +364,100 @@ public sealed class ImportExportService : IImportService, IExportService
         var localizedHeaders = headers.Select(header => ExcelText(user, header)).ToArray();
         var bytes = SimpleExcel.CreateWorkbook(localizedHeaders, TemplateRows(importType), $"{importType}Template");
         return Task.FromResult(bytes);
+    }
+
+    public async Task<ServiceResult<ImportBatchFileDto>> DownloadAsync(int importBatchId, string kind, CurrentUserContext user, CancellationToken cancellationToken = default)
+    {
+        var normalizedKind = NormalizeDownloadKind(kind);
+        if (normalizedKind == "original")
+        {
+            var original = await _db.ImportBatches
+                .AsNoTracking()
+                .Where(x => x.Id == importBatchId)
+                .Select(x => new { x.ImportType, x.FileName, x.OriginalContentType, x.OriginalFileContent })
+                .FirstOrDefaultAsync(cancellationToken);
+            if (original == null)
+            {
+                return ServiceResult<ImportBatchFileDto>.Fail("Import batch not found.");
+            }
+
+            if (!CanUseImportType(original.ImportType, user))
+            {
+                return ServiceResult<ImportBatchFileDto>.Fail("Current role cannot use this import type.");
+            }
+
+            if (original.OriginalFileContent == null || original.OriginalFileContent.Length == 0)
+            {
+                return ServiceResult<ImportBatchFileDto>.Fail("Original uploaded file is not available.");
+            }
+
+            return ServiceResult<ImportBatchFileDto>.Ok(new ImportBatchFileDto
+            {
+                FileName = SafeDownloadName(original.ImportType, "Original", Path.GetExtension(original.FileName)),
+                ContentType = original.OriginalContentType ?? ContentTypeForFile(original.FileName),
+                Content = original.OriginalFileContent
+            });
+        }
+
+        var batch = await _db.ImportBatches
+            .AsNoTracking()
+            .Where(x => x.Id == importBatchId)
+            .Select(x => new { x.Id, x.ImportType })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (batch == null)
+        {
+            return ServiceResult<ImportBatchFileDto>.Fail("Import batch not found.");
+        }
+
+        if (!CanUseImportType(batch.ImportType, user))
+        {
+            return ServiceResult<ImportBatchFileDto>.Fail("Current role cannot use this import type.");
+        }
+
+        if (!ImportHeaders.TryGetValue(batch.ImportType, out var headers))
+        {
+            return ServiceResult<ImportBatchFileDto>.Fail("Import type is not supported.");
+        }
+
+        if (normalizedKind == "template")
+        {
+            var template = await TemplateAsync(batch.ImportType, user, cancellationToken);
+            return ServiceResult<ImportBatchFileDto>.Ok(new ImportBatchFileDto
+            {
+                FileName = SafeDownloadName(batch.ImportType, "Template"),
+                Content = template
+            });
+        }
+
+        var rowsQuery = _db.ImportBatchRows
+            .AsNoTracking()
+            .Where(x => x.ImportBatchId == importBatchId);
+        if (normalizedKind == "validation-errors")
+        {
+            rowsQuery = rowsQuery.Where(x => !x.IsValid || x.Severity == ValidationSeverity.Blocking);
+        }
+
+        var rows = await rowsQuery
+            .OrderBy(x => x.RowNumber)
+            .ToArrayAsync(cancellationToken);
+
+        var exportRows = rows
+            .Select(row => OrderedBatchExportRow(batch.ImportType, row, headers))
+            .ToArray();
+
+        var exportHeaders = Headers(user, headers.Concat(new[] { "Row", "Severity", "Message", "Suggested Fix" }).ToArray());
+        var label = normalizedKind switch
+        {
+            "validation-errors" => "ValidationErrors",
+            "result" => "Result",
+            _ => "Preview"
+        };
+        var bytes = SimpleExcel.CreateWorkbook(exportHeaders, exportRows, $"{batch.ImportType}{label}");
+        return ServiceResult<ImportBatchFileDto>.Ok(new ImportBatchFileDto
+        {
+            FileName = SafeDownloadName(batch.ImportType, label),
+            Content = bytes
+        });
     }
 
     public async Task<byte[]> ExportInventoryAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default)
@@ -565,6 +679,9 @@ public sealed class ImportExportService : IImportService, IExportService
             .OrderBy(x => x.Warehouse!.WarehouseCode).ThenBy(x => x.Item!.ItemCode).ThenBy(x => x.SnCode)
             .Take(50000)
             .ToArrayAsync(cancellationToken);
+        var ownerNames = await LoadQuantityOwnerNamesAsync(
+            balances.Select(x => (x.ItemId, x.SnCode)),
+            cancellationToken);
         var rows = balances.Select(x => new object?[]
         {
             string.Empty,
@@ -575,13 +692,10 @@ public sealed class ImportExportService : IImportService, IExportService
             x.SnCode,
             x.Quantity,
             x.Status.ToString(),
-            _db.ItemInstances.AsNoTracking()
-                .Where(i => i.ItemId == x.ItemId && i.SerialNumber == x.SnCode && i.TrackingType == ItemTrackingType.QuantityOnly)
-                .Select(i => i.OwnerName)
-                .FirstOrDefault() ?? string.Empty,
+            QuantityOwnerName(ownerNames, x.ItemId, x.SnCode),
             string.Empty
         }).ToArray();
-        return SimpleExcel.CreateWorkbook(Headers(user, "DocumentNo", "DocumentDate", "WarehouseCode", "ItemCategoryCode", "ItemCode", "SnCode", "Quantity", "Status", "OwnerName", "Note"), rows, ExcelText(user, "QuantityBalance"));
+        return SimpleExcel.CreateWorkbook(ImportTemplateHeaders(user, "QuantityInbound"), rows, ExcelText(user, "QuantityBalance"));
     }
 
     public async Task<byte[]> ExportInboundDocumentsAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default)
@@ -602,7 +716,7 @@ public sealed class ImportExportService : IImportService, IExportService
             d.Warehouse?.WarehouseCode, l.BinLocation?.BinCode, d.SourceExternalParty?.PartyCode, l.ItemInstance?.Status.ToString(), l.Note,
             d.Receiver?.PartyCode, d.Receiver?.Name, d.PartyPhone, d.PartyDepartment, l.ItemInstance?.OwnerName, l.ItemInstance?.TrackingType.ToString()
         })).ToArray();
-        return SimpleExcel.CreateWorkbook(Headers(user, "DocumentDate", "DocumentNo", "ItemCode", "SerialNumber", "Barcode", "MT", "WarehouseCode", "BinCode", "SourcePartyCode", "Condition", "Note", "PartyCode", "Name", "Phone", "Department", "OwnerName", "TrackingType"), rows, ExcelText(user, "InboundDocuments"));
+        return SimpleExcel.CreateWorkbook(ImportTemplateHeaders(user, "Inbound"), rows, ExcelText(user, "InboundDocuments"));
     }
 
     public async Task<byte[]> ExportBorrowDocumentsAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default)
@@ -620,7 +734,7 @@ public sealed class ImportExportService : IImportService, IExportService
             d.Purpose, d.BorrowDepartment, d.BorrowerPhone, d.DepartmentOwner,
             l.ItemInstance?.Item?.ItemCode, l.ItemInstance?.SerialNumber, l.TargetExternalLocation
         })).ToArray();
-        return SimpleExcel.CreateWorkbook(Headers(user, "BorrowerCode", "WarehouseCode", "DocumentNo", "BorrowDate", "DueDate", "Purpose", "BorrowDepartment", "BorrowerPhone", "DepartmentOwner", "ItemCode", "SerialNumber", "TargetExternalLocation"), rows, ExcelText(user, "BorrowDocuments"));
+        return SimpleExcel.CreateWorkbook(ImportTemplateHeaders(user, "BorrowLend"), rows, ExcelText(user, "BorrowDocuments"));
     }
 
     public async Task<byte[]> ExportRepairDocumentsAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default)
@@ -633,10 +747,10 @@ public sealed class ImportExportService : IImportService, IExportService
         var docs = await query.OrderByDescending(x => x.DocumentDate).Take(5000).ToListAsync(cancellationToken);
         var rows = docs.SelectMany(d => d.Lines.Select(l => new object?[]
         {
-            d.DocumentNo, d.RepairVendor?.PartyCode, l.ItemInstance?.SerialNumber, l.ItemInstance?.Barcode,
+            d.DocumentNo, d.RepairVendor?.PartyCode, d.RepairVendor?.Name, l.ItemInstance?.SerialNumber, l.ItemInstance?.Barcode,
             d.Reason, d.ExpectedReturnDate?.ToString("yyyy-MM-dd"), l.TargetExternalLocation
         })).ToArray();
-        return SimpleExcel.CreateWorkbook(Headers(user, "DocumentNo", "RepairVendorCode", "SerialNumber", "Barcode", "Reason", "ExpectedReturnDate", "TargetExternalLocation"), rows, ExcelText(user, "RepairDocuments"));
+        return SimpleExcel.CreateWorkbook(ImportTemplateHeaders(user, "RepairSend"), rows, ExcelText(user, "RepairDocuments"));
     }
 
     public async Task<byte[]> ExportMoveDocumentsAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default)
@@ -652,7 +766,7 @@ public sealed class ImportExportService : IImportService, IExportService
             d.DocumentDate.ToString("yyyy-MM-dd"), l.ItemInstance?.SerialNumber, l.ItemInstance?.Barcode,
             string.Empty, l.TargetBinLocation?.Warehouse?.WarehouseCode, l.TargetBinLocation?.BinCode, d.Note
         })).ToArray();
-        return SimpleExcel.CreateWorkbook(Headers(user, "DocumentDate", "SerialNumber", "Barcode", "SourceWarehouseCode", "TargetWarehouseCode", "TargetBinCode", "Note"), rows, ExcelText(user, "MoveDocuments"));
+        return SimpleExcel.CreateWorkbook(ImportTemplateHeaders(user, "MoveLocation"), rows, ExcelText(user, "MoveDocuments"));
     }
 
     public async Task<byte[]> ExportAdjustmentDocumentsAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default)
@@ -666,17 +780,17 @@ public sealed class ImportExportService : IImportService, IExportService
         if (filter.WarehouseId.HasValue) query = query.Where(x => x.WarehouseId == filter.WarehouseId.Value);
         if (filter.FromDate.HasValue) query = query.Where(x => x.DocumentDate >= filter.FromDate.Value);
         var docs = await query.OrderByDescending(x => x.DocumentDate).Take(5000).ToListAsync(cancellationToken);
+        var ownerNames = await LoadQuantityOwnerNamesAsync(
+            docs.SelectMany(d => d.Lines).Select(l => (l.ItemId, l.SnCode)),
+            cancellationToken);
         var rows = docs.SelectMany(d => d.Lines.Select(l => new object?[]
         {
             d.DocumentNo, d.DocumentDate.ToString("yyyy-MM-dd"), d.Warehouse?.WarehouseCode, l.Item?.Category?.CategoryCode,
             l.Item?.ItemCode, l.SnCode, l.Quantity, l.Status.ToString(),
-            _db.ItemInstances.AsNoTracking()
-                .Where(i => i.ItemId == l.ItemId && i.SerialNumber == l.SnCode && i.TrackingType == ItemTrackingType.QuantityOnly)
-                .Select(i => i.OwnerName)
-                .FirstOrDefault() ?? string.Empty,
+            QuantityOwnerName(ownerNames, l.ItemId, l.SnCode),
             l.Note
         })).ToArray();
-        return SimpleExcel.CreateWorkbook(Headers(user, "DocumentNo", "DocumentDate", "WarehouseCode", "ItemCategoryCode", "ItemCode", "SnCode", "Quantity", "Status", "OwnerName", "Note"), rows, ExcelText(user, "AdjustmentDocuments"));
+        return SimpleExcel.CreateWorkbook(ImportTemplateHeaders(user, "QuantityAdjust"), rows, ExcelText(user, "AdjustmentDocuments"));
     }
 
     public async Task<byte[]> ExportInventoryCheckDocumentsAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default)
@@ -696,7 +810,7 @@ public sealed class ImportExportService : IImportService, IExportService
             l.ActualBinLocationId.HasValue && actualBins.TryGetValue(l.ActualBinLocationId.Value, out var bin) ? bin.BinCode : string.Empty,
             l.Note
         })).ToArray();
-        return SimpleExcel.CreateWorkbook(Headers(user, "WarehouseCode", "ItemCode", "SerialNumber", "BinCode", "Note"), rows, ExcelText(user, "InventoryCheckDocuments"));
+        return SimpleExcel.CreateWorkbook(ImportTemplateHeaders(user, "InventoryCheck"), rows, ExcelText(user, "InventoryCheckDocuments"));
     }
 
     public async Task<byte[]> ExportQuantityTransactionsAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default)
@@ -705,6 +819,9 @@ public sealed class ImportExportService : IImportService, IExportService
         if (filter.WarehouseId.HasValue) query = query.Where(x => x.WarehouseId == filter.WarehouseId.Value);
         if (filter.FromDate.HasValue) query = query.Where(x => x.PostedAt >= filter.FromDate.Value);
         var rows = await query.OrderByDescending(x => x.PostedAt).Take(50000).ToListAsync(cancellationToken);
+        var ownerNames = await LoadQuantityOwnerNamesAsync(
+            rows.Select(x => (x.ItemId, x.SnCode)),
+            cancellationToken);
         var data = rows.Select(x => new object?[] {
             x.DocumentNo,
             x.PostedAt.ToString("yyyy-MM-dd"),
@@ -714,13 +831,10 @@ public sealed class ImportExportService : IImportService, IExportService
             x.SnCode,
             Math.Abs(x.QuantityDelta),
             x.StatusAfter.ToString(),
-            _db.ItemInstances.AsNoTracking()
-                .Where(i => i.ItemId == x.ItemId && i.SerialNumber == x.SnCode && i.TrackingType == ItemTrackingType.QuantityOnly)
-                .Select(i => i.OwnerName)
-                .FirstOrDefault() ?? string.Empty,
+            QuantityOwnerName(ownerNames, x.ItemId, x.SnCode),
             string.Empty
         }).ToArray();
-        return SimpleExcel.CreateWorkbook(Headers(user, "DocumentNo", "DocumentDate", "WarehouseCode", "ItemCategoryCode", "ItemCode", "SnCode", "Quantity", "Status", "OwnerName", "Note"), data, ExcelText(user, "QuantityTransactions"));
+        return SimpleExcel.CreateWorkbook(ImportTemplateHeaders(user, "QuantityInbound"), data, ExcelText(user, "QuantityTransactions"));
     }
 
     public async Task<byte[]> ExportItemMasterAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default)
@@ -746,9 +860,9 @@ public sealed class ImportExportService : IImportService, IExportService
         var rows = bins.Select(b =>
         {
             var shelf = b.Shelf; var rack = shelf?.Rack; var zone = rack?.WarehouseZone; var wh = zone?.Warehouse; var branch = wh?.Branch; var company = branch?.Company;
-            return new object?[] { company?.Code, company?.Name, branch?.Code, branch?.Name, wh?.WarehouseCode, wh?.Name, zone?.ZoneCode, zone?.Name, rack?.RackCode, rack?.Name, shelf?.ShelfCode, shelf?.Name, b.BinCode };
+            return new object?[] { company?.Code, company?.Name, branch?.Code, branch?.Name, wh?.WarehouseCode, wh?.Name, zone?.ZoneCode, zone?.Name, rack?.RackCode, rack?.Name, shelf?.ShelfCode, shelf?.Name, b.BinCode, b.UsageType.ToString() };
         }).ToArray();
-        return SimpleExcel.CreateWorkbook(Headers(user, "CompanyCode", "CompanyName", "BranchCode", "BranchName", "WarehouseCode", "WarehouseName", "ZoneCode", "ZoneName", "RackCode", "RackName", "ShelfCode", "ShelfName", "BinCode"), rows, ExcelText(user, "WarehouseStructure"));
+        return SimpleExcel.CreateWorkbook(Headers(user, "CompanyCode", "CompanyName", "BranchCode", "BranchName", "WarehouseCode", "WarehouseName", "ZoneCode", "ZoneName", "RackCode", "RackName", "ShelfCode", "ShelfName", "BinCode", "UsageType"), rows, ExcelText(user, "WarehouseStructure"));
     }
 
     private async Task<ImportValidationContext> BuildImportValidationContextAsync(string importType, IReadOnlyCollection<Dictionary<string, string>> rows, CancellationToken cancellationToken)
@@ -759,7 +873,7 @@ public sealed class ImportExportService : IImportService, IExportService
         foreach (var chunk in Batch(itemCodes))
         {
             var items = await _db.Items.AsNoTracking()
-                .Where(x => chunk.Contains(x.ItemCode.ToUpper()))
+                .Where(x => chunk.Contains(x.ItemCode))
                 .ToListAsync(cancellationToken);
             foreach (var item in items)
             {
@@ -776,7 +890,7 @@ public sealed class ImportExportService : IImportService, IExportService
         foreach (var chunk in Batch(warehouseCodes))
         {
             var warehouses = await _db.Warehouses.AsNoTracking()
-                .Where(x => x.IsActive && chunk.Contains(x.WarehouseCode.ToUpper()))
+                .Where(x => x.IsActive && chunk.Contains(x.WarehouseCode))
                 .ToListAsync(cancellationToken);
             foreach (var warehouse in warehouses)
             {
@@ -791,7 +905,7 @@ public sealed class ImportExportService : IImportService, IExportService
             foreach (var chunk in Batch(binCodes))
             {
                 var bins = await _db.BinLocations.AsNoTracking()
-                    .Where(x => chunk.Contains(x.BinCode.ToUpper()))
+                    .Where(x => chunk.Contains(x.BinCode))
                     .ToListAsync(cancellationToken);
                 foreach (var bin in bins)
                 {
@@ -819,8 +933,8 @@ public sealed class ImportExportService : IImportService, IExportService
                 var instances = await _db.ItemInstances.AsNoTracking()
                     .Include(x => x.Item)
                     .Where(x =>
-                        (x.SerialNumber != null && chunk.Contains(x.SerialNumber.ToUpper())) ||
-                        (x.Barcode != null && chunk.Contains(x.Barcode.ToUpper())))
+                        (x.SerialNumber != null && chunk.Contains(x.SerialNumber)) ||
+                        (x.Barcode != null && chunk.Contains(x.Barcode)))
                     .ToListAsync(cancellationToken);
                 foreach (var instance in instances)
                 {
@@ -1032,7 +1146,7 @@ public sealed class ImportExportService : IImportService, IExportService
             errors.Add("Current user cannot import into this warehouse.");
         }
 
-        var bin = warehouse == null ? null : FindPreloadedBin(context, warehouse.Id, Value(row, "BinCode"));
+        var bin = warehouse == null ? null : FindPreloadedBin(context, warehouse.Id, Value(row, "BinCode"), BinLocationUsageType.LocationTracked);
         if (warehouse != null && bin == null)
         {
             errors.Add("BinCode is invalid for warehouse.");
@@ -1052,6 +1166,12 @@ public sealed class ImportExportService : IImportService, IExportService
             {
                 errors.Add("SerialNumber already exists.");
             }
+        }
+
+        var usageType = Value(row, "UsageType");
+        if (!string.IsNullOrWhiteSpace(usageType) && !Enum.TryParse<BinLocationUsageType>(usageType, true, out _))
+        {
+            errors.Add("UsageType must be LocationTracked or Quantity.");
         }
     }
 
@@ -1088,7 +1208,7 @@ public sealed class ImportExportService : IImportService, IExportService
         }
         else if (warehouse != null)
         {
-            var bin = FindPreloadedBin(context, warehouse.Id, binCode);
+            var bin = FindPreloadedBin(context, warehouse.Id, binCode, BinLocationUsageType.LocationTracked);
             if (bin == null)
             {
                 errors.Add("BinCode does not exist in the checked warehouse.");
@@ -1364,7 +1484,7 @@ public sealed class ImportExportService : IImportService, IExportService
         if (targetWarehouse == null) { errors.Add("TargetWarehouseCode does not exist."); return; }
         if (!user.CanAccessWarehouse(targetWarehouse.Id)) errors.Add("Current user cannot move items to this warehouse.");
 
-        var targetBin = FindPreloadedBin(context, targetWarehouse.Id, Value(row, "TargetBinCode"));
+        var targetBin = FindPreloadedBin(context, targetWarehouse.Id, Value(row, "TargetBinCode"), BinLocationUsageType.LocationTracked);
         if (targetBin == null) errors.Add("TargetBinCode does not exist in target warehouse.");
     }
 
@@ -1397,7 +1517,7 @@ public sealed class ImportExportService : IImportService, IExportService
 
         var targetWarehouse = FindPreloadedWarehouse(context, Value(row, "TargetWarehouseCode"));
         if (targetWarehouse == null) { errors.Add("TargetWarehouseCode does not exist."); return; }
-        var targetBin = FindPreloadedBin(context, targetWarehouse.Id, Value(row, "TargetBinCode"));
+        var targetBin = FindPreloadedBin(context, targetWarehouse.Id, Value(row, "TargetBinCode"), BinLocationUsageType.LocationTracked);
         if (targetBin == null) errors.Add("TargetBinCode does not exist in target warehouse.");
     }
 
@@ -1490,7 +1610,7 @@ public sealed class ImportExportService : IImportService, IExportService
                 var lines = batch.Select(row =>
                 {
                     var instance = FindPreloadedInstance(context, row) ?? throw new InvalidOperationException("Item instance not found.");
-                    var targetBin = FindPreloadedBin(context, targetWarehouse.Id, Value(row, "TargetBinCode"))
+                    var targetBin = FindPreloadedBin(context, targetWarehouse.Id, Value(row, "TargetBinCode"), BinLocationUsageType.LocationTracked)
                         ?? throw new InvalidOperationException("Target bin not found.");
 
                     return new MoveLocationLineRequest
@@ -1566,12 +1686,12 @@ public sealed class ImportExportService : IImportService, IExportService
             foreach (var batch in SplitByUniqueTargetBin(group))
             {
                 var firstBatchRow = batch.First();
-                var firstTargetBin = FindPreloadedBin(context, targetWarehouse.Id, Value(firstBatchRow, "TargetBinCode"))
+                var firstTargetBin = FindPreloadedBin(context, targetWarehouse.Id, Value(firstBatchRow, "TargetBinCode"), BinLocationUsageType.LocationTracked)
                     ?? throw new InvalidOperationException("Target bin not found.");
                 var lines = batch.Select(row =>
                 {
                     var instance = FindPreloadedInstance(context, row) ?? throw new InvalidOperationException("Item instance not found.");
-                    var targetBin = FindPreloadedBin(context, targetWarehouse.Id, Value(row, "TargetBinCode"))
+                    var targetBin = FindPreloadedBin(context, targetWarehouse.Id, Value(row, "TargetBinCode"), BinLocationUsageType.LocationTracked)
                         ?? throw new InvalidOperationException("Target bin not found.");
                     Enum.TryParse<ItemStatus>(Value(row, "NewStatus"), true, out var newStatus);
                     if (newStatus == default) newStatus = ItemStatus.Normal;
@@ -1809,6 +1929,7 @@ public sealed class ImportExportService : IImportService, IExportService
             var rack = await EnsureRackAsync(zone.Id, Value(row, "RackCode"), Value(row, "RackName"), user, cancellationToken);
             var shelf = await EnsureShelfAsync(rack.Id, Value(row, "ShelfCode"), Value(row, "ShelfName"), user, cancellationToken);
             var binCode = Value(row, "BinCode");
+            var usageType = ParseBinUsageType(Value(row, "UsageType"));
             if (!await _db.BinLocations.AnyAsync(x => x.WarehouseId == warehouse.Id && x.BinCode == binCode, cancellationToken))
             {
                 _db.BinLocations.Add(new BinLocation
@@ -1817,6 +1938,7 @@ public sealed class ImportExportService : IImportService, IExportService
                     ShelfId = shelf.Id,
                     BinCode = binCode,
                     FullPath = $"{warehouse.WarehouseCode} / {zone.ZoneCode} / {rack.RackCode} / {shelf.ShelfCode} / {binCode}",
+                    UsageType = usageType,
                     CreatedBy = user.UserName
                 });
                 count++;
@@ -3090,9 +3212,113 @@ public sealed class ImportExportService : IImportService, IExportService
         return row.TryGetValue(key, out var value) ? value.Trim() : string.Empty;
     }
 
+    private async Task<Dictionary<(int ItemId, string SnCode), string>> LoadQuantityOwnerNamesAsync(
+        IEnumerable<(int ItemId, string SnCode)> keys,
+        CancellationToken cancellationToken)
+    {
+        var normalizedKeys = keys
+            .Where(x => !string.IsNullOrWhiteSpace(x.SnCode))
+            .Select(x => (x.ItemId, SnCode: x.SnCode!.Trim()))
+            .Distinct()
+            .ToArray();
+        if (normalizedKeys.Length == 0)
+        {
+            return new Dictionary<(int ItemId, string SnCode), string>();
+        }
+
+        var itemIds = normalizedKeys.Select(x => x.ItemId).Distinct().ToArray();
+        var snCodes = normalizedKeys.Select(x => x.SnCode).Distinct().ToArray();
+        var candidateSet = normalizedKeys.ToHashSet();
+
+        var owners = await _db.ItemInstances
+            .AsNoTracking()
+            .Where(x =>
+                x.TrackingType == ItemTrackingType.QuantityOnly &&
+                x.SerialNumber != null &&
+                itemIds.Contains(x.ItemId) &&
+                snCodes.Contains(x.SerialNumber))
+            .Select(x => new { x.ItemId, x.SerialNumber, x.OwnerName })
+            .ToArrayAsync(cancellationToken);
+
+        var result = new Dictionary<(int ItemId, string SnCode), string>();
+        foreach (var owner in owners)
+        {
+            var key = (owner.ItemId, owner.SerialNumber!.Trim());
+            if (candidateSet.Contains(key) && !result.ContainsKey(key))
+            {
+                result[key] = owner.OwnerName ?? string.Empty;
+            }
+        }
+
+        return result;
+    }
+
+    private static string QuantityOwnerName(
+        IReadOnlyDictionary<(int ItemId, string SnCode), string> ownerNames,
+        int itemId,
+        string? snCode)
+    {
+        return !string.IsNullOrWhiteSpace(snCode) && ownerNames.TryGetValue((itemId, snCode.Trim()), out var ownerName)
+            ? ownerName
+            : string.Empty;
+    }
+
+    private static IReadOnlyCollection<object?> OrderedBatchExportRow(string importType, ImportBatchRow batchRow, IReadOnlyCollection<string> orderedHeaders)
+    {
+        var row = CanonicalizeImportRow(importType, Row(batchRow));
+        return orderedHeaders
+            .Select(header => (object?)Value(row, header))
+            .Concat(new object?[]
+            {
+                batchRow.RowNumber,
+                batchRow.Severity.ToString(),
+                batchRow.Message ?? string.Empty,
+                batchRow.SuggestedFix ?? string.Empty
+            })
+            .ToArray();
+    }
+
+    private static string NormalizeDownloadKind(string? kind)
+    {
+        var normalized = (kind ?? "preview").Trim().Replace("_", "-").ToLowerInvariant();
+        return normalized switch
+        {
+            "original" or "uploaded" => "original",
+            "template" => "template",
+            "errors" or "error" or "validationerrors" or "validation-errors" => "validation-errors",
+            "validated" or "preview" => "preview",
+            "result" or "confirmed" => "result",
+            _ => "preview"
+        };
+    }
+
+    private static string SafeDownloadName(string importType, string label, string extension = ".xlsx")
+    {
+        var safeType = new string((importType ?? "Import").Where(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_').ToArray());
+        if (string.IsNullOrWhiteSpace(safeType)) safeType = "Import";
+        if (string.IsNullOrWhiteSpace(extension)) extension = ".xlsx";
+        if (!extension.StartsWith('.')) extension = "." + extension;
+        return $"{safeType}_{label}_{DateTime.UtcNow:yyyyMMddHHmmss}{extension}";
+    }
+
+    private static string ContentTypeForFile(string fileName)
+        => Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".csv" => "text/csv",
+            ".tsv" => "text/tab-separated-values",
+            _ => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        };
+
     private static string NormalizeCode(string? value)
     {
         return (value ?? string.Empty).Trim().ToUpperInvariant();
+    }
+
+    private static BinLocationUsageType ParseBinUsageType(string? value)
+    {
+        return Enum.TryParse<BinLocationUsageType>(value, true, out var parsed)
+            ? parsed
+            : BinLocationUsageType.LocationTracked;
     }
 
     private static string[] DistinctCodes(IReadOnlyCollection<Dictionary<string, string>> rows, params string[] keys)
@@ -3135,9 +3361,18 @@ public sealed class ImportExportService : IImportService, IExportService
         return context.ActiveWarehousesByCode.TryGetValue(NormalizeCode(code), out var warehouse) ? warehouse : null;
     }
 
-    private static BinLocation? FindPreloadedBin(ImportValidationContext context, int warehouseId, string binCode)
+    private static BinLocation? FindPreloadedBin(
+        ImportValidationContext context,
+        int warehouseId,
+        string binCode,
+        BinLocationUsageType? usageType = null)
     {
-        return context.ActiveBinsByWarehouseAndCode.TryGetValue((warehouseId, NormalizeCode(binCode)), out var bin) ? bin : null;
+        if (!context.ActiveBinsByWarehouseAndCode.TryGetValue((warehouseId, NormalizeCode(binCode)), out var bin))
+        {
+            return null;
+        }
+
+        return !usageType.HasValue || bin.UsageType == usageType.Value ? bin : null;
     }
 
     private static ItemInstance? FindPreloadedInstance(ImportValidationContext context, Dictionary<string, string> row)
@@ -3430,8 +3665,8 @@ public sealed class ImportExportService : IImportService, IExportService
                 rows.Add(new object?[] { "GB300", "", "", "PCS", "EA", "", "", "no", "Correct unit and serial flag" });
                 break;
             case "WarehouseStructure":
-                rows.Add(new object?[] { "FOXCON", "FOXCON", "FII", "FUYU", "B34", "B34", "F16", "F16", "R01", "Rack 01", "S01", "Shelf 01", "B34_R01_S01" });
-                rows.Add(new object?[] { "FOXCON", "FOXCON", "FII", "FUYU", "B34", "B34", "F16", "F16", "R01", "Rack 01", "S02", "Shelf 02", "B34_R01_S02" });
+                rows.Add(new object?[] { "FOXCON", "FOXCON", "FII", "FUYU", "B34", "B34", "F16", "F16", "R01", "Rack 01", "S01", "Shelf 01", "B34_R01_S01", "LocationTracked" });
+                rows.Add(new object?[] { "FOXCON", "FOXCON", "FII", "FUYU", "B34", "B34", "F16", "F16", "R01", "Rack 01", "S02", "Shelf 02", "B34_R01_S02", "Quantity" });
                 break;
             case "InventoryCheck":
                 rows.Add(new object?[] { "B34", "GB200", "SN-GB200-0001", "B34_R01_S01", "Checked OK" });
@@ -3545,6 +3780,13 @@ public sealed class ImportExportService : IImportService, IExportService
     private static string[] Headers(CurrentUserContext user, params string[] keys)
     {
         return keys.Select(x => ExcelText(user, x)).ToArray();
+    }
+
+    private static string[] ImportTemplateHeaders(CurrentUserContext user, string importType)
+    {
+        return ImportHeaders.TryGetValue(importType, out var headers)
+            ? Headers(user, headers)
+            : Array.Empty<string>();
     }
 
     private static string ExcelText(CurrentUserContext user, string key)
@@ -3717,6 +3959,7 @@ public sealed class ImportExportService : IImportService, IExportService
             ["SourceWarehouseCode"]     = "Kho nguồn",
             ["TargetWarehouseCode"]     = "Kho đích",
             ["TargetBinCode"]           = "Vị trí đích",
+            ["UsageType"]               = "Loại vị trí",
             ["BorrowDocumentNo"]        = "Số phiếu mượn",
             ["RepairDocumentNo"]        = "Số phiếu sửa chữa",
             ["ReturnLocationBinCode"]   = "Vị trí nhập trả",
@@ -3856,6 +4099,7 @@ public sealed class ImportExportService : IImportService, IExportService
             ["SourceWarehouseCode"]     = "Source Warehouse",
             ["TargetWarehouseCode"]     = "Target Warehouse",
             ["TargetBinCode"]           = "Target Bin",
+            ["UsageType"]               = "Usage Type",
             ["BorrowDocumentNo"]        = "Borrow Document No.",
             ["RepairDocumentNo"]        = "Repair Document No.",
             ["ReturnLocationBinCode"]   = "Return Location (Bin)",
@@ -4086,6 +4330,7 @@ public sealed class ImportExportService : IImportService, IExportService
             ["SourceWarehouseCode"]     = "源仓库",
             ["TargetWarehouseCode"]     = "目标仓库",
             ["TargetBinCode"]           = "目标库位",
+            ["UsageType"]               = "库位用途",
             ["BorrowDocumentNo"]        = "借用单号",
             ["RepairDocumentNo"]        = "维修单号",
             ["ReturnLocationBinCode"]   = "归还库位",
@@ -4194,7 +4439,7 @@ public sealed class ImportExportService : IImportService, IExportService
     {
         ["ItemMaster"]         = new[] { "ItemCode", "DefaultName", "CategoryCode", "CategoryName", "UnitCode", "UnitName", "IsSerialManaged", "NameVi", "NameEn", "NameZh" },
         ["ItemMasterUpdate"]   = new[] { "ItemCode", "CurrentCategoryCode", "NewCategoryCode", "CurrentUnitCode", "NewUnitCode", "NewDefaultName", "NewOwnerName", "NewIsSerialManaged", "Remark" },
-        ["WarehouseStructure"] = new[] { "CompanyCode", "CompanyName", "BranchCode", "BranchName", "WarehouseCode", "WarehouseName", "ZoneCode", "ZoneName", "RackCode", "RackName", "ShelfCode", "ShelfName", "BinCode" },
+        ["WarehouseStructure"] = new[] { "CompanyCode", "CompanyName", "BranchCode", "BranchName", "WarehouseCode", "WarehouseName", "ZoneCode", "ZoneName", "RackCode", "RackName", "ShelfCode", "ShelfName", "BinCode", "UsageType" },
         ["Inbound"]            = new[] { "DocumentDate", "DocumentNo", "ItemCode", "SerialNumber", "Barcode", "MT", "WarehouseCode", "BinCode", "SourcePartyCode", "Condition", "Note", "PartyCode", "Name", "Phone", "Department", "OwnerName", "TrackingType" },
         ["InventoryCheck"]     = new[] { "WarehouseCode", "ItemCode", "SerialNumber", "BinCode", "Note" },
         ["RepairSend"]         = new[] { "DocumentNo", "RepairVendorCode", "RepairVendorName", "SerialNumber", "Barcode", "Reason", "ExpectedReturnDate", "TargetExternalLocation" },

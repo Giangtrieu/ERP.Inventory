@@ -74,7 +74,7 @@ public sealed class DashboardController : Controller
     }
 
     [HttpGet("WarehouseMap")]
-    public async Task<IActionResult> WarehouseMap([FromQuery] int warehouseId, [FromQuery] string? viewMode, CancellationToken cancellationToken)
+    public async Task<IActionResult> WarehouseMap([FromQuery] int warehouseId, [FromQuery] string? viewMode, [FromQuery] string? binUsageType, CancellationToken cancellationToken)
     {
         var user = _currentUserService.GetCurrentUser();
         if (warehouseId <= 0 || !user.CanAccessWarehouse(warehouseId))
@@ -82,7 +82,7 @@ public sealed class DashboardController : Controller
             return Forbid();
         }
 
-        var result = await _dashboardService.GetWarehouseMapAsync(warehouseId, viewMode ?? "occupancy", user, cancellationToken);
+        var result = await _dashboardService.GetWarehouseMapAsync(warehouseId, viewMode ?? "occupancy", user, cancellationToken, binUsageType);
         return Json(result);
     }
 

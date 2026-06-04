@@ -730,6 +730,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
           : await _db.BinLocations
               .AsNoTracking()
               .Where(x => x.IsActive &&
+                  x.UsageType == BinLocationUsageType.Quantity &&
                   ((x.WarehouseId == warehouseId && binCodes.Contains(x.BinCode)) ||
                    requestedBinIds.Contains(x.Id)))
               .ToListAsync(ct);
@@ -930,10 +931,14 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             return ServiceResult<BinLocation>.Fail(Text(user.LanguageCode, "quantity_location_required"));
         }
 
-        var bin = _db.BinLocations.Local.FirstOrDefault(x => x.Id == binLocationId.Value);
+        var bin = _db.BinLocations.Local.FirstOrDefault(x =>
+            x.Id == binLocationId.Value &&
+            x.UsageType == BinLocationUsageType.Quantity);
         if (bin == null)
         {
-            bin = await _db.BinLocations.FirstOrDefaultAsync(x => x.Id == binLocationId.Value, ct);
+            bin = await _db.BinLocations.FirstOrDefaultAsync(x =>
+                x.Id == binLocationId.Value &&
+                x.UsageType == BinLocationUsageType.Quantity, ct);
         }
 
         if (bin == null || !bin.IsActive)

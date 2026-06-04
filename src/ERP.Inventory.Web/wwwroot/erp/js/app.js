@@ -218,7 +218,7 @@ async function loadLookups() {
     cleanupOldVersions();
     cleanupExpiredCache();
 
-    const [documentNos, warehouses, categories, serials, statuses, inventoryStatuses, receiver, vendors, borrowers, approvers, departmentOwners, department,  phone, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes] = await Promise.all([
+    const [documentNos, warehouses, categories, serials, statuses, inventoryStatuses, receiver, vendors, borrowers, approvers, departmentOwners, department,  phone, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes, quantityBinCodes] = await Promise.all([
 
         cachedApi('/Lookup/DocumentNos'),
         cachedApi('/Lookup/Warehouses'),
@@ -240,7 +240,8 @@ async function loadLookups() {
         UI.api('/Lookup/ExternalPartyTypes'),
         UI.api('/Lookup/DocumentPeriodType'),
         UI.api('/Import/Types'),
-        UI.api('/Lookup/BinCodes'), ,
+        UI.api('/Lookup/BinCodes', { query: { usageType: 'LocationTracked' } }),
+        UI.api('/Lookup/BinCodes', { query: { usageType: 'Quantity' } }),
     ]);
 
     const inboundConditions = [
@@ -249,13 +250,14 @@ async function loadLookups() {
         { id: 'Scrapped', text: UI.t('Enum.ItemStatus.Scrapped') || 'Scrapped' },
     ];
 
-    AppState.lookups = { documentNos, warehouses, categories, serials, statuses, inventoryStatuses, receiver, vendors, borrowers, approvers, departmentOwners, department, phone, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes, inboundConditions };
+    AppState.lookups = { documentNos, warehouses, categories, serials, statuses, inventoryStatuses, receiver, vendors, borrowers, approvers, departmentOwners, department, phone, items, repairResults, returnConditions, checkResults, externalPartyTypes, documentPeriodType, importType, binCodes, quantityBinCodes, inboundConditions };
     AppAutocomplete.refresh();
 }
 
 window.AppAutocomplete = (() => {
     const lists = {
         bin: 'autocomplete-bin-codes',
+        quantityBin: 'autocomplete-quantity-bin-codes',
         tag: 'autocomplete-tag-codes',
         item: 'autocomplete-item-codes',
         serial: 'autocomplete-serial-codes',
@@ -326,6 +328,7 @@ window.AppAutocomplete = (() => {
     function refresh() {
         const lookups = AppState.lookups || {};
         ensureList(lists.bin, values(lookups.binCodes, ['binCode', 'code', 'text']));
+        ensureList(lists.quantityBin, values(lookups.quantityBinCodes, ['binCode', 'code', 'text']));
         ensureList(lists.tag, values(lookups.tags || lookups.tagCodes, ['tagCode', 'code', 'text']));
         ensureList(lists.item, values(lookups.items, ['itemCode', 'code', 'text']));
         ensureList(lists.serial, values(lookups.serials, ['serialNumber', 'code', 'text']));
@@ -347,6 +350,7 @@ window.AppAutocomplete = (() => {
     function bind(root) {
         const scope = root || document;
         $(scope).find('input[name="binCode"], input[name="targetBinCode"]').attr('list', lists.bin);
+        $(scope).find('#qtyContent input[name="binCode"], .quantity-line input[name="binCode"]').attr('list', lists.quantityBin);
         $(scope).find('input[name="tagCode"], input[name="TagCode"]').attr('list', lists.tag);
         $(scope).find('input[name="borrowerCode"], input[name="returnerCode"]').attr('list', lists.borrowerCode);
         $(scope).find('input[name="borrowerName"], input[name="returnerName"]').attr('list', lists.borrowerName);

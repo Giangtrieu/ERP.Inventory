@@ -45,9 +45,9 @@ public interface IDashboardService
     Task<IReadOnlyCollection<ChartPointDto>> GetMovementTrendAsync(int? warehouseId, int days, CurrentUserContext user, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<ChartPointDto>> GetMovementByActionAsync(int? warehouseId, int days, CurrentUserContext user, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<ChartPointDto>> GetStockByCategoryAsync(int? warehouseId, string? status, CurrentUserContext user, CancellationToken cancellationToken = default);
-    Task<IReadOnlyCollection<ChartPointDto>> GetLocationUtilizationAsync(int? warehouseId, CurrentUserContext user, CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<LocationUtilizationDto>> GetLocationUtilizationAsync(int? warehouseId, CurrentUserContext user, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<ChartPointDto>> GetOverdueBorrowAgingAsync(int? warehouseId, CurrentUserContext user, CancellationToken cancellationToken = default);
-    Task<WarehouseMapDto> GetWarehouseMapAsync(int warehouseId, string viewMode, CurrentUserContext user, CancellationToken cancellationToken = default);
+    Task<WarehouseMapDto> GetWarehouseMapAsync(int warehouseId, string viewMode, CurrentUserContext user, CancellationToken cancellationToken = default, string? binUsageType = null);
     /// </summary>
     Task<QuantitySummaryDto> GetQuantitySummaryAsync(int? warehouseId, CurrentUserContext user, CancellationToken cancellationToken = default);
 }

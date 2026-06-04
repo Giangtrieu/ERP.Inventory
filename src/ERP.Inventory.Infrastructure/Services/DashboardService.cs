@@ -199,9 +199,15 @@ public sealed class DashboardService : IDashboardService
             .ToArrayAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyCollection<ChartPointDto>> GetLocationUtilizationAsync(int? warehouseId, CurrentUserContext user, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<LocationUtilizationDto>> GetLocationUtilizationAsync(
+    int? warehouseId,
+    CurrentUserContext user,
+    CancellationToken cancellationToken = default)
     {
-        var bins = _db.BinLocations.AsNoTracking().Where(x => x.IsActive);
+        var bins = _db.BinLocations
+        .AsNoTracking()
+        .Where(x => x.IsActive);
+
         if (warehouseId.HasValue)
         {
             bins = user.CanAccessWarehouse(warehouseId.Value)
@@ -213,24 +219,62 @@ public sealed class DashboardService : IDashboardService
             bins = bins.Where(x => user.WarehouseIds.Contains(x.WarehouseId));
         }
 
-        // Use a single query with left join instead of N+1 subquery
-        var total = await bins.CountAsync(cancellationToken);
-        var occupied = await (
-            from bin in bins
-            where _db.CurrentItemLocations.Any(c =>
+        var locationBins = bins.Where(x => x.UsageType == BinLocationUsageType.LocationTracked);
+        var quantityBins = bins.Where(x => x.UsageType == BinLocationUsageType.Quantity);
+
+        var locationTotal = await locationBins.CountAsync(cancellationToken);
+
+        var locationOccupied = await locationBins
+            .Where(bin => _db.CurrentItemLocations.Any(c =>
                 c.BinLocationId == bin.Id &&
                 c.ItemInstance != null &&
                 c.ItemInstance.IsActive &&
                 c.ItemInstance.Status != ItemStatus.Lost &&
-                c.ItemInstance.Status != ItemStatus.Disposed)
-            select bin
-        ).CountAsync(cancellationToken);
-        var empty = Math.Max(0, total - occupied);
+                c.ItemInstance.Status != ItemStatus.Disposed))
+            .CountAsync(cancellationToken);
+
+        var quantityTotal = await quantityBins.CountAsync(cancellationToken);
+
+        var quantityOccupied = await quantityBins
+            .Where(bin => _db.QuantityStockLocationBalances.Any(q =>
+                q.BinLocationId == bin.Id &&
+                q.Quantity > 0))
+            .CountAsync(cancellationToken);
 
         return new[]
         {
-            new ChartPointDto { Key = "OccupiedBins", Label = "Occupied bins", Value = occupied },
-            new ChartPointDto { Key = "EmptyBins", Label = "Empty bins", Value = empty }
+        BuildLocationUtilization(
+            "LocationTracked",
+            "Location tracked bins",
+            locationTotal,
+            locationOccupied),
+
+        BuildLocationUtilization(
+            "Quantity",
+            "Quantity bins",
+            quantityTotal,
+            quantityOccupied)
+    };
+    }
+
+    private static LocationUtilizationDto BuildLocationUtilization(
+        string key,
+        string label,
+        int total,
+        int occupied)
+    {
+        var empty = Math.Max(0, total - occupied);
+
+        return new LocationUtilizationDto
+        {
+            Key = key,
+            Label = label,
+            TotalBins = total,
+            OccupiedBins = occupied,
+            EmptyBins = empty,
+            Percentage = total > 0
+                ? Math.Round(occupied * 100m / total, 2)
+                : 0
         };
     }
 
@@ -262,7 +306,7 @@ public sealed class DashboardService : IDashboardService
         };
     }
 
-    public async Task<WarehouseMapDto> GetWarehouseMapAsync(int warehouseId, string viewMode, CurrentUserContext user, CancellationToken cancellationToken = default)
+    public async Task<WarehouseMapDto> GetWarehouseMapAsync(int warehouseId, string viewMode, CurrentUserContext user, CancellationToken cancellationToken = default, string? binUsageType = null)
     {
         if (!user.CanAccessWarehouse(warehouseId))
         {
@@ -270,6 +314,7 @@ public sealed class DashboardService : IDashboardService
         }
 
         var normalizedViewMode = NormalizeWarehouseMapViewMode(viewMode);
+        var normalizedBinUsageType = NormalizeBinUsageType(binUsageType);
         var warehouse = await _db.Warehouses.AsNoTracking()
             .Where(x => x.Id == warehouseId && x.IsActive)
             .Select(x => new { x.Id, x.WarehouseCode, x.Name })
@@ -281,11 +326,12 @@ public sealed class DashboardService : IDashboardService
             {
                 WarehouseId = warehouseId,
                 ViewMode = normalizedViewMode,
+                BinUsageType = normalizedBinUsageType?.ToString() ?? "All",
                 Legend = BuildWarehouseMapLegend(normalizedViewMode, Array.Empty<WarehouseMapBinDto>())
             };
         }
 
-        var binRows = await _db.BinLocations.AsNoTracking()
+        var binQuery = _db.BinLocations.AsNoTracking()
             .Where(x =>
                 x.IsActive &&
                 x.WarehouseId == warehouseId &&
@@ -294,12 +340,20 @@ public sealed class DashboardService : IDashboardService
                 x.Shelf.Rack != null &&
                 x.Shelf.Rack.IsActive &&
                 x.Shelf.Rack.WarehouseZone != null &&
-                x.Shelf.Rack.WarehouseZone.IsActive)
+                x.Shelf.Rack.WarehouseZone.IsActive);
+
+        if (normalizedBinUsageType.HasValue)
+        {
+            binQuery = binQuery.Where(x => x.UsageType == normalizedBinUsageType.Value);
+        }
+
+        var binRows = await binQuery
             .Select(x => new
             {
                 BinLocationId = x.Id,
                 x.BinCode,
                 x.FullPath,
+                x.UsageType,
                 x.ShelfId,
                 ShelfCode = x.Shelf!.ShelfCode,
                 ShelfName = x.Shelf.Name,
@@ -321,6 +375,7 @@ public sealed class DashboardService : IDashboardService
          x.BinLocation != null &&
          x.BinLocation.IsActive &&
          x.BinLocation.WarehouseId == warehouseId &&
+         x.BinLocation.UsageType == BinLocationUsageType.LocationTracked &&
          x.ItemInstance != null &&
          x.ItemInstance.IsActive &&
          x.ItemInstance.Status != ItemStatus.Lost &&
@@ -353,6 +408,7 @@ public sealed class DashboardService : IDashboardService
                 x.BinLocation != null &&
                 x.BinLocation.IsActive &&
                 x.BinLocation.WarehouseId == warehouseId &&
+                x.BinLocation.UsageType == BinLocationUsageType.Quantity &&
                 x.Item != null &&
                 x.Item.IsActive)
             .Select(x => new WarehouseMapItemRow(
@@ -403,7 +459,7 @@ public sealed class DashboardService : IDashboardService
                         ShelfName = shelfGroup.Key.ShelfName,
                         Bins = shelfGroup
                             .OrderBy(x => x.BinCode)
-                            .Select(x => BuildWarehouseMapBin(x.BinLocationId, x.BinCode, x.FullPath, normalizedViewMode, itemsByBin))
+                            .Select(x => BuildWarehouseMapBin(x.BinLocationId, x.BinCode, x.FullPath, x.UsageType, normalizedViewMode, itemsByBin))
                             .ToArray()
                     })
                     .ToArray();
@@ -426,6 +482,7 @@ public sealed class DashboardService : IDashboardService
             WarehouseCode = warehouse.WarehouseCode,
             WarehouseName = warehouse.Name,
             ViewMode = normalizedViewMode,
+            BinUsageType = normalizedBinUsageType?.ToString() ?? "All",
             RackCount = racks.Length,
             ShelfCount = racks.Sum(x => x.Shelves.Count),
             BinCount = displayedBins.Length,
@@ -547,7 +604,7 @@ public sealed class DashboardService : IDashboardService
 
     // ─── Shared scope helpers ────────────────────────────────
 
-    private static WarehouseMapBinDto BuildWarehouseMapBin(int binLocationId,string binCode, string fullPath,string viewMode, IReadOnlyDictionary<int, WarehouseMapItemRow[]> itemsByBin)
+    private static WarehouseMapBinDto BuildWarehouseMapBin(int binLocationId,string binCode, string fullPath, BinLocationUsageType usageType, string viewMode, IReadOnlyDictionary<int, WarehouseMapItemRow[]> itemsByBin)
     {
         itemsByBin.TryGetValue(binLocationId, out var items);
         items ??= Array.Empty<WarehouseMapItemRow>();
@@ -559,6 +616,7 @@ public sealed class DashboardService : IDashboardService
             BinLocationId = binLocationId,
             BinCode = binCode,
             FullPath = fullPath,
+            UsageType = usageType.ToString(),
             IsOccupied = items.Length > 0,
 
             ItemCount = (int)items.Sum(x => x.Quantity),
@@ -571,15 +629,17 @@ public sealed class DashboardService : IDashboardService
 
             SerialNumbers = items
            .Where(x => x.TrackingType == "Serial")
-           .Select(x => x.SerialNumber)
+            .Select(x => x.SerialNumber)
            .Where(x => !string.IsNullOrWhiteSpace(x))
+           .Select(x => x!)
            .Distinct()
            .ToArray(),
 
             Barcodes = items
            .Where(x => x.TrackingType == "Serial")
-           .Select(x => x.Barcode)
+            .Select(x => x.Barcode)
            .Where(x => !string.IsNullOrWhiteSpace(x))
+           .Select(x => x!)
            .Distinct()
            .ToArray(),
 
@@ -606,6 +666,16 @@ public sealed class DashboardService : IDashboardService
         if (string.Equals(viewMode, "itemCode", StringComparison.OrdinalIgnoreCase)) return "itemCode";
         if (string.Equals(viewMode, "categoryCode", StringComparison.OrdinalIgnoreCase)) return "categoryCode";
         return "occupancy";
+    }
+
+    private static BinLocationUsageType? NormalizeBinUsageType(string? usageType)
+    {
+        if (string.IsNullOrWhiteSpace(usageType) || string.Equals(usageType, "All", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return Enum.TryParse<BinLocationUsageType>(usageType.Trim(), true, out var parsed) ? parsed : null;
     }
 
     private static string WarehouseMapColor(string viewMode, WarehouseMapItemRow row)

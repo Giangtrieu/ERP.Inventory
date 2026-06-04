@@ -130,7 +130,7 @@ window.ReconciliationPage = (() => {
       title: t('recon.newlist'),
       body: `
         <div class="mb-3"><label class="form-label fw-semibold">${t('recon.listcode')} *</label>
-          <input class="form-control" id="nl-code" placeholder="VD: REF-WH01-2026"></div>
+          <input class="form-control" id="nl-code" placeholder="${UI.esc(t('Example list code'))}"></div>
         <div class="mb-3"><label class="form-label fw-semibold">${t('recon.listname')} *</label>
           <input class="form-control" id="nl-name"></div>
         <div class="mb-3"><label class="form-label fw-semibold">${t('recon.description')}</label>
@@ -426,7 +426,7 @@ window.ReconciliationPage = (() => {
             </div>
             <div class="col-auto">
               <input class="form-control form-control-sm" id="filter-kw"
-                placeholder="ItemCode / Serial..." style="min-width:200px"
+                placeholder="${UI.esc(t('ItemCode / Serial...'))}" style="min-width:200px"
                 value="${esc(_filter.keyword)}">
             </div>
             <div class="col-auto">

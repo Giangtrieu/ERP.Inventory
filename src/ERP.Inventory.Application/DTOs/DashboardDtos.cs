@@ -39,6 +39,16 @@ public sealed class ChartPointDto
     public decimal Percentage { get; init; }
 }
 
+public sealed class LocationUtilizationDto
+{
+    public string Key { get; init; } = string.Empty;
+    public string Label { get; init; } = string.Empty;
+    public decimal TotalBins { get; init; }
+    public decimal OccupiedBins { get; init; }
+    public decimal EmptyBins { get; init; }
+    public decimal Percentage { get; init; }
+}
+
 public sealed class WarehouseMapDto
 {
     public int WarehouseId { get; init; }
@@ -50,6 +60,7 @@ public sealed class WarehouseMapDto
     public int BinCount { get; init; }
     public int OccupiedBinCount { get; init; }
     public int EmptyBinCount { get; init; }
+    public string BinUsageType { get; init; } = "All";
     public IReadOnlyCollection<WarehouseMapLegendDto> Legend { get; init; } = Array.Empty<WarehouseMapLegendDto>();
     public IReadOnlyCollection<RackMapDto> Racks { get; init; } = Array.Empty<RackMapDto>();
 }
@@ -75,6 +86,7 @@ public sealed class WarehouseMapBinDto
     public int BinLocationId { get; init; }
     public string BinCode { get; init; } = string.Empty;
     public string FullPath { get; init; } = string.Empty;
+    public string UsageType { get; init; } = "LocationTracked";
     public bool IsOccupied { get; init; }
     public int ItemCount { get; init; }
     public IReadOnlyCollection<string> ItemCodes { get; init; } = Array.Empty<string>();

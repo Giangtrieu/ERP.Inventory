@@ -39,6 +39,8 @@ public class ImportBatch : AuditableEntity
     public string BatchNo { get; set; } = string.Empty;
     public string ImportType { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;
+    public byte[]? OriginalFileContent { get; set; }
+    public string? OriginalContentType { get; set; }
     public ImportBatchStatus Status { get; set; } = ImportBatchStatus.Uploaded;
     public int TotalRows { get; set; }
     public int BlockingErrorRows { get; set; }
@@ -87,6 +89,8 @@ public class LogErrorSystem
 {
     public long Id { get; set; }
     public string ErrorCode { get; set; } = string.Empty;
+    public string Category { get; set; } = SystemErrorCategory.UnhandledException.ToString();
+    public string Severity { get; set; } = "Error";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public string? UserId { get; set; }
     public string? UserName { get; set; }
@@ -95,6 +99,11 @@ public class LogErrorSystem
     public string? Module { get; set; }
     public string? Action { get; set; }
     public string ErrorMessage { get; set; } = string.Empty;
+    public string? TechnicalMessage { get; set; }
+    public string? ExceptionType { get; set; }
+    public int? SqlErrorNumber { get; set; }
+    public int? StatusCode { get; set; }
+    public long? DurationMs { get; set; }
     public string? InnerException { get; set; }
     public string? StackTrace { get; set; }
     public string? PayloadJson { get; set; }

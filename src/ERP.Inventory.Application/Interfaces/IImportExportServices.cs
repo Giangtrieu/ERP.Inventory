@@ -11,6 +11,7 @@ public interface IImportService
     Task<ServiceResult<IReadOnlyCollection<ImportBatchDto>>> ListAsync(CurrentUserContext user, CancellationToken cancellationToken = default);
     Task<ServiceResult<IReadOnlyCollection<ImportValidationRowDto>>> RowsAsync(int importBatchId, CurrentUserContext user, CancellationToken cancellationToken = default);
     Task<byte[]> TemplateAsync(string importType, CurrentUserContext user, CancellationToken cancellationToken = default);
+    Task<ServiceResult<ImportBatchFileDto>> DownloadAsync(int importBatchId, string kind, CurrentUserContext user, CancellationToken cancellationToken = default);
 }
 
 public interface IExportService

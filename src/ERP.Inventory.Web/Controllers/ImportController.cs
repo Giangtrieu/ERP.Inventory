@@ -49,7 +49,7 @@ public sealed class ImportController : Controller
         }
 
         var bytes = await _importService.TemplateAsync(importType, _currentUserService.GetCurrentUser(), cancellationToken);
-        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"{importType}-template.xlsx");
+        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", DownloadName(importType, "Template"));
     }
 
     [HttpGet("Batches")]
@@ -64,6 +64,18 @@ public sealed class ImportController : Controller
     {
         var result = await _importService.RowsAsync(id, _currentUserService.GetCurrentUser(), cancellationToken);
         return Json(result);
+    }
+
+    [HttpGet("Download/{id:int}")]
+    public async Task<IActionResult> Download(int id, [FromQuery] string kind = "preview", CancellationToken cancellationToken = default)
+    {
+        var result = await _importService.DownloadAsync(id, kind, _currentUserService.GetCurrentUser(), cancellationToken);
+        if (!result.Success || result.Data == null)
+        {
+            return BadRequest(result);
+        }
+
+        return File(result.Data.Content, result.Data.ContentType, result.Data.FileName);
     }
 
     [HttpPost("Upload")]
@@ -106,5 +118,12 @@ public sealed class ImportController : Controller
         var user = _currentUserService.GetCurrentUser();
         var normalized = importType.Trim().Replace(" ", string.Empty).Replace("-", string.Empty);
         return normalized is not ("ItemMaster" or "ItemMasterUpdate" or "WarehouseStructure") || user.CanManage;
+    }
+
+    private static string DownloadName(string importType, string label)
+    {
+        var safeType = new string((importType ?? "Import").Where(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_').ToArray());
+        if (string.IsNullOrWhiteSpace(safeType)) safeType = "Import";
+        return $"{safeType}_{label}_{DateTime.UtcNow:yyyyMMddHHmmss}.xlsx";
     }
 }

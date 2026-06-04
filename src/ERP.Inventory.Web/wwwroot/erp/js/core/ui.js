@@ -97,6 +97,9 @@ window.UI = {
         [/^Current location for item instance (.+) does not exist\.$/, 'Current location for item instance {0} does not exist.'],
         [/^Item instance (.+)\/(.+) cannot be moved\.$/, 'Item instance {0}/{1} cannot be moved.'],
         [/^Successfully updated (.+) items$/, 'Successfully updated {0} items'],
+        [/^Deleted inventory check document\. Removed (.+) surplus item instance\(s\) created by this inventory check\.$/, 'Deleted inventory check document. Removed {0} surplus item instance(s) created by this inventory check.'],
+        [/^Item instance (.+)\/(.+) is referenced by inventory check document (.+)\. Delete or rebuild the inventory check document first\.$/,"Item instance {0}/{1} is referenced by inventory check document {2}. Delete or rebuild the inventory check document first."],
+        [/^Item (.+)\/(.+) is referenced by inventory-check document (.+)\. Delete or rebuild the inventory check document first\.$/,"Item {0}/{1} is referenced by inventory check document {2}. Delete or rebuild the inventory check document first."],
 
     ];
     for (const [pattern, key] of patterns) {
@@ -243,12 +246,77 @@ window.UI = {
       url: requestUrl,
       method: options.method || 'GET',
       contentType: options.contentType || 'application/json',
-      dataType: options.dataType || 'json'
+      dataType: options.dataType || 'json',
+      timeout: options.timeout || 60000
     };
     if (token) ajax.headers = { 'RequestVerificationToken': token };
     if (options.data !== undefined) ajax.data = typeof options.data === 'string' ? options.data : JSON.stringify(options.data);
     if (options.query) ajax.url += (requestUrl.includes('?') ? '&' : '?') + $.param(options.query);
-    return $.ajax(ajax);
+    return new Promise(resolve => {
+      $.ajax(ajax)
+        .done(data => resolve(data))
+        .fail(xhr => resolve(this.normalizeApiFailure(xhr)));
+    });
+  },
+
+  normalizeApiFailure(xhr) {
+    const status = xhr && xhr.status ? xhr.status : 0;
+    const response = xhr && xhr.responseJSON ? xhr.responseJSON : null;
+    if (response && response.success === false) {
+      return {
+        ...response,
+        statusCode: response.statusCode || status,
+        errorType: response.errorType || this.errorTypeForStatus(status)
+      };
+    }
+
+    const timeout = xhr && xhr.statusText === 'timeout';
+    return {
+      success: false,
+      statusCode: timeout ? 408 : status,
+      errorType: timeout ? 'Timeout' : this.errorTypeForStatus(status),
+      message: timeout ? 'Request timeout.' : this.messageForStatus(status)
+    };
+  },
+
+  errorTypeForStatus(status) {
+    if (status === 401) return 'Unauthorized';
+    if (status === 403) return 'Forbidden';
+    if (status === 404) return 'NotFound';
+    if (status === 408 || status === 504) return 'Timeout';
+    if (status === 409) return 'BusinessDependency';
+    if (status >= 500) return 'UnhandledException';
+    return 'OperationFailure';
+  },
+
+  messageForStatus(status) {
+    if (status === 401) return 'Authentication is required.';
+    if (status === 403) return 'Access denied for current role.';
+    if (status === 404) return 'Requested data was not found.';
+    if (status === 408 || status === 504) return 'Request timeout.';
+    if (status >= 500) return 'Server error.';
+    return 'Request failed.';
+  },
+
+  handleApiFailure(result) {
+    if (!result || result.success !== false) return false;
+    if (result.fieldErrors) {
+      Object.keys(result.fieldErrors).forEach(name => {
+        const escapedName = String(name).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        $(`[name="${escapedName}"]`).addClass('is-invalid');
+      });
+    }
+    const message = this.resultError(result);
+    if (result.errorType === 'BusinessDependency') {
+      this.showError(message);
+    } else {
+      this.toast(message);
+    }
+    return true;
+  },
+
+  handleUnexpectedError(err) {
+    return this.showError(this.resultError(err && err.responseJSON ? err.responseJSON : { message: err && err.message ? err.message : 'Request failed.' }));
   },
 
   captureLanguageSwitchDraft() {
@@ -290,10 +358,38 @@ window.UI = {
       fields,
       hasFileSelection,
       drawerOpen: $('#drawer').hasClass('open'),
+      scrollTop: window.scrollY || document.documentElement.scrollTop || 0,
+      activeTabs: this.captureActiveTabs(),
+      filters: this.captureVisibleFilters(),
       activeQuantityView: $('.qty-nav-item.active').data('view') || null,
       operationLineCount: $('#operationLineBody tr').length || 0,
       quantityLineCount: $('#quantityLineBody tr').length || 0
     };
+  },
+
+  captureActiveTabs() {
+    return $('.nav-tabs .nav-link.active, .nav-pills .nav-link.active, [data-tab].active')
+      .map(function () {
+        const $el = $(this);
+        return {
+          id: this.id || null,
+          tab: $el.data('tab') || null,
+          bsTarget: $el.attr('data-bs-target') || $el.attr('href') || null,
+          text: $.trim($el.text())
+        };
+      })
+      .get();
+  },
+
+  captureVisibleFilters() {
+    return $('[data-filter], .filter-bar input, .filter-bar select, .filter-bar textarea')
+      .filter(':visible')
+      .map(function () {
+        const name = this.getAttribute('name') || this.getAttribute('data-filter') || this.id;
+        if (!name) return null;
+        return { name, value: $(this).val() };
+      })
+      .get();
   },
 
   storeLanguageSwitchDraft(draft) {
@@ -315,6 +411,16 @@ window.UI = {
       $('.qty-nav-item').removeClass('active');
       $(`.qty-nav-item[data-view="${draft.activeQuantityView}"]`).addClass('active');
       await window.switchQtyView(draft.activeQuantityView);
+    }
+
+    if (Array.isArray(draft.activeTabs)) {
+      draft.activeTabs.forEach(tab => {
+        let el = $();
+        if (tab.id) el = $(`#${$.escapeSelector(String(tab.id))}`);
+        if (!el.length && tab.tab) el = $(`[data-tab="${String(tab.tab).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`).first();
+        if (!el.length && tab.bsTarget) el = $(`[data-bs-target="${String(tab.bsTarget).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"], [href="${String(tab.bsTarget).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`).first();
+        if (el.length) el.trigger('click');
+      });
     }
 
     while (draft.operationLineCount > 0 && $('#operationLineBody tr').length < draft.operationLineCount && $('#btnAddOperationLine').length) {
@@ -344,6 +450,15 @@ window.UI = {
     if (typeof window.updateQuantityLineIndex === 'function') window.updateQuantityLineIndex();
     if (typeof window.refreshOperationRowAvailability === 'function' && window.currentOperationType) {
       window.refreshOperationRowAvailability(window.currentOperationType);
+    }
+    if (Array.isArray(draft.filters)) {
+      draft.filters.forEach(filter => {
+        const escapedName = String(filter.name).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        $(`[name="${escapedName}"], [data-filter="${escapedName}"], #${$.escapeSelector(String(filter.name))}`).filter(':visible').first().val(filter.value).trigger('input').trigger('change');
+      });
+    }
+    if (typeof draft.scrollTop === 'number') {
+      setTimeout(() => window.scrollTo(0, draft.scrollTop), 0);
     }
     this.clearLanguageSwitchDraft();
   },

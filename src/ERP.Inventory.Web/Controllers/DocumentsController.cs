@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ERP.Inventory.Web.Controllers;
 
@@ -60,6 +61,31 @@ public sealed class DocumentsController : Controller
         };
 
         return detail == null ? NotFound() : Json(detail);
+    }
+
+    [HttpGet("PdfData")]
+    public async Task<IActionResult> PdfData([FromQuery] string type, [FromQuery] int id, [FromQuery] string? action, [FromQuery] DateTime? printDate, CancellationToken cancellationToken)
+    {
+        var language = Language();
+        var detail = type switch
+        {
+            "inbound" => await InboundDetail(id, language, cancellationToken),
+            "move" => await MoveDetail(id, language, cancellationToken),
+            "adjustment" => await AdjustmentDetail(id, language, cancellationToken),
+            "quantity-receive" or "quantity-issue" or "quantity-adjust" => await QuantityDetail(id, language, cancellationToken),
+            "inventory-check" => await InventoryCheckDetail(id, language, cancellationToken),
+            "repair-send" or "repair-receive" => await RepairDetail(id, language, cancellationToken),
+            "borrow-lend" or "borrow-return" => await BorrowDetail(id, language, cancellationToken),
+            _ => null
+        };
+
+        if (detail == null)
+        {
+            return NotFound(new { success = false, errorType = "NotFound", message = "Document not found." });
+        }
+
+        var data = BuildPdfData(type, detail, language, action, printDate ?? DateTime.UtcNow);
+        return Json(new { success = true, data });
     }
 
     [HttpPost("Delete")]
@@ -524,7 +550,7 @@ public sealed class DocumentsController : Controller
         var allowedBinIds = await AllowedBinIds(cancellationToken);
         var doc = await _db.BorrowDocuments.AsNoTracking()
             .Include(x => x.Borrower)
-            .Include(x => x.Lines).ThenInclude(x => x.ItemInstance)!.ThenInclude(x => x!.Item)
+            .Include(x => x.Lines).ThenInclude(x => x.ItemInstance)!.ThenInclude(x => x!.Item)!.ThenInclude(x => x!.Category)
             .Include(x => x.Lines).ThenInclude(x => x.FromBinLocation)
             .Include(x => x.Lines).ThenInclude(x => x.TargetBinLocation)
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
@@ -576,8 +602,8 @@ public sealed class DocumentsController : Controller
 
         return new
         {
-            header = Header(doc, language, null, doc.Borrower?.Name, new { doc.Purpose, doc.BorrowDepartment, doc.BorrowerPhone, doc.DepartmentOwner, doc.DueDate }),
-            lines = doc.Lines.Select(x => new { item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, fromBin = x.FromBinLocation?.BinCode, targetBin = x.TargetBinLocation?.BinCode ?? x.TargetExternalLocation, returned = x.IsReturned, condition = x.IsReturned ? "Returned" : "LentOut", returnedAt = x.ReturnedAt, note = x.Note }),
+            header = Header(doc, language, null, doc.Borrower?.Name, new { doc.Purpose, doc.BorrowDepartment, doc.BorrowerPhone, doc.DepartmentOwner, doc.DueDate, partyCode = doc.Borrower?.PartyCode }),
+            lines = doc.Lines.Select(x => new { itemCategoryCode = x.ItemInstance?.Item?.Category?.CategoryCode, item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, fromBin = x.FromBinLocation?.BinCode, targetBin = x.TargetBinLocation?.BinCode ?? x.TargetExternalLocation, returned = x.IsReturned, condition = x.IsReturned ? "Returned" : "LentOut", returnedAt = x.ReturnedAt, note = x.Note }),
             history
         };
     }
@@ -588,6 +614,131 @@ public sealed class DocumentsController : Controller
     {
         return new { doc.Id, EntityName = doc.GetType().Name, doc.DocumentNo, doc.DocumentDate, warehouse, party, status = LocalizationCatalog.EnumText(language, doc.Status), doc.CreatedBy, doc.ApprovedBy, doc.ApprovedAt, doc.PostedAt, doc.Note, extra };
     }
+
+    private static object BuildPdfData(string type, object detail, string language, string? action, DateTime printDate)
+    {
+        var node = JsonSerializer.SerializeToNode(detail, new JsonSerializerOptions(JsonSerializerDefaults.Web))?.AsObject() ?? new JsonObject();
+        var header = node["header"]?.AsObject() ?? new JsonObject();
+        var lines = node["lines"] as JsonArray ?? new JsonArray();
+        var history = node["history"] as JsonArray ?? new JsonArray();
+        var normalizedAction = NormalizePdfAction(type, action);
+        var historyForDate = history
+            .OfType<JsonObject>()
+            .Where(x => SameBusinessDate(ReadDate(x, "timestamp"), printDate))
+            .Where(x => HistoryMatchesAction(x, normalizedAction))
+            .ToArray();
+
+        var filteredLines = FilterPdfLinesByHistory(lines, historyForDate);
+        if (filteredLines.Count == 0)
+        {
+            filteredLines = FilterPdfLinesByAction(type, lines);
+        }
+        if (filteredLines.Count == 0)
+        {
+            filteredLines = lines.OfType<JsonObject>().Select(CloneObject).ToList();
+        }
+
+        var rows = filteredLines
+            .OrderBy(x => ReadDate(x, "operationDate") ?? ReadDate(header, "documentDate") ?? printDate)
+            .ThenBy(x => ReadString(x, "item") ?? ReadString(x, "itemCode") ?? string.Empty)
+            .ThenBy(x => ReadString(x, "serial") ?? ReadString(x, "serialNumber") ?? ReadString(x, "snCode") ?? string.Empty)
+            .ToArray();
+
+        return new
+        {
+            templateType = normalizedAction,
+            language,
+            printDate,
+            fileName = $"{normalizedAction}_{ReadString(header, "documentNo") ?? idText(header)}_{DateTime.UtcNow:yyyyMMddHHmmss}.pdf",
+            header,
+            rows,
+            historyRows = historyForDate.Length > 0 ? historyForDate : history.OfType<JsonObject>().ToArray(),
+            borrowText = BuildBorrowPdfText(language)
+        };
+    }
+
+    private static string NormalizePdfAction(string type, string? action)
+    {
+        if (!string.IsNullOrWhiteSpace(action))
+        {
+            return action.Trim();
+        }
+
+        return type;
+    }
+
+    private static bool HistoryMatchesAction(JsonObject history, string action)
+    {
+        var actionType = ReadString(history, "actionType") ?? string.Empty;
+        return action switch
+        {
+            "borrow-lend" => actionType.Contains("BorrowIssue", StringComparison.OrdinalIgnoreCase),
+            "borrow-return" => actionType.Contains("BorrowReturn", StringComparison.OrdinalIgnoreCase),
+            "repair-send" => actionType.Contains("RepairSend", StringComparison.OrdinalIgnoreCase),
+            "repair-receive" => actionType.Contains("RepairReceive", StringComparison.OrdinalIgnoreCase),
+            _ => true
+        };
+    }
+
+    private static List<JsonObject> FilterPdfLinesByHistory(JsonArray lines, IReadOnlyCollection<JsonObject> historyForDate)
+    {
+        if (historyForDate.Count == 0) return new List<JsonObject>();
+        var serials = historyForDate
+            .Select(x => ReadString(x, "serialNumber") ?? ReadString(x, "snCode"))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (serials.Count == 0) return new List<JsonObject>();
+
+        return lines.OfType<JsonObject>()
+            .Where(x => serials.Contains(ReadString(x, "serial") ?? ReadString(x, "serialNumber") ?? ReadString(x, "snCode") ?? string.Empty))
+            .Select(CloneObject)
+            .ToList();
+    }
+
+    private static List<JsonObject> FilterPdfLinesByAction(string type, JsonArray lines)
+        => type switch
+        {
+            "borrow-lend" => lines.OfType<JsonObject>().Where(x => ReadBool(x, "returned") != true).Select(CloneObject).ToList(),
+            "borrow-return" => lines.OfType<JsonObject>().Where(x => ReadBool(x, "returned") == true).Select(CloneObject).ToList(),
+            _ => new List<JsonObject>()
+        };
+
+    private static object BuildBorrowPdfText(string language)
+        => new
+        {
+            vi = LocalizationCatalog.Text("vi", "Pdf.BorrowLend.Body"),
+            zh = LocalizationCatalog.Text("zh", "Pdf.BorrowLend.Body"),
+            returnVi = LocalizationCatalog.Text("vi", "Pdf.BorrowReturn.Body"),
+            returnZh = LocalizationCatalog.Text("zh", "Pdf.BorrowReturn.Body")
+        };
+
+    private static JsonObject CloneObject(JsonObject value)
+        => JsonNode.Parse(value.ToJsonString())!.AsObject();
+
+    private static string idText(JsonObject header)
+        => ReadString(header, "id") ?? "Document";
+
+    private static string? ReadString(JsonObject obj, string key)
+    {
+        if (!obj.TryGetPropertyValue(key, out var node) || node == null) return null;
+        if (node is JsonValue value && value.TryGetValue<string>(out var text)) return text;
+        return node.ToString();
+    }
+
+    private static bool? ReadBool(JsonObject obj, string key)
+    {
+        if (!obj.TryGetPropertyValue(key, out var node) || node == null) return null;
+        return node is JsonValue value && value.TryGetValue<bool>(out var result) ? result : null;
+    }
+
+    private static DateTime? ReadDate(JsonObject obj, string key)
+    {
+        var text = ReadString(obj, key);
+        return DateTime.TryParse(text, out var value) ? value : null;
+    }
+
+    private static bool SameBusinessDate(DateTime? value, DateTime printDate)
+        => value.HasValue && value.Value.Date == printDate.Date;
 
     private IQueryable<T> Scope<T>(IQueryable<T> query, System.Linq.Expressions.Expression<Func<T, int>> warehouseSelector)
     {

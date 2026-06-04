@@ -634,7 +634,7 @@ function renderQuantityLine() {
     <td class="col-stt"></td>
     <td>${UI.input('Category Code', 'text', '', 'itemCategoryCode')}</td>
     <td>${UI.input('PN', 'text', '', 'quantityItemCode')}</td>
-    <td class="col-bin"><input class="form-control form-control-sm" name="binCode"></td>
+    <td class="col-bin"><input class="form-control form-control-sm" name="binCode" list="autocomplete-quantity-bin-codes"></td>
     <td>${UI.input('Quantity', 'number', '1', 'quantity')}</td>
     <td><button class="btn btn-light btn-sm btn-remove-quantity-line" type="button"><i class="bi bi-x-lg"></i></button></td>
   </tr>`;

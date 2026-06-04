@@ -249,6 +249,7 @@ async function openStructureForm(id){
       <div class="col-md-5">${UI.input('Shelf Code','text',data.shelfCode || '','shelfCode')}</div>
       <div class="col-md-7">${UI.input('Shelf Name','text',data.shelfName || '','shelfName')}</div>
       <div class="col-md-5">${UI.input('Bin Code','text',data.binCode || '','binCode')}</div>
+      <div class="col-md-7">${UI.selectform('Bin Type','usageType', binUsageTypeOptions(), data.usageType || 'LocationTracked')}</div>
     </div>
     ${activeCheck(data.isActive !== false)}
     ${saveButton('btnSaveStructure', id)}`);
@@ -261,6 +262,13 @@ function structureModeOptions(){
   return [
     { id:'existing', text:UI.t('Add position to existing warehouse') },
     { id:'new', text:UI.t('Create new warehouse hierarchy') }
+  ];
+}
+
+function binUsageTypeOptions(){
+  return [
+    { id:'LocationTracked', text:UI.t('Location tracked bins') },
+    { id:'Quantity', text:UI.t('Quantity bins') }
   ];
 }
 
@@ -445,11 +453,13 @@ Router.register('system', async function(){
 });
 
 Router.register('system-errors', async function(){
+  const errorCategories = ['BusinessValidation','BusinessDependency','Timeout','Deadlock','Unauthorized','Forbidden','NotFound','DbUpdateException','UnhandledException'];
   $('#app').html(UI.pageHeader(UI.t('Endpoint.SystemErrors'), 'Home / ' + UI.t('Endpoint.SystemErrors')) +
     `<div class="card mb-3"><div class="card-body">
-      <div class="d-flex justify-content-between align-items-center mb-3"><div class="form-section-title mb-0">${UI.t('Error Management')}</div><button class="btn btn-outline-secondary btn-sm" id="btnReloadErrors"><i class="bi bi-arrow-clockwise"></i></button></div>
+      <div class="d-flex justify-content-between align-items-center mb-3"><div class="form-section-title mb-0">${UI.t('Error Management')}</div><div class="btn-group btn-group-sm"><button class="btn btn-outline-danger" id="btnDeleteAllErrors"><i class="bi bi-trash"></i></button><button class="btn btn-outline-secondary" id="btnReloadErrors"><i class="bi bi-arrow-clockwise"></i></button></div></div>
       <div class="row g-3 mb-3">
-        <div class="col-md-7">${UI.input('Keyword','text','','errorKeyword')}</div>
+        <div class="col-md-5">${UI.input('Keyword','text','','errorKeyword')}</div>
+        <div class="col-md-2">${UI.select('Category','errorCategory',[{id:'',text:UI.t('All')}].concat(errorCategories.map(x => ({id:x,text:UI.t(x)}))))}</div>
         <div class="col-md-2">${UI.select('Status','errorResolved',[{id:'',text:UI.t('All')},{id:'false',text:UI.t('Unresolved')},{id:'true',text:UI.t('Resolved')}])}</div>
         <div class="col-md-3 d-flex align-items-end">
         <label class="form-label w-50"><span class="fw-semibold small"><span class="fw-semibold small"></span><button class="btn btn-primary w-75" id="btnReloadErrorsList">${UI.t('Load')}</button></label>
@@ -460,8 +470,15 @@ Router.register('system-errors', async function(){
     </div></div>`);
 
   $('#btnReloadErrorsList, #btnReloadErrors').on('click', () => loadSystemErrors(1));
+  $('#btnDeleteAllErrors').on('click', () => {
+    UI.confirm(UI.t('Delete all'), UI.t('Delete all system errors?'), '', async function(){
+      const result = await UI.api('/SystemErrors/DeleteAll', { method: 'POST', data: {} });
+      result.success ? UI.toast(UI.t('Deleted')) : UI.showError(UI.resultError(result));
+      if (result.success) await loadSystemErrors(1);
+    }, 'Delete');
+  });
   $('#btnMigrateDocument').on('click', async () => { await migrateDocumentNoItemInstance(); await loadSystemErrors(1);});
-  $('#app [name="errorKeyword"], #app [name="errorResolved"]').on('change input', UI.debounce(() => {
+  $('#app [name="errorKeyword"], #app [name="errorResolved"], #app [name="errorCategory"]').on('change input', UI.debounce(() => {
     loadSystemErrors(1);
   }, 300));
   await loadSystemErrors(1);
@@ -482,6 +499,7 @@ async function loadSystemErrors(page = 1, pageSize = AppState.pageSize || 25){
     page,
     pageSize,
     keyword: $('#app [name="errorKeyword"]').val()?.trim() || null,
+    category: $('#app [name="errorCategory"]').val() || null,
     isResolved: resolvedValue === '' ? null : resolvedValue === 'true'
   };
 
@@ -524,6 +542,7 @@ async function loadSystemErrors(page = 1, pageSize = AppState.pageSize || 25){
               <th class="px-3">${UI.t('Error Code')}</th>
               <th>${UI.t('Time')}</th>
               <th>${UI.t('Module')}</th>
+              <th>${UI.t('Category')}</th>
               <th>${UI.t('Request Path')}</th>
               <th>${UI.t('User')}</th>
               <th>${UI.t('Error message')}</th>
@@ -537,6 +556,7 @@ async function loadSystemErrors(page = 1, pageSize = AppState.pageSize || 25){
                 <td class="px-3 fw-semibold">${UI.esc(r.errorCode)}</td>
                 <td>${UI.esc(UI.formatDate(r.createdAt))}</td>
                 <td>${UI.esc([r.module, r.action].filter(Boolean).join(' / ') || '-')}</td>
+                <td><span class="badge text-bg-secondary">${UI.esc(UI.t(r.category || '-'))}</span></td>
                 <td>${UI.esc([r.httpMethod, r.requestPath].filter(Boolean).join(' ') || '-')}</td>
                 <td>${UI.esc(r.userName || '-')}</td>
                 <td>${UI.esc(r.errorMessage || '-')}</td>
@@ -545,6 +565,7 @@ async function loadSystemErrors(page = 1, pageSize = AppState.pageSize || 25){
                   <div class="btn-group btn-group-sm">
                     <button class="btn btn-light btn-system-error-detail" title="${UI.t('Detail')}" data-id="${UI.esc(r.id)}"><i class="bi bi-eye"></i></button>
                     ${r.isResolved ? '' : `<button class="btn btn-outline-success btn-system-error-resolve" title="${UI.t('Mark resolved')}" data-id="${UI.esc(r.id)}"><i class="bi bi-check2-circle"></i></button>`}
+                    <button class="btn btn-outline-danger btn-system-error-delete" title="${UI.t('Delete')}" data-id="${UI.esc(r.id)}"><i class="bi bi-trash"></i></button>
                   </div>
                 </td>
               </tr>
@@ -577,6 +598,9 @@ async function openSystemErrorDetail(id){
       ${systemErrorField('Error Code', row.errorCode)}
       ${systemErrorField('Time', UI.formatDate(row.createdAt))}
       ${systemErrorField('Status', UI.t(row.isResolved ? 'Resolved' : 'Unresolved'))}
+      ${systemErrorField('Category', UI.t(row.category || '-'))}
+      ${systemErrorField('HTTP Status', row.statusCode || '-')}
+      ${systemErrorField('Duration (ms)', row.durationMs || '-')}
       ${systemErrorField('Resolved by', row.resolvedBy || '-')}
       ${systemErrorField('Module', [row.module, row.action].filter(Boolean).join(' / ') || '-')}
       ${systemErrorField('User', row.userName || row.userId || '-')}
@@ -584,6 +608,9 @@ async function openSystemErrorDetail(id){
       ${systemErrorField('Client IP', row.clientIp || '-')}
       ${systemErrorField('Browser', row.browser || '-', 12)}
       ${systemErrorBlock('Error message', row.errorMessage)}
+      ${systemErrorBlock('Technical message', row.technicalMessage)}
+      ${systemErrorBlock('Exception type', row.exceptionType)}
+      ${systemErrorBlock('SQL error number', row.sqlErrorNumber)}
       ${systemErrorBlock('Inner Exception', row.innerException)}
       ${systemErrorBlock('Payload JSON', row.payloadJson)}
       ${systemErrorBlock('Stack Trace', row.stackTrace)}
@@ -613,6 +640,15 @@ $(document).on('click', '.btn-system-error-resolve', function(){
       result.success ? UI.toast(UI.t('Saved')) : UI.showError(UI.resultError(result));
     if (result.success) await loadSystemErrors(1);
   }, 'Mark resolved');
+});
+
+$(document).on('click', '.btn-system-error-delete', function(){
+  const id = $(this).data('id');
+  UI.confirm(UI.t('Delete'), UI.t('Delete this system error?'), `<div>ID: <b>${UI.esc(id)}</b></div>`, async function(){
+    const result = await UI.api(`/SystemErrors/${id}/Delete`, { method: 'POST', data: {} });
+    result.success ? UI.toast(UI.t('Deleted')) : UI.showError(UI.resultError(result));
+    if (result.success) await loadSystemErrors(1);
+  }, 'Delete');
 });
 
 $(document).on('click', '#btnResolveSystemError', async function(){

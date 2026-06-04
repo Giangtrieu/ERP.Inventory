@@ -86,15 +86,6 @@ Router.register('dashboard', async function(){
       <div class="col-xl-6">
         <div class="card"><div class="card-body">
           <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
-            <h5 class="fw-bold mb-0">${UI.t('Location Utilization')}</h5>
-            <div style="min-width:220px">${UI.select('Warehouse','utilizationWarehouseId', AppState.lookups.warehouses)}</div>
-          </div>
-          <div id="locationUtilizationChart" class="chart-area">${UI.loading()}</div>
-        </div></div>
-      </div>
-      <div class="col-xl-6">
-        <div class="card"><div class="card-body">
-          <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
             <h5 class="fw-bold mb-0">${UI.t('Borrow Overdue Aging')}</h5>
             <div style="min-width:220px">${UI.select('Warehouse', 'overdueWarehouseId', AppState.lookups.warehouses, AppState.lookups.warehouses?.[0]?.id || '')}</div>
           </div>
@@ -102,6 +93,15 @@ Router.register('dashboard', async function(){
         </div></div>
       </div>
     </div>
+    <div class="col-xl-6">
+        <div class="card"><div class="card-body">
+          <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+            <h5 class="fw-bold mb-0">${UI.t('Location Utilization')}</h5>
+            <div style="min-width:220px">${UI.select('Warehouse', 'utilizationWarehouseId', AppState.lookups.warehouses, AppState.lookups.warehouses?.[0]?.id || '')}</div>
+          </div>
+          <div id="locationUtilizationChart" class="chart-area">${UI.loading()}</div>
+        </div></div>
+      </div>
 
     <!-- ── Quantity Inventory Summary ──────────────────────────── -->
     <div class="card mt-3"><div class="card-body">
@@ -154,7 +154,7 @@ Router.register('dashboard', async function(){
   $('#app [name="utilizationWarehouseId"]').on('change', loadLocationUtilizationChart);
   $('#app [name="overdueWarehouseId"]').on('change', loadBorrowOverdueChart);
   $('#app [name="qtyWarehouseId"]').on('change', loadQuantitySummary);
-    $('#app [name="mapWarehouseId"], #app [name="mapViewMode"]').on('change', loadWarehouseMap);
+    $('#app [name="mapWarehouseId"], #app [name="mapViewMode"], #app [name="mapBinUsageType"]').on('change', loadWarehouseMap);
     if (window.WarehouseMapComponent?.bindHighlightEvents) {
         WarehouseMapComponent.bindHighlightEvents();
     }
@@ -234,10 +234,91 @@ async function loadStockByCategoryChart(){
   $('#stockCategoryChart').html(barChart(rows));
 }
 
-async function loadLocationUtilizationChart(){
-    const rows = await UI.api('/Dashboard/LocationUtilization', { query: { warehouseId: $('#app [name="utilizationWarehouseId"]').val() || '' } });
-    // $('#locationUtilizationChart').html(donutChart(rows.map(x => ({ ...x, label: UI.t(x.label) }))));
-  $('#locationUtilizationChart').html(gaugeChart(rows.map(x => ({ ...x, label: UI.t(x.label) }))));
+async function loadLocationUtilizationChart() {
+    const rows = await UI.api('/Dashboard/LocationUtilization', {
+        query: {
+            warehouseId: $('#app [name="utilizationWarehouseId"]').val() || ''
+        }
+    });
+
+    $('#locationUtilizationChart').html(`
+        <div class="row g-3">
+            ${rows.map(renderUtilizationGaugeCard).join('')}
+        </div>
+    `);
+}
+
+function renderUtilizationGaugeCard(row) {
+    const total = Number(row.totalBins || 0);
+    const occupied = Number(row.occupiedBins || 0);
+    const empty = Number(row.emptyBins || 0);
+    const percent = Number(row.percentage || 0);
+    const safePercent = Math.max(0, Math.min(100, percent));
+    const emptyPercent = total > 0 ? Math.round((empty * 100) / total) : 0;
+
+    return `
+        <div class="col-md-6">
+            <div class="card border-0 shadow-sm h-100 utilization-card">
+                <div class="card-body text-center">
+
+                    <div class="fw-bold mb-2">
+                        ${UI.t(row.label)}
+                    </div>
+
+                    <div class="utilization-gauge-wrap">
+                        <div class="utilization-css-gauge"
+                             style="--value:${safePercent}">
+                            <div class="utilization-css-gauge-inner"></div>
+                        </div>
+
+                        <div class="utilization-main-number">
+                            <div class="utilization-percent">
+                                ${Math.round(safePercent)}%
+                            </div>
+
+                            <div class="utilization-main-label">
+                                ${UI.t('Occupied bins')}
+                            </div>
+
+                            <div class="utilization-used">
+                                ${occupied} / ${total}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="utilization-stats mt-3">
+                        <div class="utilization-stat-row">
+                            <span>
+                                <i class="utilization-dot bg-primary"></i>
+                                ${UI.t('Total bins')}
+                            </span>
+                            <b>${total}</b>
+                            <em></em>
+                        </div>
+
+                        <div class="utilization-stat-row">
+                            <span>
+                                <i class="utilization-dot bg-success"></i>
+                                ${UI.t('Occupied bins')}
+                            </span>
+                            <b>${occupied}</b>
+                            <em>${Math.round(safePercent)}%</em>
+                        </div>
+
+                        <div class="utilization-stat-row">
+                            <span>
+                                <i class="utilization-dot bg-warning"></i>
+                                ${UI.t('Empty bins')}
+                            </span>
+                            <b>${empty}</b>
+                            <em>${emptyPercent}%</em>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 async function loadBorrowOverdueChart(){

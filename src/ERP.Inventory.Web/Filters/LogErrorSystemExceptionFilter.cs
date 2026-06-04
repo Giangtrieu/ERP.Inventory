@@ -1,4 +1,6 @@
+using ERP.Inventory.Domain.Enums;
 using ERP.Inventory.Infrastructure.Services;
+using ERP.Inventory.Web.Middleware;
 using ERP.Inventory.Web.Services;
 using ERP.Inventory.Web.ViewModels;
 using Microsoft.AspNetCore.Mvc;
@@ -41,14 +43,18 @@ public sealed class LogErrorSystemExceptionFilter : IAsyncExceptionFilter
             Browser: request.Headers.UserAgent.ToString());
 
         var log = await _errorLog.LogAsync(context.Exception, logContext, CancellationToken.None);
+        context.HttpContext.Items[LogErrorSystemMiddleware.LoggedItemKey] = log.ErrorCode;
         _logger.LogError(context.Exception, "Persisted system exception {ErrorCode}", log.ErrorCode);
 
-        var message = SystemErrorMessages.Create(context.HttpContext, log.ErrorCode, context.Exception);
-        context.Result = CreateErrorResult(context, log.ErrorCode, message);
+        var category = Enum.TryParse<SystemErrorCategory>(log.Category, out var parsed)
+            ? parsed
+            : SystemErrorCategory.UnhandledException;
+        var message = SystemErrorMessages.Create(context.HttpContext, log.ErrorCode, category);
+        context.Result = CreateErrorResult(context, log.ErrorCode, log.Category, message, StatusCodeFor(category));
         context.ExceptionHandled = true;
     }
 
-    private static IActionResult CreateErrorResult(ExceptionContext context, string errorCode, string message)
+    private static IActionResult CreateErrorResult(ExceptionContext context, string errorCode, string errorType, string message, int statusCode)
     {
         var request = context.HttpContext.Request;
         var controller = context.RouteData.Values.TryGetValue("controller", out var controllerValue)
@@ -81,20 +87,36 @@ public sealed class LogErrorSystemExceptionFilter : IAsyncExceptionFilter
                 {
                     Model = model
                 },
-                StatusCode = StatusCodes.Status500InternalServerError
+                StatusCode = statusCode
             };
         }
 
         return new JsonResult(new
         {
             success = false,
+            errorType,
             errorCode,
+            correlationId = errorCode,
+            statusCode,
             message
         })
         {
-            StatusCode = StatusCodes.Status500InternalServerError
+            StatusCode = statusCode
         };
     }
+
+    private static int StatusCodeFor(SystemErrorCategory category)
+        => category switch
+        {
+            SystemErrorCategory.Timeout => StatusCodes.Status504GatewayTimeout,
+            SystemErrorCategory.Deadlock => StatusCodes.Status409Conflict,
+            SystemErrorCategory.BusinessDependency => StatusCodes.Status409Conflict,
+            SystemErrorCategory.BusinessValidation => StatusCodes.Status400BadRequest,
+            SystemErrorCategory.Unauthorized => StatusCodes.Status401Unauthorized,
+            SystemErrorCategory.Forbidden => StatusCodes.Status403Forbidden,
+            SystemErrorCategory.NotFound => StatusCodes.Status404NotFound,
+            _ => StatusCodes.Status500InternalServerError
+        };
 
     private static async Task<string?> ReadRequestBodyAsync(HttpRequest request)
     {

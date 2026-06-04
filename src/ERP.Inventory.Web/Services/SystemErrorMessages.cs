@@ -1,3 +1,4 @@
+using ERP.Inventory.Domain.Enums;
 using System.Security.Claims;
 
 namespace ERP.Inventory.Web.Services;
@@ -7,7 +8,13 @@ public enum SystemErrorKind
     System,
     Timeout,
     Validation,
-    OperationFailure
+    OperationFailure,
+    BusinessDependency,
+    Unauthorized,
+    Forbidden,
+    NotFound,
+    Deadlock,
+    DbUpdateException
 }
 
 public static class SystemErrorMessages
@@ -19,12 +26,37 @@ public static class SystemErrorMessages
         return string.Format(LocalizationCatalog.Text(language, key), errorCode);
     }
 
+    public static string Create(HttpContext context, string errorCode, SystemErrorCategory category)
+    {
+        var language = ResolveLanguage(context);
+        var key = category switch
+        {
+            SystemErrorCategory.BusinessValidation => "SystemError.ValidationMessage",
+            SystemErrorCategory.BusinessDependency => "SystemError.BusinessDependencyMessage",
+            SystemErrorCategory.Timeout => "SystemError.TimeoutMessage",
+            SystemErrorCategory.Deadlock => "SystemError.DeadlockMessage",
+            SystemErrorCategory.Unauthorized => "SystemError.UnauthorizedMessage",
+            SystemErrorCategory.Forbidden => "SystemError.ForbiddenMessage",
+            SystemErrorCategory.NotFound => "SystemError.NotFoundMessage",
+            SystemErrorCategory.DbUpdateException => "SystemError.DbUpdateMessage",
+            _ => "SystemError.UserMessage"
+        };
+
+        return string.Format(LocalizationCatalog.Text(language, key), errorCode);
+    }
+
     public static string CreateForFailure(HttpContext context, string errorCode, SystemErrorKind kind)
     {
         var language = ResolveLanguage(context);
         var key = kind switch
         {
             SystemErrorKind.Validation => "SystemError.ValidationMessage",
+            SystemErrorKind.BusinessDependency => "SystemError.BusinessDependencyMessage",
+            SystemErrorKind.Unauthorized => "SystemError.UnauthorizedMessage",
+            SystemErrorKind.Forbidden => "SystemError.ForbiddenMessage",
+            SystemErrorKind.NotFound => "SystemError.NotFoundMessage",
+            SystemErrorKind.Deadlock => "SystemError.DeadlockMessage",
+            SystemErrorKind.DbUpdateException => "SystemError.DbUpdateMessage",
             SystemErrorKind.OperationFailure => "SystemError.OperationFailureMessage",
             SystemErrorKind.Timeout => "SystemError.TimeoutMessage",
             _ => "SystemError.UserMessage"
@@ -72,6 +104,20 @@ public static class SystemErrorMessages
 
         return IsTimeout(exception.InnerException);
     }
+
+    public static string DefaultMessageKey(SystemErrorCategory category)
+        => category switch
+        {
+            SystemErrorCategory.BusinessValidation => "Business validation failed.",
+            SystemErrorCategory.BusinessDependency => "Business dependency blocked the operation.",
+            SystemErrorCategory.Timeout => "Request timeout.",
+            SystemErrorCategory.Deadlock => "Database deadlock.",
+            SystemErrorCategory.Unauthorized => "Authentication is required.",
+            SystemErrorCategory.Forbidden => "Access denied for current role.",
+            SystemErrorCategory.NotFound => "Requested data was not found.",
+            SystemErrorCategory.DbUpdateException => "Unexpected database update error.",
+            _ => "Unhandled system exception."
+        };
 
     private static bool TryReadSqlNumber(Exception exception, out int number)
     {

@@ -46,13 +46,25 @@ public abstract class InventoryOperationBase
         => string.IsNullOrWhiteSpace(code) ? Task.FromResult<Warehouse?>(null)
             : _db.Warehouses.AsNoTracking().FirstOrDefaultAsync(x => x.WarehouseCode == code.Trim() && x.IsActive, ct);
 
-    protected Task<BinLocation?> FindBinByCodeAsync(string? binCode, CancellationToken ct)
+    protected Task<BinLocation?> FindBinByCodeAsync(
+        string? binCode,
+        CancellationToken ct,
+        BinLocationUsageType usageType = BinLocationUsageType.LocationTracked)
         => string.IsNullOrWhiteSpace(binCode) ? Task.FromResult<BinLocation?>(null)
-            : _db.BinLocations.AsNoTracking().FirstOrDefaultAsync(x => x.BinCode == binCode.Trim() && x.IsActive, ct);
+            : _db.BinLocations.AsNoTracking().FirstOrDefaultAsync(x =>
+                x.BinCode == binCode.Trim() &&
+                x.UsageType == usageType &&
+                x.IsActive, ct);
 
-    protected Task<BinLocation?> FindBinByIdAsync(int? binId, CancellationToken ct)
+    protected Task<BinLocation?> FindBinByIdAsync(
+        int? binId,
+        CancellationToken ct,
+        BinLocationUsageType usageType = BinLocationUsageType.LocationTracked)
     => binId == 0 ? Task.FromResult<BinLocation?>(null)
-        : _db.BinLocations.AsNoTracking().FirstOrDefaultAsync(x => x.Id == binId && x.IsActive, ct);
+        : _db.BinLocations.AsNoTracking().FirstOrDefaultAsync(x =>
+            x.Id == binId &&
+            x.UsageType == usageType &&
+            x.IsActive, ct);
 
     protected Task<Item?> FindItemByCodeAsync(string? itemCode, CancellationToken ct)
         => string.IsNullOrWhiteSpace(itemCode) ? Task.FromResult<Item?>(null)

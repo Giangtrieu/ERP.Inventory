@@ -79,9 +79,9 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
+app.UseMiddleware<LogErrorSystemMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseMiddleware<LogErrorSystemMiddleware>();
 
 app.MapControllerRoute(
     name: "default",

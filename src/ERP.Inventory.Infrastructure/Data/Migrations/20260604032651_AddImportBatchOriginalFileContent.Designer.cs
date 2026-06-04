@@ -4,6 +4,7 @@ using ERP.Inventory.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,10 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ERP.Inventory.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(InventoryDbContext))]
-    partial class InventoryDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260604032651_AddImportBatchOriginalFileContent")]
+    partial class AddImportBatchOriginalFileContent
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -330,13 +332,6 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
                     b.Property<string>("UpdatedBy")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("UsageType")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)")
-                        .HasDefaultValue("LocationTracked");
-
                     b.Property<int>("WarehouseId")
                         .HasColumnType("int");
 
@@ -348,8 +343,6 @@ namespace ERP.Inventory.Infrastructure.Data.Migrations
 
                     b.HasIndex("WarehouseId", "BinCode")
                         .IsUnique();
-
-                    b.HasIndex("WarehouseId", "UsageType");
 
                     b.ToTable("BinLocations");
                 });
