@@ -81,8 +81,9 @@ public sealed class MoveLocationService : InventoryOperationBase, IInventoryOper
                 .Include(x => x.ItemInstance)!.ThenInclude(x => x!.Item)
                 .FirstOrDefaultAsync(x =>
                     x.BinLocationId == prepared.TargetBin.Id &&
+                    !x.IsDeleted &&
                     x.ItemInstanceId != prepared.Instance.Id &&
-                    x.ItemInstance != null && x.ItemInstance.IsActive &&
+                    x.ItemInstance != null && x.ItemInstance.IsActive && !x.ItemInstance.IsDeleted &&
                     x.ItemInstance.Status != ItemStatus.Lost && x.ItemInstance.Status != ItemStatus.Disposed,
                     cancellationToken);
             if (occupant != null && !movingItemIds.Contains(occupant.ItemInstanceId))

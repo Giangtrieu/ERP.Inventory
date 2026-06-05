@@ -62,6 +62,19 @@ public class ItemInstance : AuditableEntity
     /// </summary>
     public string? OwnerName { get; set; }
     public bool IsActive { get; set; } = true;
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public int? DeletedByUserId { get; set; }
+    public string? DeletedByUserCode { get; set; }
+    public string? DeletedByUserName { get; set; }
+    public string? DeleteReason { get; set; }
+    public string? DeleteSourceDocumentType { get; set; }
+    public int? DeleteSourceDocumentId { get; set; }
+    public bool CanRestore { get; set; } = true;
+    public DateTime? RestoredAt { get; set; }
+    public int? RestoredByUserId { get; set; }
+    public string? RestoredByUserCode { get; set; }
+    public string? RestoreReason { get; set; }
 }
 
 

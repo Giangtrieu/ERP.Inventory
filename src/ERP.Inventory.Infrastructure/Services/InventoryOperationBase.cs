@@ -155,7 +155,7 @@ public abstract class InventoryOperationBase
         var code = itemCode.Trim();
         var sn = serialNumber.Trim();
         return await _db.ItemInstances.Include(x => x.Item)
-            .FirstOrDefaultAsync(x => x.Item != null && x.Item.ItemCode == code && x.SerialNumber == sn, ct);
+            .FirstOrDefaultAsync(x => !x.IsDeleted && x.Item != null && x.Item.ItemCode == code && x.SerialNumber == sn, ct);
     }
 
     protected Task<ExternalParty?> FindPartyByCodeAsync(string? partyCode, ExternalPartyType partyType, CancellationToken ct)
@@ -177,7 +177,7 @@ public abstract class InventoryOperationBase
             .Include(x => x.BinLocation)
             .Include(x => x.ExternalParty)
             .Include(x => x.Warehouse)
-            .FirstOrDefaultAsync(x => x.ItemInstanceId == itemInstanceId, cancellationToken);
+            .FirstOrDefaultAsync(x => x.ItemInstanceId == itemInstanceId && !x.IsDeleted, cancellationToken);
         if (current == null)
             throw new InvalidOperationException($"Current location for item instance {itemInstanceId} does not exist.");
         return current;
@@ -188,9 +188,11 @@ public abstract class InventoryOperationBase
         return await _db.CurrentItemLocations.AsNoTracking()
             .AnyAsync(x =>
                 x.BinLocationId == binLocationId &&
+                !x.IsDeleted &&
                 (!exceptItemInstanceId.HasValue || x.ItemInstanceId != exceptItemInstanceId.Value) &&
                 x.ItemInstance != null &&
                 x.ItemInstance.IsActive &&
+                !x.ItemInstance.IsDeleted &&
                 x.ItemInstance.Status != ItemStatus.Lost &&
                 x.ItemInstance.Status != ItemStatus.Disposed,
                 cancellationToken);

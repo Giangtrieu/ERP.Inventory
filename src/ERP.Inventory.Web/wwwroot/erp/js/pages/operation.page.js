@@ -113,7 +113,7 @@ function loadOperationBins(type, warehouseId) {
 function renderOperationLines(type, vm) {
     const rows = renderLineRow(type, vm, 1);
     let tableClass = 'data-table';
-    if (type === 'adjustment') tableClass = 'data-table-adjust';
+/*    if (type === 'adjustment') tableClass = 'data-table-adjust';*/
     return `<div class="table-wrap"><table class="${tableClass}"><thead>${lineHeader(type)}</thead><tbody id="operationLineBody">${rows}</tbody></table></div>`;
 }
 

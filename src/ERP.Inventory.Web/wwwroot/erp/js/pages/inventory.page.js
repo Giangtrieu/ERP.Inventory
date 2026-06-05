@@ -16,6 +16,67 @@ Router.register('inventory', function(){
   loadInventoryList();
 });
 
+Router.register('deleted-items', async function () {
+  $('#app').html(UI.pageHeader('Deleted Items', 'Home / Deleted Items', '') +
+    `<div class="card"><div class="card-body">
+      <div class="row g-3 mb-3">
+        <div class="col-md-3">${UI.select('Warehouse','warehouseId', AppState.lookups.warehouses)}</div>
+        <div class="col-md-6">${UI.input('Keyword','text','','keyword')}</div>
+        <div class="col-md-3 d-flex align-items-end"><button class="btn btn-primary w-100" id="btnLoadDeletedItems"><i class="bi bi-search me-2"></i>${UI.t('Load')}</button></div>
+      </div>
+      <div id="deletedItemsTable">${UI.loading()}</div>
+    </div></div>`);
+  $('#btnLoadDeletedItems').on('click', loadDeletedItems);
+  $('#app [name="warehouseId"], #app [name="keyword"]').on('change input', UI.debounce(loadDeletedItems, 250));
+  await loadDeletedItems();
+});
+
+async function loadDeletedItems() {
+  const result = await UI.api('/Management/DeletedItems', {
+    query: {
+      warehouseId: $('#app [name="warehouseId"]').val() || null,
+      keyword: $('#app [name="keyword"]').val() || null
+    }
+  });
+  if (!result.success) {
+    $('#deletedItemsTable').html(UI.empty(UI.resultError(result)));
+    return;
+  }
+
+  const rows = result.data || [];
+  if (!rows.length) {
+    $('#deletedItemsTable').html(UI.empty('No data'));
+    return;
+  }
+
+  $('#deletedItemsTable').html(`<div class="table-wrap">
+    <table class="data-table"><thead><tr>
+      <th class="px-3">${UI.t('Item')}</th>
+      <th>${UI.t('Serial')}</th>
+      <th>${UI.t('Warehouse')}</th>
+      <th>${UI.t('Bin')}</th>
+      <th>${UI.t('Status')}</th>
+      <th>${UI.t('DeletedAt')}</th>
+      <th>${UI.t('DeletedBy')}</th>
+      <th>${UI.t('Delete Reason')}</th>
+      <th>${UI.t('Source')}</th>
+      <th>${UI.t('Actions')}</th>
+    </tr></thead><tbody>${rows.map(r => `<tr>
+      <td class="px-3 fw-semibold">${UI.esc(r.itemCode || '-')}<div class="small text-muted">${UI.esc(r.itemName || '')}</div></td>
+      <td>${UI.esc(r.serialNumber || '-')}</td>
+      <td>${UI.esc(r.warehouse || '-')}</td>
+      <td>${UI.esc(r.binLocation || '-')}</td>
+      <td>${UI.badge(r.status)}</td>
+      <td>${UI.formatDate(r.deletedAt)}</td>
+      <td>${UI.esc(r.deletedBy || '-')}</td>
+      <td>${UI.esc(r.deleteReason || '-')}</td>
+      <td>${UI.esc([r.deleteSourceDocumentType, r.deleteSourceDocumentId].filter(Boolean).join(' #') || '-')}</td>
+      <td>${r.canRestore ? `<button class="btn btn-sm btn-outline-success btn-restore-deleted-item" data-id="${UI.esc(r.itemInstanceId)}"><i class="bi bi-arrow-counterclockwise"></i></button>` : '-'}</td>
+    </tr>`).join('')}</tbody></table>
+    <div class="server-footer"><span>${rows.length} ${UI.t('rows')}</span></div>
+  </div>`);
+}
+
 function exportInventoryFile(url) {
   window.location = `${UI.resolveUrl(url)}?${$.param(reportInventoryFilterQuery())}`;
 }
@@ -83,14 +144,14 @@ async function loadInventoryList(page = 1, pageSize = AppState.pageSize || 25) {
         <td>${UI.badge(r.status)}</td>
         <td>${UI.esc(r.currentLocation)}</td>
         <td class="px-3 fw-semibold">${UI.esc(r.holder)}</td>
-        ${canEdit ? `<td><button class="btn btn-light btn-sm btn-edit-inventory-item" title="${UI.t('Edit')}" data-id="${UI.esc(r.itemInstanceId)}"><i class="bi bi-pencil"></i></button><button class= "btn btn-sm btn-outline-danger btn-delete-inventory-item" title = "${UI.t('Hard Delete')}" data-id="${UI.esc(r.itemInstanceId)}" > <i class="bi bi-trash"></i></button></td>` : ''}
+        ${canEdit ? `<td><button class="btn btn-light btn-sm btn-edit-inventory-item" title="${UI.t('Edit')}" data-id="${UI.esc(r.itemInstanceId)}"><i class="bi bi-pencil"></i></button><button class= "btn btn-sm btn-outline-danger btn-delete-inventory-item" title = "${UI.t('Delete Wrong Item')}" data-serial="${UI.esc(r.serialNumber)}" data-id="${UI.esc(r.itemInstanceId)}" > <i class="bi bi-trash"></i></button></td>` : ''}
       </tr>`).join('')}</tbody>
     </table>
     <div class="server-footer"><span>${UI.endpoint('InventoryList')}: ${data.totalCount} ${UI.t('rows')}</span><span>${UI.t('Page')} ${data.page} &middot; ${totalPage} ${UI.t('rows')}</span></div>
   </div>${pagination}`);
 }
 
-$(document).on('click', '.btn-delete-inventory-item', function () {hardDeleteInventoryItem($(this).data('id')); });
+$(document).on('click', '.btn-delete-inventory-item', function () { hardDeleteInventoryItem($(this).data('id'), $(this).data('serial')); });
 
 $(document).on('change', '#inventoryPageSizeSelect', function () {
   const newSize = parseInt($(this).val(), 10);
@@ -116,14 +177,26 @@ $(document).on('click', '#btnSaveInventoryItem', async function () {
   await afterInventoryItemSave(result);
 });
 
-function hardDeleteInventoryItem(id) {
-    UI.confirm(UI.t('Hard Delete'), UI.t('Only permanently delete items with no transaction history.'), `<div>ID: <b>${id}</b></div>`, async function () {
-        const result = await UI.api(`/Management/ItemInstanceDelete/${id}`, { method: 'DELETE', data: {id} });
-        result.success ? UI.toast(UI.t('Record deleted.')) : UI.showError(UI.resultError(result));
+function hardDeleteInventoryItem(id, sn) {
+    UI.confirm(UI.t('Delete Wrong Item'), UI.t('Delete Wrong Item'), `<div>SN: <b>${sn}</b></div>${UI.input('Delete Reason', 'text', '', 'deleteReason')}`, async function () {
+        const result = await UI.api(`/Management/ItemInstanceDelete/${id}`, { method: 'DELETE', data: { reason: $('#swalLite [name="deleteReason"]').val() || '' } });
+        result.success ? UI.toast(UI.msg(result.message || 'Item was deleted successfully.')) : UI.showError(UI.resultError(result));
         await loadLookups();
         await loadInventoryList(AppState.inventoryPage || 1, AppState.inventoryPageSize || AppState.pageSize || 25);
     });
 }
+
+$(document).on('click', '.btn-restore-deleted-item', function () {
+  const id = $(this).data('id');
+  UI.confirm(UI.t('Restore Item'), UI.t('Restore Item'), `<div>ID: <b>${UI.esc(id)}</b></div>${UI.input('Restore Reason', 'text', '', 'restoreReason')}`, async function () {
+    const result = await UI.api(`/Management/RestoreDeletedItem/${id}`, { method: 'POST', data: { reason: $('#swalLite [name="restoreReason"]').val() || '' } });
+    result.success ? UI.toast(UI.msg(result.message || 'Item was restored successfully.')) : UI.showError(UI.resultError(result));
+    if (result.success) {
+      await loadLookups();
+      await loadDeletedItems();
+    }
+  }, 'Restore');
+});
 
 async function openInventoryItemForm(id) {
   if (!id) return;

@@ -21,7 +21,7 @@ public sealed class DashboardService : IDashboardService
     public async Task<DashboardSummaryDto> GetSummaryAsync(int? warehouseId, CurrentUserContext user, CancellationToken cancellationToken = default)
     {
         var query = ApplyCurrentLocationWarehouseScope(
-            _db.CurrentItemLocations.AsNoTracking().Include(x => x.ItemInstance).Where(x => x.ItemInstance != null),
+            _db.CurrentItemLocations.AsNoTracking().Include(x => x.ItemInstance).Where(x => !x.IsDeleted && x.ItemInstance != null && !x.ItemInstance.IsDeleted),
             warehouseId, user);
 
         var summary = await query
@@ -86,7 +86,7 @@ public sealed class DashboardService : IDashboardService
         var query = _db.CurrentItemLocations.AsNoTracking()
             .Include(x => x.Warehouse)
             .Include(x => x.ItemInstance)
-            .Where(x => x.ItemInstance != null);
+            .Where(x => !x.IsDeleted && x.ItemInstance != null && !x.ItemInstance.IsDeleted);
 
         if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<ItemStatus>(status, true, out var parsedStatus))
         {
@@ -117,7 +117,7 @@ public sealed class DashboardService : IDashboardService
     public async Task<IReadOnlyCollection<ChartPointDto>> GetStockByStatusAsync(int? warehouseId, CurrentUserContext user, CancellationToken cancellationToken = default)
     {
         var query = ApplyCurrentLocationWarehouseScope(
-            _db.CurrentItemLocations.AsNoTracking().Include(x => x.ItemInstance).Where(x => x.ItemInstance != null),
+            _db.CurrentItemLocations.AsNoTracking().Include(x => x.ItemInstance).Where(x => !x.IsDeleted && x.ItemInstance != null && !x.ItemInstance.IsDeleted),
             warehouseId, user);
 
         return await query.GroupBy(x => x.ItemInstance!.Status)
@@ -173,7 +173,7 @@ public sealed class DashboardService : IDashboardService
         var query = ApplyCurrentLocationWarehouseScope(
             _db.CurrentItemLocations.AsNoTracking()
                 .Include(x => x.ItemInstance)!.ThenInclude(x => x!.Item)!.ThenInclude(x => x!.Category)
-                .Where(x => x.ItemInstance != null && x.ItemInstance.Item != null),
+                .Where(x => !x.IsDeleted && x.ItemInstance != null && !x.ItemInstance.IsDeleted && x.ItemInstance.Item != null),
             warehouseId, user);
 
         if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<ItemStatus>(status, true, out var parsedStatus))
@@ -227,8 +227,10 @@ public sealed class DashboardService : IDashboardService
         var locationOccupied = await locationBins
             .Where(bin => _db.CurrentItemLocations.Any(c =>
                 c.BinLocationId == bin.Id &&
+                !c.IsDeleted &&
                 c.ItemInstance != null &&
                 c.ItemInstance.IsActive &&
+                !c.ItemInstance.IsDeleted &&
                 c.ItemInstance.Status != ItemStatus.Lost &&
                 c.ItemInstance.Status != ItemStatus.Disposed))
             .CountAsync(cancellationToken);
@@ -376,8 +378,10 @@ public sealed class DashboardService : IDashboardService
          x.BinLocation.IsActive &&
          x.BinLocation.WarehouseId == warehouseId &&
          x.BinLocation.UsageType == BinLocationUsageType.LocationTracked &&
+         !x.IsDeleted &&
          x.ItemInstance != null &&
          x.ItemInstance.IsActive &&
+         !x.ItemInstance.IsDeleted &&
          x.ItemInstance.Status != ItemStatus.Lost &&
          x.ItemInstance.Status != ItemStatus.Disposed)
      .Select(x => new WarehouseMapItemRow(
@@ -533,7 +537,8 @@ public sealed class DashboardService : IDashboardService
                      SerialNumber = instance.SerialNumber ?? ""
                  }
                  into gj
-             from instance in gj.DefaultIfEmpty()
+              from instance in gj.DefaultIfEmpty()
+              where instance == null || !instance.IsDeleted
              group balance.Quantity by
                  (instance != null && !string.IsNullOrEmpty(instance.OwnerName)
                      ? instance.OwnerName
@@ -850,7 +855,7 @@ public sealed class DashboardService : IDashboardService
         }
 
         var currentItemInstanceIds = _db.CurrentItemLocations.AsNoTracking()
-            .Where(x => x.WarehouseId.HasValue && warehouseIds.Contains(x.WarehouseId.Value))
+            .Where(x => !x.IsDeleted && x.ItemInstance != null && !x.ItemInstance.IsDeleted && x.WarehouseId.HasValue && warehouseIds.Contains(x.WarehouseId.Value))
             .Select(x => x.ItemInstanceId)
             .Distinct();
 

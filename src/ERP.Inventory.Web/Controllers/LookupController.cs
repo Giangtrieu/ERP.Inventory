@@ -76,7 +76,7 @@ public sealed class LookupController : Controller
     [HttpGet("Serials")]
     public async Task<IActionResult> Serials([FromQuery] string? keyword, CancellationToken cancellationToken)
     {
-        var query = _db.ItemInstances.AsNoTracking().Where(x => x.IsActive);
+        var query = _db.ItemInstances.AsNoTracking().Where(x => x.IsActive && !x.IsDeleted);
         query = query.Where(x => _db.Items.Any(i => i.Id == x.ItemId));
         if (!string.IsNullOrWhiteSpace(keyword))
         {
@@ -103,7 +103,7 @@ public sealed class LookupController : Controller
         var query = _db.BinLocations .AsNoTracking() .Where(x => x.IsActive && x.UsageType == normalizedUsageType);
         if (normalizedUsageType == BinLocationUsageType.LocationTracked)
         {
-            query = query.Where(x => !_db.CurrentItemLocations.Any(cl => cl.BinLocationId == x.Id));
+            query = query.Where(x => !_db.CurrentItemLocations.Any(cl => cl.BinLocationId == x.Id && !cl.IsDeleted && cl.ItemInstance != null && !cl.ItemInstance.IsDeleted));
         }
         if (!string.IsNullOrWhiteSpace(keyword))
         {
@@ -129,7 +129,7 @@ public sealed class LookupController : Controller
     {
         var user = _currentUserService.GetCurrentUser();
         var query = _db.CurrentItemLocations.AsNoTracking()
-            .Where(x => x.ItemInstance != null && x.ItemInstance.IsActive);
+            .Where(x => !x.IsDeleted && x.ItemInstance != null && x.ItemInstance.IsActive && !x.ItemInstance.IsDeleted);
 
         query = ApplyStatusFilter(query, status, statuses);
         query = ApplyWarehouseScope(query, warehouseId, user);
@@ -163,7 +163,7 @@ public sealed class LookupController : Controller
     {
         var user = _currentUserService.GetCurrentUser();
         var query = _db.CurrentItemLocations.AsNoTracking()
-            .Where(x => x.ItemInstance != null && x.ItemInstance.IsActive);
+            .Where(x => !x.IsDeleted && x.ItemInstance != null && x.ItemInstance.IsActive && !x.ItemInstance.IsDeleted);
 
         query = ApplyStatusFilter(query, status, statuses);
 
@@ -225,7 +225,7 @@ public sealed class LookupController : Controller
 
         if (availableOnly && (!normalizedUsageType.HasValue || normalizedUsageType == BinLocationUsageType.LocationTracked))
         {
-            query = query.Where(x => !_db.CurrentItemLocations.Any(cl => cl.BinLocationId == x.Id));
+            query = query.Where(x => !_db.CurrentItemLocations.Any(cl => cl.BinLocationId == x.Id && !cl.IsDeleted && cl.ItemInstance != null && !cl.ItemInstance.IsDeleted));
         }
 
         var rows = await query
@@ -313,13 +313,14 @@ public sealed class LookupController : Controller
         var allowedBinIds = await AllowedBinIds(cancellationToken);
 
         var query = _db.RepairDocuments.AsNoTracking()
-            .Where(x => x.Lines.Any(l => !l.IsReturned));
+            .Where(x => x.Lines.Any(l => !l.IsReturned && (l.ItemInstance == null || !l.ItemInstance.IsDeleted)));
 
         if (allowedBinIds != null)
         {
             query = query.Where(x => x.Lines.Any(l =>
-                (l.FromBinLocationId.HasValue && allowedBinIds.Contains(l.FromBinLocationId.Value)) ||
-                (l.TargetBinLocationId.HasValue && allowedBinIds.Contains(l.TargetBinLocationId.Value))));
+                (l.ItemInstance == null || !l.ItemInstance.IsDeleted) &&
+                ((l.FromBinLocationId.HasValue && allowedBinIds.Contains(l.FromBinLocationId.Value)) ||
+                 (l.TargetBinLocationId.HasValue && allowedBinIds.Contains(l.TargetBinLocationId.Value)))));
         }
 
         var rows = await query
@@ -340,13 +341,14 @@ public sealed class LookupController : Controller
         var allowedBinIds = await AllowedBinIds(cancellationToken);
 
         var query = _db.BorrowDocuments.AsNoTracking()
-            .Where(x => x.Lines.Any(l => !l.IsReturned));
+            .Where(x => x.Lines.Any(l => !l.IsReturned && (l.ItemInstance == null || !l.ItemInstance.IsDeleted)));
 
         if (allowedBinIds != null)
         {
             query = query.Where(x => x.Lines.Any(l =>
-                (l.FromBinLocationId.HasValue && allowedBinIds.Contains(l.FromBinLocationId.Value)) ||
-                (l.TargetBinLocationId.HasValue && allowedBinIds.Contains(l.TargetBinLocationId.Value))));
+                (l.ItemInstance == null || !l.ItemInstance.IsDeleted) &&
+                ((l.FromBinLocationId.HasValue && allowedBinIds.Contains(l.FromBinLocationId.Value)) ||
+                 (l.TargetBinLocationId.HasValue && allowedBinIds.Contains(l.TargetBinLocationId.Value)))));
         }
 
         var rows = await query

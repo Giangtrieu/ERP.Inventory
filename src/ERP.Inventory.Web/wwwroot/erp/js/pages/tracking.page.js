@@ -210,7 +210,7 @@ async function relatedDocumentsTable(itemInstanceId) {
                         <tr>
                             <td class="px-3">${UI.esc(r.documentNo || '-')}</td>
                             <td>${UI.badge(r.newStatus)}</td>
-                            <td>${UI.esc(r.toLocation || '-')}</td>
+                            <td>${UI.esc(UI.t(r.toLocation || '-'))}</td>
                             <td>${UI.formatDate(r.performedAt)}</td>
                             <td>${buildDocumentActionButtons(mapDocumentType(r.documentType), r.documentId)}</td>
                         </tr>

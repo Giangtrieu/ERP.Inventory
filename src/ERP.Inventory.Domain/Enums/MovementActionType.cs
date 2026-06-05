@@ -12,6 +12,8 @@ public enum MovementActionType
     InventoryCheck = 8,
     ImportOpening = 9,
     Dispose = 10,
-    Transfer = 11
+    Transfer = 11,
+    SoftDeleted = 12,
+    Restored = 13
 }
 

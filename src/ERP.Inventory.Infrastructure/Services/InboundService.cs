@@ -172,9 +172,11 @@ public sealed class InboundService : InventoryOperationBase, IInboundService
                 .AsNoTracking()
                 .Where(x =>
                     x.BinLocationId.HasValue &&
+                    !x.IsDeleted &&
                     binIds.Contains(x.BinLocationId.Value) &&
                     x.ItemInstance != null &&
                     x.ItemInstance.IsActive &&
+                    !x.ItemInstance.IsDeleted &&
                     x.ItemInstance.Status != ItemStatus.Lost &&
                     x.ItemInstance.Status != ItemStatus.Disposed)
                 .Select(x => x.BinLocationId!.Value)

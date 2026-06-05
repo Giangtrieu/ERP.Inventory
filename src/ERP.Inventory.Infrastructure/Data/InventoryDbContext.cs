@@ -109,8 +109,9 @@ public class InventoryDbContext : DbContext
         modelBuilder.Entity<ItemUnit>().HasIndex(x => x.UnitCode).IsUnique();
         modelBuilder.Entity<Item>().HasIndex(x => x.ItemCode).IsUnique();
         modelBuilder.Entity<ItemTranslation>().HasIndex(x => new { x.ItemId, x.FieldName, x.LanguageCode }).IsUnique();
-        modelBuilder.Entity<ItemInstance>().HasIndex(x => new { x.ItemId, x.SerialNumber }).IsUnique().HasFilter("[SerialNumber] IS NOT NULL");
-        modelBuilder.Entity<ItemInstance>().HasIndex(x => x.Barcode).HasFilter("[Barcode] IS NOT NULL");
+        modelBuilder.Entity<ItemInstance>().Property(x => x.CanRestore).HasDefaultValue(true);
+        modelBuilder.Entity<ItemInstance>().HasIndex(x => new { x.ItemId, x.SerialNumber }).IsUnique().HasFilter("[SerialNumber] IS NOT NULL AND [IsDeleted] = 0");
+        modelBuilder.Entity<ItemInstance>().HasIndex(x => x.Barcode).HasFilter("[Barcode] IS NOT NULL AND [IsDeleted] = 0");
         modelBuilder.Entity<ExternalParty>().HasIndex(x => new { x.PartyType, x.PartyCode }).IsUnique();
     }
 

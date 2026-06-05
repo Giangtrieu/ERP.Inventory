@@ -4,6 +4,7 @@ window.AppConfig = {
     ['dashboard','bi-speedometer2','Dashboard'],
     ['tracking','bi-upc-scan','Tracking'],
     ['inventory','bi-boxes','Inventory List'],
+    ['deleted-items','bi-arrow-counterclockwise','Deleted Items'],
     ['quantity-inventory','bi-stack','Quantity Inventory'],
     ['inbound','bi-plus-circle','Inbound Create'],
     ['move', 'bi-arrow-left-right', 'Move Location'],

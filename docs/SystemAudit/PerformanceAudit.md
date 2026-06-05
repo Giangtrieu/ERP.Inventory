@@ -1,77 +1,25 @@
 # Performance Audit
 
-## Current Logic
+Ngày kiểm toán: 2026-06-05
 
-- The application uses EF Core with SQL Server-style indexes configured in `InventoryDbContext`.
-- Important indexes exist for:
-  - document numbers,
-  - item serial/barcode,
-  - current location by item instance,
-  - stock balance uniqueness,
-  - lifecycle batch lookup for movement history, transactions, and logs,
-  - reconciliation sessions/results.
-- Several read endpoints use `AsNoTracking`.
-- Import inbound uses `EFCore.BulkExtensions` for large insert batches.
-- Import batch list is capped to 50.
-- Reconciliation result list uses paging.
+## Phần thiết kế tốt nên giữ
 
-## Problems Found
+- Đã bổ sung nhiều index quan trọng cho current location, movement history, transactions, quantity và lifecycle batch.
+- Import validation đã có preload context, giảm N+1 so với bản cũ.
+- Report preview đã được giới hạn số dòng theo tài liệu triển khai trước.
+- Các truy vấn đọc chính dùng `AsNoTracking()` ở nhiều nơi.
 
-### PERF-001 - Startup runs database migration automatically
+## Vấn đề phát hiện
 
-`Program.cs` calls `db.Database.MigrateAsync()` during application startup. On production-sized databases this can slow startup or introduce deployment risk.
+| ID | Mức độ | Mô tả vấn đề | Ảnh hưởng nghiệp vụ | Ảnh hưởng kỹ thuật | Bằng chứng | Phương án xử lý | Độ phức tạp | Rủi ro triển khai |
+|---|---|---|---|---|---|---|---|---|
+| PERF-001 | P1 | Move location vẫn có N+1 query theo từng line: tìm instance, bin, current location và occupant. | Phiếu chuyển nhiều dòng chậm, dễ timeout trong giờ cao điểm. | Số query tăng tuyến tính theo số dòng. | `MoveLocationService.cs:54-80`; occupant query trong loop `:76-93`. | Preload instances, bins, current locations và target-bin occupants theo tập code/bin trong request. | Trung bình | Phải giữ nguyên validation message/ordering. |
+| PERF-002 | P1 | Export/report document materialize nhiều document với `Include(Lines...)` rồi `SelectMany` trong memory, giới hạn cứng 5k/50k. | File lớn làm chậm app, tốn RAM, có thể timeout khi dữ liệu tăng. | Không streaming; projection sau `ToListAsync`. | `ImportExportService.cs:713-822`, `:843-860`. | Projection trực tiếp sang DTO/object rows trong SQL, paging/streaming export, background job cho export lớn. | Trung bình-Cao | Thay đổi export có thể ảnh hưởng định dạng file. |
+| PERF-003 | P1 | Không có concurrency token khiến retry/ghi đè hot rows dùng last-write-wins; khi nhiều user thao tác, hiệu năng và đúng đắn cùng suy giảm do deadlock/race. | Dữ liệu tồn có thể lệch khi thao tác đồng thời, hoặc người dùng gặp lỗi DB khó hiểu. | EF không phát hiện stale writes; phải dựa DB unique exception. | `AuditableEntity.cs:3-10`; `InventoryOperationBase.cs:224-240`; `InventoryDbContext.cs:119-128`, `:140-151`. | Thêm `RowVersion`, retry policy có backoff, lock theo item/bin/balance hot path. | Cao | Cần migration và xử lý lỗi UI. |
+| PERF-004 | P2 | Import list chỉ lấy 50 batch toàn hệ thống, chưa filter theo user/warehouse/status. | Người dùng khó tìm batch của mình khi dữ liệu lớn; Admin phải tải danh sách không liên quan. | Query không tận dụng scope nghiệp vụ; không có paging API. | `ImportExportService.cs:317-334`. | Thêm paging/filter/status/createdBy/warehouse scope cho import batch list. | Thấp-Trung bình | Cần cập nhật UI import. |
+| PERF-005 | P2 | `QuantityInventoryService` còn nhiều method/đường cũ có `SaveChangesAsync` và lookup trong loop, làm tăng rủi ro tái sử dụng nhầm. | Tính năng mới có thể gọi nhầm đường chậm, gây timeout hoặc dữ liệu trung gian commit nhiều lần. | Technical debt hiệu năng trong service 1.9k dòng. | `QuantityInventoryService.cs:443-547`, `:1273-1431`, tổng file 1,923 dòng. | Xóa/đánh dấu obsolete các đường không dùng; tách posting engine đã preload thành service riêng. | Trung bình | Cần test regression quantity. |
+| PERF-006 | P2 | `LocalizationCatalog` 5,639 dòng và load resource monolithic có thể tăng payload/parse trên client khi thêm ngôn ngữ. | Chuyển ngôn ngữ hoặc boot app nặng dần theo số module/ngôn ngữ. | Không chia resource theo module/route. | `LocalizationCatalog.cs` 5,639 dòng; frontend load resources toàn cục trong `app.js` theo thiết kế hiện tại. | Tách catalog theo module, lazy-load route resources, kiểm tra missing key trong CI. | Trung bình | Cần đổi contract localization. |
 
-### PERF-002 - Dashboard/report/list queries may scan large history tables
+## Nhận định tổng thể
 
-Movement history, inventory transactions, audit logs, and current locations are queried by filters such as status, document number, item code, and dates. Not all likely filter combinations have covering indexes.
-
-### PERF-003 - Import validation and confirm contain per-row database calls
-
-Several import paths validate or confirm rows with repeated `Find*` queries inside loops. Some paths preload dictionaries, but others still perform row-by-row lookups.
-
-### PERF-004 - Borrow/Repair manual operations query item/current location per line
-
-Borrow, repair, move, and return operations resolve instances and current locations inside loops. This is acceptable for small forms but can become slow for large line counts/import-like usage.
-
-### PERF-005 - Localization resources are very large and served as one catalog
-
-`LocalizationCatalog` is a large static dictionary. If the whole catalog is sent to the browser, every screen pays the payload cost even when it needs only part of it.
-
-### PERF-006 - Rebuild/delete may repeatedly rebuild current locations and stock
-
-Lifecycle operations rebuild affected item locations and recalculate stock balances. This is correct but can be expensive for broad documents or repeated delete/rebuild operations.
-
-### PERF-007 - Some UI dropdowns may load large lookup sets
-
-Lookup endpoints and page boot state can load warehouses, bins, items, parties, and users. Large master data should use server-side search/paging where possible.
-
-## Root Cause
-
-- The system favors correctness and direct EF queries over optimized batch pipelines.
-- Import and manual services share some logic but not all preload strategies.
-- Startup migration simplifies deployment but moves migration cost into app boot.
-- Localization is implemented as a static all-in-one catalog.
-
-## Proposed Solution
-
-- Move production migrations to deployment pipeline; keep startup migration only for development or explicitly configured environments.
-- Add query logging and capture slow SQL from production.
-- Add or verify indexes for:
-  - `ItemMovementHistories(DocumentNo)`, `PerformedAt`, and document/action/batch combinations.
-  - `InventoryTransactions(DocumentNo)`, `PostedAt`, and item/status filters.
-  - `CurrentItemLocations(WarehouseId, BinLocationId)`.
-  - `AuditLogs(CreatedAt)`, `AuditLogs(ReferenceNo)`.
-  - `ImportBatchRows(ImportBatchId, RowNumber)`.
-- Batch preload item instances, current locations, bins, warehouses, and parties for multi-line operations/imports.
-- Split localization resources by module or add ETag/versioned caching.
-- Ensure lookup endpoints support keyword search and pagination for large tables.
-
-## Data Migration Impact
-
-Adding indexes requires database migrations and should be tested against production data volume. Index creation may need online scheduling.
-
-## Compatibility Risks
-
-- New indexes increase write overhead.
-- Removing startup migration requires reliable deployment process.
-- Lookup paging can require frontend changes where screens currently expect full lists.
+Hệ thống đã có nhiều cải tiến hiệu năng nền. Điểm cần làm tiếp là xử lý N+1 ở posting nhiều dòng, export streaming và concurrency token để vừa tăng hiệu năng vừa giảm sai lệch dữ liệu khi nhiều người dùng.

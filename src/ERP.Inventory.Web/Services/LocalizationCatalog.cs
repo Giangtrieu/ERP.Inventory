@@ -161,6 +161,22 @@ public static class LocalizationCatalog
     private static readonly Dictionary<string, string> ViSupplement = new()
 
     {
+        ["Deleted Items"] = "Dữ liệu đã xóa",
+        ["Restore Item"] = "Khôi phục mặt hàng",
+        ["Delete Wrong Item"] = "Xóa mặt hàng sai",
+        ["Delete Reason"] = "Lý do xóa",
+        ["Restore Reason"] = "Lý do khôi phục",
+        ["DeletedAt"] = "Thời gian xóa",
+        ["DeletedBy"] = "Người xóa",
+        ["Source"] = "Nguồn",
+        ["Item was deleted successfully."] = "Đã xóa mặt hàng thành công.",
+        ["Item was restored successfully."] = "Đã khôi phục mặt hàng thành công.",
+        ["Item is already deleted."] = "Mặt hàng đã được xóa trước đó.",
+        ["Item is not deleted."] = "Mặt hàng chưa bị xóa.",
+        ["Only SuperPass can restore deleted items."] = "Chỉ SuperPass được khôi phục dữ liệu đã xóa.",
+        ["Cannot restore because serial or barcode already exists."] = "Không thể khôi phục vì Serial hoặc Barcode đã tồn tại.",
+        ["Cannot restore because original bin is no longer valid."] = "Không thể khôi phục vì vị trí cũ không còn hợp lệ.",
+        ["Cannot delete item because it has later dependencies."] = "Không thể xóa mặt hàng vì đã có chứng từ phát sinh sau.",
         ["SystemError.UserMessage"] = "Có lỗi hệ thống. Mã lỗi: {0}. Vui lòng liên hệ TE/IT.",
         ["SystemError.TimeoutMessage"] = "Hệ thống phản hồi chậm hoặc đang quá tải. Mã lỗi: {0}. Vui lòng thử lại thao tác sau.",
         ["SystemError.ValidationMessage"] = "Dữ liệu chưa hợp lệ. Mã lỗi: {0}. Vui lòng kiểm tra nội dung cảnh báo và thử lại.",
@@ -484,6 +500,22 @@ public static class LocalizationCatalog
     private static readonly Dictionary<string, string> EnSupplement = new()
 
     {
+        ["Deleted Items"] = "Deleted Items",
+        ["Restore Item"] = "Restore Item",
+        ["Delete Wrong Item"] = "Delete Wrong Item",
+        ["Delete Reason"] = "Delete Reason",
+        ["Restore Reason"] = "Restore Reason",
+        ["DeletedAt"] = "Deleted At",
+        ["DeletedBy"] = "Deleted By",
+        ["Source"] = "Source",
+        ["Item was deleted successfully."] = "Item was deleted successfully.",
+        ["Item was restored successfully."] = "Item was restored successfully.",
+        ["Item is already deleted."] = "Item is already deleted.",
+        ["Item is not deleted."] = "Item is not deleted.",
+        ["Only SuperPass can restore deleted items."] = "Only SuperPass can restore deleted items.",
+        ["Cannot restore because serial or barcode already exists."] = "Cannot restore because serial or barcode already exists.",
+        ["Cannot restore because original bin is no longer valid."] = "Cannot restore because original bin is no longer valid.",
+        ["Cannot delete item because it has later dependencies."] = "Cannot delete item because it has later dependencies.",
         ["SystemError.UserMessage"] = "System error occurred. Error code: {0}. Please contact TE/IT.",
         ["SystemError.TimeoutMessage"] = "The system is taking too long to respond or is overloaded. Error code: {0}. Please try the operation again.",
         ["SystemError.ValidationMessage"] = "The submitted data is invalid. Error code: {0}. Please review the validation messages and try again.",
@@ -745,6 +777,22 @@ public static class LocalizationCatalog
     private static readonly Dictionary<string, string> ZhSupplement = new()
 
     {
+        ["Deleted Items"] = "已删除数据",
+        ["Restore Item"] = "恢复物料",
+        ["Delete Wrong Item"] = "删除错误物料",
+        ["Delete Reason"] = "删除原因",
+        ["Restore Reason"] = "恢复原因",
+        ["DeletedAt"] = "删除时间",
+        ["DeletedBy"] = "删除人",
+        ["Source"] = "来源",
+        ["Item was deleted successfully."] = "物料已成功删除。",
+        ["Item was restored successfully."] = "物料已成功恢复。",
+        ["Item is already deleted."] = "该物料已被删除。",
+        ["Item is not deleted."] = "该物料未被删除。",
+        ["Only SuperPass can restore deleted items."] = "只有 SuperPass 可以恢复已删除的数据。",
+        ["Cannot restore because serial or barcode already exists."] = "无法恢复，因为序列号或条码已存在。",
+        ["Cannot restore because original bin is no longer valid."] = "无法恢复，因为原库位不再有效。",
+        ["Cannot delete item because it has later dependencies."] = "无法删除该物料，因为存在后续单据依赖。",
         ["SystemError.UserMessage"] = "系统发生错误。错误代码：{0}。请联系 TE/IT 获取支持。",
         ["SystemError.TimeoutMessage"] = "系统响应时间过长或负载过高。错误代码：{0}。请稍后重试该操作。",
         ["SystemError.ValidationMessage"] = "提交的数据无效。错误代码：{0}。请检查校验信息后重试。",
@@ -2483,7 +2531,8 @@ public static class LocalizationCatalog
         ["Enum.MovementActionType.Dispose"] = "Thanh lý",
 
         ["Enum.MovementActionType.Transfer"] = "Điều chuyển",
-
+        ["Enum.MovementActionType.Restored"] = "Đã khôi phục",
+        ["Enum.MovementActionType.SoftDeleted"] = "Đã xóa mềm",
 
 
         ["Enum.ImportBatchStatus.Uploaded"] = "Đã tải lên",
@@ -3338,7 +3387,8 @@ public static class LocalizationCatalog
             ["Enum.MovementActionType.Dispose"] = "Dispose",
 
             ["Enum.MovementActionType.Transfer"] = "Transfer",
-
+            ["Enum.MovementActionType.Restored"] = "Restored",
+            ["Enum.MovementActionType.SoftDeleted"] = "Soft Deleted",
 
 
             ["Enum.ImportBatchStatus.Uploaded"] = "Uploaded",
@@ -5124,7 +5174,8 @@ public static class LocalizationCatalog
         ["Enum.MovementActionType.Dispose"] = "报废",
 
         ["Enum.MovementActionType.Transfer"] = "调拨",
-
+        ["Enum.MovementActionType.Restored"] = "已恢复",
+        ["Enum.MovementActionType.SoftDeleted"] = "已软删除",
 
 
         ["Enum.ImportBatchStatus.Uploaded"] = "已上传",

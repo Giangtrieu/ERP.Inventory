@@ -62,6 +62,30 @@ public sealed class InventoryCheckService : InventoryOperationBase
         return ServiceResult<PostedDocumentDto>.Ok(ToPostedDto(nameof(InventoryCheckDocument), document.Id, document.DocumentNo, now),$"Inventory check session created: {document.DocumentNo}");
     }
 
+    public DocumentPeriodType InferPeriodType( string documentNo, DateTime sessionDate)
+    {
+        if (string.IsNullOrWhiteSpace(documentNo))
+            return DocumentPeriodType.Month;
+
+        var parts = documentNo.Split('/');
+
+        if (parts.Length >= 3)
+        {
+            var period = parts[2];
+
+            if (period.StartsWith("W", StringComparison.OrdinalIgnoreCase))
+                return DocumentPeriodType.Week;
+
+            if (period.StartsWith("M", StringComparison.OrdinalIgnoreCase))
+                return DocumentPeriodType.Month;
+
+            if (period.StartsWith("Q", StringComparison.OrdinalIgnoreCase))
+                return DocumentPeriodType.Quarter;
+        }
+
+        return DocumentPeriodType.Year;
+    }
+
     // ─── 2. Scan Batch ────────────────────────────────────────────────────────
 
     /// <summary>
@@ -132,6 +156,7 @@ public sealed class InventoryCheckService : InventoryOperationBase
                     .Include(x => x.Item)
                     .Where(x =>
                         x.IsActive &&
+                        !x.IsDeleted &&
                         x.TrackingType == ItemTrackingType.LocationTracked &&
                         x.Item != null &&
                         itemChunk.Contains(x.Item.ItemCode) &&
@@ -145,13 +170,47 @@ public sealed class InventoryCheckService : InventoryOperationBase
             .GroupBy(x => (LookupKey(x.Item!.ItemCode), LookupKey(x.SerialNumber)))
             .ToDictionary(x => x.Key, x => x.First());
 
+        var deletedInstanceKeys = new HashSet<(string ItemCode, string SerialNumber)>();
+        foreach (var itemChunk in BatchLookup(itemCodes, 500))
+        {
+            foreach (var serialChunk in BatchLookup(serialNumbers, 500))
+            {
+                var deletedKeys = await _db.ItemInstances
+                    .AsNoTracking()
+                    .Include(x => x.Item)
+                    .Where(x =>
+                        x.IsDeleted &&
+                        x.TrackingType == ItemTrackingType.LocationTracked &&
+                        x.Item != null &&
+                        itemChunk.Contains(x.Item.ItemCode) &&
+                        x.SerialNumber != null &&
+                        serialChunk.Contains(x.SerialNumber))
+                    .Select(x => new { ItemCode = x.Item!.ItemCode, x.SerialNumber })
+                    .ToListAsync(cancellationToken);
+
+                foreach (var deletedKey in deletedKeys)
+                {
+                    deletedInstanceKeys.Add((LookupKey(deletedKey.ItemCode), LookupKey(deletedKey.SerialNumber)));
+                }
+            }
+        }
+
+        foreach (var line in scanLines)
+        {
+            var key = (LookupKey(line.ItemCode), LookupKey(line.SerialNumber));
+            if (deletedInstanceKeys.Contains(key))
+            {
+                return ServiceResult<ScanBatchResultDto>.Fail($"Item {line.ItemCode} / {line.SerialNumber} has been deleted and cannot be used in inventory check.");
+            }
+        }
+
         var instanceIds = instances.Select(x => x.Id).Distinct().ToArray();
         var currentLocations = new List<CurrentItemLocation>();
         foreach (var chunk in BatchLookup(instanceIds))
         {
             currentLocations.AddRange(await _db.CurrentItemLocations
                 .Include(x => x.BinLocation)
-                .Where(x => chunk.Contains(x.ItemInstanceId))
+                .Where(x => chunk.Contains(x.ItemInstanceId) && !x.IsDeleted)
                 .ToListAsync(cancellationToken));
         }
         var locationsByInstanceId = currentLocations.ToDictionary(x => x.ItemInstanceId);
@@ -238,7 +297,7 @@ public sealed class InventoryCheckService : InventoryOperationBase
 
                 _db.CurrentItemLocations.Add(new CurrentItemLocation
                 {
-                    ItemInstanceId = newInstance.Id, LocationType = LocationType.BinLocation,
+                    ItemInstance = newInstance, LocationType = LocationType.BinLocation,
                     WarehouseId = warehouse.Id, BinLocationId = actualBin.Id,
                     ReferenceDocumentType = nameof(InventoryCheckDocument), ReferenceDocumentId = document.Id,
                     ReferenceDocumentNo = document.DocumentNo,
@@ -250,7 +309,7 @@ public sealed class InventoryCheckService : InventoryOperationBase
 
                 _db.InventoryCheckLines.Add(new InventoryCheckLine
                 {
-                    InventoryCheckDocumentId = document.Id, ItemInstanceId = newInstance.Id,
+                    InventoryCheckDocumentId = document.Id, ItemInstance = newInstance,
                     SystemBinLocationId = null, ActualBinLocationId = actualBin.Id,
                     Result = InventoryCheckLineResult.Extra,
                     Note = line.Note ?? $"Extra item found at {actualBin.BinCode}.",
@@ -375,8 +434,20 @@ public sealed class InventoryCheckService : InventoryOperationBase
 
         // Lấy tất cả ItemInstance đã được scan trong phiên này (Matched + WrongLocation + Extra)
         var scannedInstanceIds = (await _db.InventoryCheckLines
-            .Where(x => x.InventoryCheckDocumentId == documentId && x.Result != InventoryCheckLineResult.Missing && x.ItemInstanceId.HasValue)
+            .Where(x => x.InventoryCheckDocumentId == documentId && x.Result != InventoryCheckLineResult.Missing && x.ItemInstanceId.HasValue 
+            && x.ItemInstance != null && x.ItemInstance.IsActive && !x.ItemInstance.IsDeleted)
             .Select(x => x.ItemInstanceId!.Value).ToListAsync(cancellationToken)).ToHashSet();
+
+        //var checkedBinIds = (await _db.InventoryCheckLines
+        //    .AsNoTracking()
+        //    .Where(x => x.InventoryCheckDocumentId == documentId && x.Result != InventoryCheckLineResult.Missing)
+        //    .Select(x => new { x.SystemBinLocationId, x.ActualBinLocationId })
+        //    .ToListAsync(cancellationToken))
+        //    .SelectMany(x => new[] { x.SystemBinLocationId, x.ActualBinLocationId })
+        //    .Where(x => x.HasValue)
+        //    .Select(x => x!.Value)
+        //    .Distinct()
+        //    .ToArray();
 
         // === MISSING: items InStock trong kho chưa được scan ===
         var stockCandidateQuery = _db.CurrentItemLocations
@@ -384,10 +455,12 @@ public sealed class InventoryCheckService : InventoryOperationBase
             .Include(x => x.BinLocation)
             .Where(x =>
                 x.WarehouseId == document.WarehouseId &&
+                !x.IsDeleted &&
                 x.BinLocation != null &&
                 x.BinLocation.UsageType == BinLocationUsageType.LocationTracked &&
                 x.ItemInstance != null &&
                 x.ItemInstance.IsActive &&
+                !x.ItemInstance.IsDeleted &&
                 x.ItemInstance.TrackingType == ItemTrackingType.LocationTracked &&
                 (x.ItemInstance.Status == ItemStatus.InStock ||
                  x.ItemInstance.Status == ItemStatus.Normal ||
@@ -401,10 +474,26 @@ public sealed class InventoryCheckService : InventoryOperationBase
             stockCandidateQuery = stockCandidateQuery.Where(x => !scannedInstanceIdArray.Contains(x.ItemInstanceId));
         }
 
-        var stockCandidateLocations = await stockCandidateQuery.ToListAsync(cancellationToken);
+        //var filterCheckedBinsInSql = checkedBinIds.Length > 0 && checkedBinIds.Length <= 1800;
+        //if (filterCheckedBinsInSql)
+        //{
+        //    stockCandidateQuery = stockCandidateQuery.Where(x => x.BinLocationId.HasValue && checkedBinIds.Contains(x.BinLocationId.Value));
+        //}
+
+        var stockCandidateLocations = (await stockCandidateQuery.ToListAsync(cancellationToken))
+            .GroupBy(x => x.ItemInstanceId)
+            .Select(x => x.First())
+            .ToList();
         var allInStockLocations = filterScannedInSql
             ? stockCandidateLocations
             : stockCandidateLocations.Where(x => !scannedInstanceIds.Contains(x.ItemInstanceId)).ToList();
+        //if (checkedBinIds.Length > 0 && !filterCheckedBinsInSql)
+        //{
+        //    var checkedBinSet = checkedBinIds.ToHashSet();
+        //    allInStockLocations = allInStockLocations
+        //        .Where(x => x.BinLocationId.HasValue && checkedBinSet.Contains(x.BinLocationId.Value))
+        //        .ToList();
+        //}
 
         var missingBinIds = allInStockLocations
             .Select(x => x.BinLocationId)
@@ -416,19 +505,29 @@ public sealed class InventoryCheckService : InventoryOperationBase
             .Select(x => x.ItemInstance!.ItemId)
             .Distinct()
             .ToArray();
+        var missingStatuses = allInStockLocations
+            .Select(x => x.ItemInstance!.Status)
+            .Distinct()
+            .ToArray();
+        var stockBalanceMap = new Dictionary<(int WarehouseId, int? BinLocationId, int ItemId, ItemStatus Status), StockBalance>();
         if (missingBinIds.Length > 0 && missingItemIds.Length > 0)
         {
             foreach (var binChunk in BatchLookup(missingBinIds, 500))
             {
                 foreach (var itemChunk in BatchLookup(missingItemIds, 500))
                 {
-                    await _db.StockBalances
+                    var balances = await _db.StockBalances
                         .Where(x =>
                             x.WarehouseId == document.WarehouseId &&
                             x.BinLocationId.HasValue &&
                             binChunk.Contains(x.BinLocationId.Value) &&
-                            itemChunk.Contains(x.ItemId))
-                        .LoadAsync(cancellationToken);
+                            itemChunk.Contains(x.ItemId) &&
+                            missingStatuses.Contains(x.Status))
+                        .ToListAsync(cancellationToken);
+                    foreach (var balance in balances)
+                    {
+                        stockBalanceMap.TryAdd((balance.WarehouseId, balance.BinLocationId, balance.ItemId, balance.Status), balance);
+                    }
                 }
             }
         }
@@ -452,7 +551,7 @@ public sealed class InventoryCheckService : InventoryOperationBase
             var oldBinId = missingLoc.BinLocationId;
             var oldWarehouseId = missingLoc.WarehouseId;
             if (oldBinId.HasValue && oldWarehouseId.HasValue)
-                await ApplyStockDeltaAsync(oldWarehouseId.Value, oldBinId, missingInstance.ItemId, missingInstance.Status, -1, user, cancellationToken);
+                ApplyMissingStockDelta(oldWarehouseId.Value, oldBinId, missingInstance.ItemId, missingInstance.Status, -1);
 
             missingLoc.BinLocationId = null;
             missingLoc.ReferenceDocumentType = nameof(InventoryCheckDocument);
@@ -479,6 +578,32 @@ public sealed class InventoryCheckService : InventoryOperationBase
 
         return ServiceResult<PostedDocumentDto>.Ok(ToPostedDto(nameof(InventoryCheckDocument), documentId, document.DocumentNo, now),
             $"Inventory check finalized: {allInStockLocations.Count} missing items detected.");
+
+        void ApplyMissingStockDelta(int warehouseId, int? binLocationId, int itemId, ItemStatus status, decimal delta)
+        {
+            if (delta == 0) return;
+
+            var key = (warehouseId, binLocationId, itemId, status);
+            if (!stockBalanceMap.TryGetValue(key, out var balance))
+            {
+                balance = new StockBalance
+                {
+                    WarehouseId = warehouseId,
+                    BinLocationId = binLocationId,
+                    ItemId = itemId,
+                    Status = status,
+                    Quantity = 0,
+                    CreatedAt = now,
+                    CreatedBy = user.UserName
+                };
+                _db.StockBalances.Add(balance);
+                stockBalanceMap[key] = balance;
+            }
+
+            balance.Quantity += delta;
+            balance.UpdatedAt = now;
+            balance.UpdatedBy = user.UserName;
+        }
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────

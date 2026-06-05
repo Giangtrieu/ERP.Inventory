@@ -38,6 +38,7 @@ public static class DependencyInjection
         services.AddScoped<IDocumentRollbackService, DocumentRollbackService>();
         services.AddScoped<IInboundCascadeCleanupService, InboundCascadeCleanupService>();
         services.AddScoped<IDocumentLifecycleService, DocumentLifecycleService>();
+        services.AddScoped<IItemSoftDeleteService, ItemSoftDeleteService>();
         services.AddScoped<ILogErrorSystemService, LogErrorSystemService>();
         services.AddScoped<InventoryCheckService>();
         services.AddScoped<AdjustmentService>();

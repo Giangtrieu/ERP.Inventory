@@ -32,6 +32,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
     private readonly IDocumentRollbackService _rollbackService;
     private readonly ILogErrorSystemService _errorLog;
     private readonly IInboundCascadeCleanupService _inboundCascadeCleanup;
+    private readonly IItemSoftDeleteService _itemSoftDeleteService;
 
     public DocumentLifecycleService(
         InventoryDbContext db,
@@ -45,7 +46,8 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         AdjustmentService adjustmentService,
         IDocumentRollbackService rollbackService,
         ILogErrorSystemService errorLog,
-        IInboundCascadeCleanupService inboundCascadeCleanup)
+        IInboundCascadeCleanupService inboundCascadeCleanup,
+        IItemSoftDeleteService itemSoftDeleteService)
     {
         _db = db;
         _clock = clock;
@@ -59,6 +61,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         _rollbackService = rollbackService;
         _errorLog = errorLog;
         _inboundCascadeCleanup = inboundCascadeCleanup;
+        _itemSoftDeleteService = itemSoftDeleteService;
     }
 
     public async Task<ServiceResult<DocumentMutationResultDto>> DeleteAsync(string type, int id, CurrentUserContext user, CancellationToken cancellationToken = default)
@@ -759,14 +762,14 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             var key = SerialKey(item.ItemCode, line.SerialNumber);
             if (!incomingKeys.Add(key)) { errors.Add($"Serial {line.SerialNumber} is duplicated in this inbound document."); continue; }
             existingByKey.TryGetValue(key, out var existing);
-            if (existing == null && await _db.ItemInstances.AnyAsync(x => x.ItemId == item.Id && x.SerialNumber == (line.SerialNumber ?? string.Empty).Trim(), cancellationToken))
+            if (existing == null && await _db.ItemInstances.AnyAsync(x => x.ItemId == item.Id && x.SerialNumber == (line.SerialNumber ?? string.Empty).Trim() && !x.IsDeleted, cancellationToken))
             {
                 errors.Add($"Serial {line.SerialNumber} already exists for item {item.ItemCode}.");
                 continue;
             }
             var existingInstanceId = existing?.ItemInstanceId ?? 0;
             if ((existing == null || existing.BinLocationId != bin.Id) &&
-                await _db.CurrentItemLocations.AnyAsync(x => x.BinLocationId == bin.Id && x.ItemInstanceId != existingInstanceId && !replacementRemovedInstanceIds.Contains(x.ItemInstanceId) && x.ItemInstance != null && x.ItemInstance.IsActive && x.ItemInstance.Status != ItemStatus.Lost && x.ItemInstance.Status != ItemStatus.Disposed, cancellationToken))
+                await _db.CurrentItemLocations.AnyAsync(x => x.BinLocationId == bin.Id && !x.IsDeleted && x.ItemInstanceId != existingInstanceId && !replacementRemovedInstanceIds.Contains(x.ItemInstanceId) && x.ItemInstance != null && x.ItemInstance.IsActive && !x.ItemInstance.IsDeleted && x.ItemInstance.Status != ItemStatus.Lost && x.ItemInstance.Status != ItemStatus.Disposed, cancellationToken))
             {
                 errors.Add($"Bin {bin.FullPath} already contains another active item.");
                 continue;
@@ -934,7 +937,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
                     x.IsActive, cancellationToken);
                 if (targetBin == null) { errors.Add($"Target bin {line.TargetBinCode} not found."); continue; }
                 if (targetBin.WarehouseId != document.WarehouseId) { errors.Add($"Target bin {line.TargetBinCode} does not belong to warehouse."); continue; }
-                if (await _db.CurrentItemLocations.AnyAsync(x => x.BinLocationId == targetBin.Id && x.ItemInstanceId != instance.Id && x.ItemInstance != null && x.ItemInstance.IsActive && x.ItemInstance.Status != ItemStatus.Lost && x.ItemInstance.Status != ItemStatus.Disposed, cancellationToken))
+                if (await _db.CurrentItemLocations.AnyAsync(x => x.BinLocationId == targetBin.Id && !x.IsDeleted && x.ItemInstanceId != instance.Id && x.ItemInstance != null && x.ItemInstance.IsActive && !x.ItemInstance.IsDeleted && x.ItemInstance.Status != ItemStatus.Lost && x.ItemInstance.Status != ItemStatus.Disposed, cancellationToken))
                 {
                     errors.Add($"Target bin {targetBin.FullPath} already contains another active item.");
                     continue;
@@ -1047,7 +1050,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
         var code = itemCode.Trim();
         var sn = serialNumber.Trim();
         return await _db.ItemInstances.Include(x => x.Item)
-            .FirstOrDefaultAsync(x => x.Item != null && x.Item.ItemCode == code && x.SerialNumber == sn, ct);
+            .FirstOrDefaultAsync(x => !x.IsDeleted && x.Item != null && x.Item.ItemCode == code && x.SerialNumber == sn, ct);
     }
 
     private async Task<ServiceResult<DocumentMutationResultDto>> AddMoveEffectsAsync(MoveDocument document, IReadOnlyCollection<(MoveLocationLineRequest Line, ItemInstance Instance, BinLocation TargetBin)> rows, CurrentUserContext user, CancellationToken ct)
@@ -1058,7 +1061,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
                 .Include(x => x.BinLocation)
                 .Include(x => x.ExternalParty)
                 .Include(x => x.Warehouse)
-                .FirstOrDefaultAsync(x => x.ItemInstanceId == row.Instance.Id, ct);
+                .FirstOrDefaultAsync(x => x.ItemInstanceId == row.Instance.Id && !x.IsDeleted, ct);
             if (current == null) return ServiceResult<DocumentMutationResultDto>.Fail($"Current location for item instance {row.Instance.Id} does not exist.");
             if (!current.WarehouseId.HasValue || current.WarehouseId.Value != document.WarehouseId || !current.BinLocationId.HasValue)
                 return ServiceResult<DocumentMutationResultDto>.Fail($"Item instance {row.Line.ItemCode}/{row.Line.SerialNumber} does not belong to selected warehouse.");
@@ -1615,14 +1618,15 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
                     return ServiceResult<PostedDocumentDto>.Fail("Invalid inventory check payload.");
                 }
 
-                var session = await _inventoryCheckService.CreateSessionAsync(new InventoryCheckSessionRequest
-                {
-                    WarehouseId = request.WarehouseId,
-                    SessionDate = request.DocumentDate,
-                    CountMethod = request.CountMethod,
-                    ResponsibleStaff = request.ResponsibleStaff,
-                    Note = request.Note
-                }, user, cancellationToken);
+                    var session = await _inventoryCheckService.CreateSessionAsync(new InventoryCheckSessionRequest
+                    {
+                        WarehouseId = request.WarehouseId,
+                        SessionDate = request.DocumentDate,
+                        CountMethod = request.CountMethod,
+                        ResponsibleStaff = request.ResponsibleStaff,
+                        DocumentPeriodType = _inventoryCheckService.InferPeriodType(request.DocumentNo ,request.DocumentDate),
+                        Note = request.Note
+                    }, user, cancellationToken); ;
                 if (!session.Success || session.Data == null)
                 {
                     return session;
@@ -1861,12 +1865,24 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
 
         _db.InventoryTransactions.RemoveRange(_db.InventoryTransactions.Where(x => x.DocumentType == nameof(InventoryCheckDocument) && x.DocumentId == id));
         _db.ItemMovementHistories.RemoveRange(_db.ItemMovementHistories.Where(x => x.DocumentType == nameof(InventoryCheckDocument) && x.DocumentId == id));
-        _db.CurrentItemLocations.RemoveRange(_db.CurrentItemLocations.Where(x => itemExtraIds.Contains(x.ItemInstanceId)));
-        _db.ItemInstances.RemoveRange(_db.ItemInstances.Where(x => itemExtraIds.Contains(x.Id)));
+        foreach (var itemExtraId in itemExtraIds)
+        {
+            var softDelete = await _itemSoftDeleteService.SoftDeleteWrongItemAsync(
+                itemExtraId,
+                "Deleted because inventory check document was deleted.",
+                user,
+                nameof(InventoryCheckDocument),
+                document.Id,
+                cancellationToken);
+            if (!softDelete.Success)
+            {
+                return ServiceResult<DocumentMutationResultDto>.Fail(softDelete.Errors);
+            }
+        }
         _db.InventoryCheckLines.RemoveRange(document.Lines);
         _db.InventoryCheckDocuments.Remove(document);
         AddAuditLog(user, "Delete", nameof(InventoryCheckDocument), document.Id, document.DocumentNo,
-            $"Deleted inventory check document. Removed {itemExtraIds.Length} surplus item instance(s) created by this inventory check.");
+            $"Deleted inventory check document. Soft deleted {itemExtraIds.Length} surplus item instance(s) created by this inventory check.");
         await _db.SaveChangesAsync(cancellationToken);
         await RebuildLocationTrackedInstancesAsync(rebuildInstanceIds, cancellationToken);
         await CleanupPostSideEffectsAsync(nameof(InventoryCheckDocument), id, document.DocumentNo, cancellationToken);
@@ -2796,9 +2812,11 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             .Where(x =>
                 x.BinLocationId.HasValue &&
                 x.WarehouseId.HasValue &&
+                !x.IsDeleted &&
                 x.ItemInstance != null &&
                 ids.Contains(x.ItemInstance.ItemId) &&
                 x.ItemInstance.IsActive &&
+                !x.ItemInstance.IsDeleted &&
                 x.ItemInstance.TrackingType == ItemTrackingType.LocationTracked)
             .GroupBy(x => new
             {
@@ -3220,8 +3238,8 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             warehouseId = document.WarehouseId,
             documentDate = document.DocumentDate,
             note = document.Note,
-            ownerName = document.Lines.Select(x => x.ItemInstance!.OwnerName).FirstOrDefault(x => x != null),
-            lines = document.Lines.Select(x => new
+            ownerName = document.Lines.Where(x => x.ItemInstance == null || !x.ItemInstance.IsDeleted).Select(x => x.ItemInstance!.OwnerName).FirstOrDefault(x => x != null),
+            lines = document.Lines.Where(x => x.ItemInstance == null || !x.ItemInstance.IsDeleted).Select(x => new
             {
                 itemCode = x.Item?.ItemCode ?? string.Empty,
                 serialNumber = x.SerialNumber,
@@ -3248,7 +3266,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             warehouseId = document.WarehouseId,
             documentDate = document.DocumentDate,
             note = document.Note,
-            lines = document.Lines.Select(x => new
+            lines = document.Lines.Where(x => x.ItemInstance == null || !x.ItemInstance.IsDeleted).Select(x => new
             {
                 itemCode = x.ItemInstance?.Item?.ItemCode ?? string.Empty,
                 serialNumber = x.ItemInstance?.SerialNumber ?? string.Empty,
@@ -3275,7 +3293,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             warehouseId = document.WarehouseId,
             documentDate = document.DocumentDate,
             reason = document.Reason,
-            lines = document.Lines.Select(x => new
+            lines = document.Lines.Where(x => x.ItemInstance == null || !x.ItemInstance.IsDeleted).Select(x => new
             {
                 itemCode = x.ItemInstance?.Item?.ItemCode ?? string.Empty,
                 serialNumber = x.ItemInstance?.SerialNumber,
@@ -3314,7 +3332,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             responsibleStaff = document.ResponsibleStaff,
             sessionStatus = document.SessionStatus,
             note = document.Note,
-            lines = document.Lines.Select(x => new
+            lines = document.Lines.Where(x => x.ItemInstance == null || !x.ItemInstance.IsDeleted).Select(x => new
             {
                 itemCode = x.ItemInstance?.Item?.ItemCode ?? string.Empty,
                 serialNumber = x.ItemInstance?.SerialNumber ?? string.Empty,
@@ -3347,7 +3365,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             approvedBy = document.ApprovedBy,
             borrowerPhone = document.BorrowerPhone,
             departmentOwner = document.DepartmentOwner,
-            lines = document.Lines.Select(x => new
+            lines = document.Lines.Where(x => x.ItemInstance == null || !x.ItemInstance.IsDeleted).Select(x => new
             {
                 itemCode = x.ItemInstance?.Item?.ItemCode ?? string.Empty,
                 serialNumber = x.ItemInstance?.SerialNumber ?? string.Empty,
@@ -3373,7 +3391,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             .Include(x => x.Lines).ThenInclude(x => x.TargetBinLocation)
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (document == null) return null;
-        var lines = document.Lines.Where(x => x.IsReturned).ToArray();
+        var lines = document.Lines.Where(x => x.IsReturned && (x.ItemInstance == null || !x.ItemInstance.IsDeleted)).ToArray();
         return new
         {
             borrowDocumentId = document.Id,
@@ -3412,7 +3430,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             sendDate = document.DocumentDate,
             expectedReturnDate = document.ExpectedReturnDate,
             reason = document.Reason,
-            lines = document.Lines.Select(x => new
+            lines = document.Lines.Where(x => x.ItemInstance == null || !x.ItemInstance.IsDeleted).Select(x => new
             {
                 itemCode = x.ItemInstance?.Item?.ItemCode ?? string.Empty,
                 serialNumber = x.ItemInstance?.SerialNumber ?? string.Empty,
@@ -3430,7 +3448,7 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             .Include(x => x.Lines).ThenInclude(x => x.TargetBinLocation)
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (document == null) return null;
-        var lines = document.Lines.Where(x => x.IsReturned).ToArray();
+        var lines = document.Lines.Where(x => x.IsReturned && (x.ItemInstance == null || !x.ItemInstance.IsDeleted)).ToArray();
         return new
         {
             repairDocumentId = document.Id,
@@ -3466,6 +3484,21 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             : await _db.ItemCategories
                 .Where(x => categoryIds.Contains(x.Id))
                 .ToDictionaryAsync(x => x.Id, x => x.CategoryCode, cancellationToken);
+        var quantityLineKeys = document.Lines
+            .Select(x => new { x.ItemId, SnCode = x.SnCode ?? string.Empty })
+            .Distinct()
+            .ToArray();
+        var quantityItemIds = quantityLineKeys.Select(x => x.ItemId).Distinct().ToArray();
+        var quantitySnCodes = quantityLineKeys.Select(x => x.SnCode).Distinct().ToArray();
+        var deletedQuantityKeys = await _db.ItemInstances
+            .AsNoTracking()
+            .Where(x => x.IsDeleted && x.TrackingType == ItemTrackingType.QuantityOnly)
+            .Where(x => quantityItemIds.Contains(x.ItemId) && quantitySnCodes.Contains(x.SerialNumber ?? string.Empty))
+            .Select(x => new { x.ItemId, SnCode = x.SerialNumber ?? string.Empty })
+            .ToArrayAsync(cancellationToken);
+        var deletedQuantitySet = deletedQuantityKeys
+            .Select(x => $"{x.ItemId}:{x.SnCode.Trim().ToUpperInvariant()}")
+            .ToHashSet(StringComparer.Ordinal);
         return new
         {
             documentNo = document.DocumentNo,
@@ -3483,7 +3516,9 @@ public sealed class DocumentLifecycleService : IDocumentLifecycleService
             receiverPhone = document.ReceiverPhone,
             note = document.Note,
             ownerName = (string?)null,
-            lines = document.Lines.Select(x => new
+            lines = document.Lines
+            .Where(x => !deletedQuantitySet.Contains($"{x.ItemId}:{(x.SnCode ?? string.Empty).Trim().ToUpperInvariant()}"))
+            .Select(x => new
             {
                 itemCategoryCode = x.Item != null && categoryMap.TryGetValue(x.Item.CategoryId, out var categoryCode) ? categoryCode : string.Empty,
                 itemCode = x.Item?.ItemCode ?? string.Empty,

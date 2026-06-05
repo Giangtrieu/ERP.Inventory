@@ -29,6 +29,24 @@ public sealed class DocumentDependencyDto
     public IReadOnlyCollection<string> Reasons { get; init; } = Array.Empty<string>();
 }
 
+public sealed class DeletedItemDto
+{
+    public int ItemInstanceId { get; init; }
+    public string ItemCode { get; init; } = string.Empty;
+    public string ItemName { get; init; } = string.Empty;
+    public string? SerialNumber { get; init; }
+    public string? Barcode { get; init; }
+    public string? Warehouse { get; init; }
+    public string? BinLocation { get; init; }
+    public string Status { get; init; } = string.Empty;
+    public DateTime? DeletedAt { get; init; }
+    public string? DeletedBy { get; init; }
+    public string? DeleteReason { get; init; }
+    public string? DeleteSourceDocumentType { get; init; }
+    public int? DeleteSourceDocumentId { get; init; }
+    public bool CanRestore { get; init; }
+}
+
 public sealed class DocumentAuditEventDto
 {
     public DateTime Timestamp { get; init; }

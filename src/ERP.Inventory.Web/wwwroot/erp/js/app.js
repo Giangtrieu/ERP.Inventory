@@ -440,6 +440,7 @@ function renderMenu() {
 }
 
 function canOpenScreen(screen) {
+  if (screen === 'deleted-items') return isSuper();
   if (screen === 'system-errors') return isSuper();
   if (screen === 'system') return isAdmin();
   if (['warehouse-structure', 'master-data', 'adjustment', 'reconciliation'].includes(screen)) return AppState.permissions.canManage;

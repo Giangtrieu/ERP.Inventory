@@ -33,6 +33,8 @@ public sealed class TrackingService : ITrackingService
         IQueryable<CurrentItemLocation> query = _db.CurrentItemLocations.AsNoTracking()
             .Where(x =>
                 x.ItemInstance != null &&
+                !x.IsDeleted &&
+                !x.ItemInstance.IsDeleted &&
                 x.ItemInstance.Item != null &&
                 (
                     x.ItemInstance.Item.ItemCode.Contains(normalized) ||
@@ -85,7 +87,7 @@ public sealed class TrackingService : ITrackingService
                 LocationPath = GetLocationPath(x.BinCode, x.ExternalLocationText, x.ExternalPartyName, x.WarehouseName),
                 UpdatedAt = x.UpdatedLocationAt,
                 UpdatedBy = x.UpdatedLocationBy,
-                CanMove = (string.IsNullOrEmpty(x.BinCode) &&  (x.Status == ItemStatus.Normal || x.Status == ItemStatus.Damaged ||
+                CanMove = (!string.IsNullOrEmpty(x.BinCode) &&  (x.Status == ItemStatus.Normal || x.Status == ItemStatus.Damaged ||
                           x.Status == ItemStatus.Scrapped || x.Status == ItemStatus.InStock)),
                 CanSendRepair =  x.Status == ItemStatus.Normal ||  x.Status == ItemStatus.InStock || x.Status == ItemStatus.Damaged,
                 CanLend =  x.Status == ItemStatus.Normal ||  x.Status == ItemStatus.InStock,
@@ -108,7 +110,7 @@ public sealed class TrackingService : ITrackingService
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         var currentLocation = await _db.CurrentItemLocations.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.ItemInstanceId == itemInstanceId, cancellationToken);
+            .FirstOrDefaultAsync(x => x.ItemInstanceId == itemInstanceId && !x.IsDeleted, cancellationToken);
 
         if (currentLocation?.WarehouseId != null && !user.CanAccessWarehouse(currentLocation.WarehouseId.Value))
         {
@@ -164,6 +166,7 @@ public sealed class TrackingService : ITrackingService
 
         var query = _db.CurrentItemLocations
             .AsNoTracking()
+            .Where(x => !x.IsDeleted && x.ItemInstance != null && !x.ItemInstance.IsDeleted)
             .AsQueryable();
 
         // ── Warehouse scope (in SQL) ────────────────────────────────────────────
@@ -270,6 +273,7 @@ public sealed class TrackingService : ITrackingService
 
         var query = _db.CurrentItemLocations
             .AsNoTracking()
+            .Where(x => !x.IsDeleted && x.ItemInstance != null && !x.ItemInstance.IsDeleted)
             .AsQueryable();
 
         // ================= FILTER =================

@@ -25,8 +25,9 @@ public sealed class ManagementController : ManagementBaseController
     private readonly UserManagementController _userManagement;
     private readonly SystemController _system;
     private readonly ILogErrorSystemService _errorLog;
+    private readonly IItemSoftDeleteService _itemSoftDeleteService;
 
-    public ManagementController(InventoryDbContext db, ICurrentUserService currentUserService, ILogErrorSystemService errorLog)
+    public ManagementController(InventoryDbContext db, ICurrentUserService currentUserService, ILogErrorSystemService errorLog, IItemSoftDeleteService itemSoftDeleteService)
         : base(db, currentUserService)
     {
         _masterData = new MasterDataController(db, currentUserService);
@@ -34,6 +35,7 @@ public sealed class ManagementController : ManagementBaseController
         _userManagement = new UserManagementController(db, currentUserService);
         _system = new SystemController(db, currentUserService);
         _errorLog = errorLog;
+        _itemSoftDeleteService = itemSoftDeleteService;
     }
 
     // ─── Master Data ──────────────────────────────────────────
@@ -103,7 +105,7 @@ public sealed class ManagementController : ManagementBaseController
         var user = CurrentUserService.GetCurrentUser();
         var row = await Db.ItemInstances
             .AsNoTracking()
-            .Where(x => x.Id == id)
+            .Where(x => x.Id == id && !x.IsDeleted)
             .Select(x => new
             {
                 x.Id,
@@ -117,7 +119,7 @@ public sealed class ManagementController : ManagementBaseController
                 x.OwnerName,
                 Status = x.Status.ToString(),
                 CurrentLocation = Db.CurrentItemLocations
-                    .Where(l => l.ItemInstanceId == x.Id)
+                    .Where(l => l.ItemInstanceId == x.Id && !l.IsDeleted)
                     .Select(l => l.BinLocation != null
                         ? l.BinLocation.FullPath
                         : !string.IsNullOrWhiteSpace(l.ExternalLocationText)
@@ -125,7 +127,7 @@ public sealed class ManagementController : ManagementBaseController
                             : (l.ExternalParty != null ? l.ExternalParty.Name : (l.Warehouse != null ? l.Warehouse.Name : "Unknown")))
                     .FirstOrDefault(),
                 WarehouseId = Db.CurrentItemLocations
-                    .Where(l => l.ItemInstanceId == x.Id)
+                    .Where(l => l.ItemInstanceId == x.Id && !l.IsDeleted)
                     .Select(l => l.WarehouseId)
                     .FirstOrDefault()
             })
@@ -143,11 +145,11 @@ public sealed class ManagementController : ManagementBaseController
         if (validation != null) return validation;
 
         var user = CurrentUserService.GetCurrentUser();
-        var entity = await Db.ItemInstances.FirstOrDefaultAsync(x => x.Id == id, ct);
+        var entity = await Db.ItemInstances.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, ct);
         if (entity == null) return NotFound();
 
         var currentWarehouseId = await Db.CurrentItemLocations
-            .Where(x => x.ItemInstanceId == id)
+            .Where(x => x.ItemInstanceId == id && !x.IsDeleted)
             .Select(x => x.WarehouseId)
             .FirstOrDefaultAsync(ct);
         if (currentWarehouseId.HasValue && !user.CanAccessWarehouse(currentWarehouseId.Value)) return Forbid();
@@ -165,10 +167,10 @@ public sealed class ManagementController : ManagementBaseController
         var documentNo = NullIfWhiteSpace(request.DocumentNo);
         var ownerName = NullIfWhiteSpace(request.OwnerName);
 
-        if (serialNumber != null && await Db.ItemInstances.AnyAsync(x => x.Id != id && x.ItemId == itemId && x.SerialNumber == serialNumber, ct))
+        if (serialNumber != null && await Db.ItemInstances.AnyAsync(x => x.Id != id && x.ItemId == itemId && x.SerialNumber == serialNumber && !x.IsDeleted, ct))
             return Json(new { success = false, message = $"Serial {serialNumber} already exists for item {itemId}." });
 
-        if (barcode != null && await Db.ItemInstances.AnyAsync(x => x.Id != id && x.Barcode == barcode, ct))
+        if (barcode != null && await Db.ItemInstances.AnyAsync(x => x.Id != id && x.Barcode == barcode && !x.IsDeleted, ct))
             return Json(new { success = false, message = $"Barcode {barcode} already exists." });
 
         entity.ItemId = itemId;
@@ -187,64 +189,28 @@ public sealed class ManagementController : ManagementBaseController
     [HttpDelete("ItemInstanceDelete/{id:int}")]
     [Authorize(Roles = "Admin,Warehouse Manager")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> DeleteItemInstance(int id, CancellationToken ct)
+    public async Task<IActionResult> DeleteItemInstance(int id, [FromBody] DeleteWrongItemRequest? request, CancellationToken ct)
     {
         if (id == 0)return Json(new { success = false, message = "Item instance not found." });
 
         var user = CurrentUserService.GetCurrentUser();
-        var entity = await Db.ItemInstances.FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (entity == null)return NotFound();
+        var result = await _itemSoftDeleteService.SoftDeleteWrongItemAsync(id, request?.Reason, user, cancellationToken: ct);
+        return Json(result);
+    }
 
-        var hasDelete =await Db.BorrowDocumentLines.AnyAsync(x => x.ItemInstanceId == id, ct) || await Db.RepairDocumentLines.AnyAsync(x => x.ItemInstanceId == id, ct);
-        if (hasDelete)
-        {
-            return Json(new{ success = false,message = "Cannot hard delete this record because it is referenced by operational data. Use soft delete instead."});
-        }
+    [HttpGet("DeletedItems")]
+    public async Task<IActionResult> DeletedItems([FromQuery] string? keyword = null, [FromQuery] int? warehouseId = null, CancellationToken ct = default)
+    {
+        var result = await _itemSoftDeleteService.GetDeletedItemsAsync(keyword, warehouseId, CurrentUserService.GetCurrentUser(), ct);
+        return Json(result);
+    }
 
-        var current = await Db.CurrentItemLocations .Where(x => x.ItemInstanceId == id).ToListAsync(ct);
-
-        if (!current.Any())return NotFound();
-
-        var history = await Db.ItemMovementHistories.Where(x => x.ItemInstanceId == id).ToListAsync(ct);
-        var itemTransaction = await Db.InventoryTransactions.Where(x => x.ItemInstanceId == id).ToListAsync(ct);
-        var inboundLog = await Db.InboundDocumentLogs.Where(x => x.ItemInstanceId == id).ToListAsync(ct);
-        var inboundLine = await Db.InboundDocumentLines .Where(x => x.ItemInstanceId == id) .ToListAsync(ct);
-        var adjustLog = await Db.AdjustmentDocumentLogs.Where(x => x.ItemInstanceId == id).ToListAsync(ct);
-        var adjustLine = await Db.AdjustmentDocumentLines.Where(x => x.ItemInstanceId == id).ToListAsync(ct);
-        var moveLine = await Db.MoveDocumentLines.Where(x => x.ItemInstanceId == id).ToListAsync(ct);
-        var inventoryCheck = await Db.InventoryCheckLines.Where(x => x.ItemInstanceId == id).ToListAsync(ct);
-
-        await using var transaction = await Db.Database.BeginTransactionAsync(ct);
-        try
-        {
-            if (inboundLog.Any()) Db.InboundDocumentLogs.RemoveRange(inboundLog);
-            if (inboundLine.Any()) Db.InboundDocumentLines.RemoveRange(inboundLine);
-            if (adjustLog.Any()) Db.AdjustmentDocumentLogs.RemoveRange(adjustLog);
-            if (adjustLine.Any()) Db.AdjustmentDocumentLines.RemoveRange(adjustLine);
-            if (moveLine.Any()) Db.MoveDocumentLines.RemoveRange(moveLine);
-            if (inventoryCheck.Any()) Db.InventoryCheckLines.RemoveRange(inventoryCheck);
-            if (itemTransaction.Any()) Db.InventoryTransactions.RemoveRange(itemTransaction);
-            if (history.Any()) Db.ItemMovementHistories.RemoveRange(history);
-
-            Db.CurrentItemLocations.RemoveRange(current);
-            Db.ItemInstances.Remove(entity);
-            AddAudit("HardDelete", nameof(ItemInstance), entity.Id, entity.SerialNumber ?? entity.Barcode ?? entity.Id.ToString());
-
-            await Db.SaveChangesAsync(ct);
-            await transaction.CommitAsync(ct);
-            return Json(new{ success = true, message = "Deleted successfully."});
-        }
-        catch (Exception ex)
-        {
-            await transaction.RollbackAsync(ct);
-            user = CurrentUserService.GetCurrentUser();
-            var log = await _errorLog.LogAsync(ex, new LogErrorContext(
-                Module: nameof(ManagementController),
-                Action: "HardDeleteItemInstance",
-                UserId: user.UserId,
-                UserName: user.UserName), CancellationToken.None);
-            return Json(new { success = false, message = SystemErrorMessages.Create(HttpContext, log.ErrorCode, ex), errorCode = log.ErrorCode });
-        }
+    [HttpPost("RestoreDeletedItem/{id:int}")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RestoreDeletedItem(int id, [FromBody] RestoreDeletedItemRequest? request, CancellationToken ct)
+    {
+        var result = await _itemSoftDeleteService.RestoreDeletedItemAsync(id, request?.Reason, CurrentUserService.GetCurrentUser(), cancellationToken:ct);
+        return Json(result);
     }
 
     // ─── Warehouse Structure ──────────────────────────────────
@@ -312,5 +278,15 @@ public sealed class ManagementController : ManagementBaseController
         public string? DocumentNo { get; init; }
         public string? Barcode { get; init; }
         public string? OwnerName { get; init; }
+    }
+
+    public sealed class DeleteWrongItemRequest
+    {
+        public string? Reason { get; init; }
+    }
+
+    public sealed class RestoreDeletedItemRequest
+    {
+        public string? Reason { get; init; }
     }
 }

@@ -357,73 +357,47 @@ window.PrintVoucher = {
     const header = detail.header || {};
     const extra = header.extra || {};
     const lines = detail.rows || detail.lines || [];
+    const tpl = { ...(window.VoucherTemplate?.[type] || {}) };
 
-    const headerValue = key => {
-      if (Object.prototype.hasOwnProperty.call(header, key)) return header[key];
-      if (Object.prototype.hasOwnProperty.call(extra, key)) return extra[key];
-      return '';
-    };
-    const infoHtml = config.headerFields.map(f => {
-      let val = headerValue(f.key);
-      if (f.key === 'documentDate' || f.key === 'dueDate') val = UI.formatDate(val);
-      return `<div class="voucher-info-row col-md-4"><span class="info-label">${UI.esc(f.label)}:</span><span>${UI.esc(val || '-')}</span></div>`;
-    }).join('');
-
-    // Extra info for borrow-lend
-    let extraHtml = '';
-    if (config.extraFields && Object.keys(extra).length) {
-      const labels = { purpose: UI.t('Purpose'), borrowDepartment: UI.t('Borrow Department'), borrowerPhone: UI.t('Phone'), departmentOwner: UI.t('Department Owner'), dueDate: UI.t('Expected Return Date') };
-      extraHtml = config.extraFields.map(key => {
-        let val = extra[key] || '';
-        if (key === 'dueDate') val = UI.formatDate(val);
-          return `<div class="voucher-info-row col-md-4"><span class="info-label">${labels[key] || key}:</span><span>${UI.esc(val || '-')}</span></div>`;
-      }).join('');
-    }
-
-    const noteHtml = header.note ? `<div class="voucher-reason"><div class="voucher-reason-label">${UI.esc(UI.t('Remark'))}:</div><div class="voucher-reason-text">${UI.esc(header.note)}</div></div>` : '';
-
-    // Table
-    const thead = config.columns.map(c => `<th style="width:${c.width}">${c.label}</th>`).join('');
-    const tbody = lines.map((line, i) => {
-      const cells = config.columns.map(c => {
-          if (c.key === '_index') return `<td class="col-stt" style="text-align:center">${i + 1}</td>`;
-          else if (c.key === 'qty') return `<td class="col-stt" style="text-align:center">${UI.esc(line.qty ?? line.quantity ?? line.quantityDelta ?? 1)}</td>`;
-        return `<td>${UI.esc(UI.t(line[c.key] || '-'))}</td>`;
-      }).join('');
-      return `<tr>${cells}</tr>`;
-    }).join('');
-
-    // Signatures
-    const sigHtml = config.signatures.map(s => `<div class="voucher-sig-block"><div class="voucher-sig-title">${UI.esc(s)}</div><div class="voucher-sig-name">${UI.esc(UI.t('Sign and full name'))}</div></div>`).join('');
-    const documentDate = UI.formatDate(header.documentDate);
-    const dueDate = UI.formatDate(extra.dueDate);
-    const table = `<table class="voucher-table"><thead><tr>${thead}</tr></thead><tbody> ${tbody}</tbody></table>`;
-
-      const tpl = { ...(VoucherTemplate[type] || {}) };
-      if (detail.borrowText && (type === 'borrow-lend' || type === 'borrow-return')) {
-          tpl.vi = type === 'borrow-return' ? detail.borrowText.returnVi : detail.borrowText.vi;
-          tpl.cn = type === 'borrow-return' ? detail.borrowText.returnZh : detail.borrowText.zh;
-      }
-
-      const data = {
-          documentNo: header.documentNo,
-          date: documentDate,
-          party: header.party,
-          approvedBy: header.approvedBy,
-          createdBy: header.createdBy,
-          department: extra.borrowDepartment,
-          purpose: extra.purpose,
-          dueDate,
-          partyCode: extra.partyCode,
-          itemCategoryCode: (lines[0] && (lines[0].itemCategoryCode || lines[0].item)) || '',
-          phone: extra.borrowerPhone,
-          departmentOwner: extra.departmentOwner
+    let html = '';
+    if (tpl && tpl.vi && tpl.cn) {
+      const table = renderStandardVoucherTable(type, lines);
+      const data = buildVoucherTemplateData(type, header, extra, lines);
+      html = renderVoucherLayout(tpl, data, table, header);
+    } else {
+      const headerValue = key => {
+        if (Object.prototype.hasOwnProperty.call(header, key)) return header[key];
+        if (Object.prototype.hasOwnProperty.call(extra, key)) return extra[key];
+        return '';
       };
-
-      let html = `<button class="btn-close-voucher"onclick="PrintVoucher.close()">x</button><div class="voucher-header"><div class="voucher-title">${UI.esc(config.title)}</div><div class="voucher-subtitle">${UI.esc(header.documentNo || '')}</div></div><div class="voucher-info row">${infoHtml}${extraHtml}</div>${noteHtml}${table}<div class="voucher-signatures">${sigHtml}</div>`;
-      if (tpl && tpl.vi && tpl.cn) {
-          html = renderVoucherLayout(tpl, data, table, config, header, infoHtml, extraHtml, noteHtml);
+      const infoHtml = config.headerFields.map(f => {
+        let val = headerValue(f.key);
+        if (f.key === 'documentDate' || f.key === 'dueDate') val = UI.formatDate(val);
+        return `<div class="voucher-info-row col-md-4"><span class="info-label">${UI.esc(f.label)}:</span><span>${UI.esc(val || '-')}</span></div>`;
+      }).join('');
+      let extraHtml = '';
+      if (config.extraFields && Object.keys(extra).length) {
+        const labels = { purpose: UI.t('Purpose'), borrowDepartment: UI.t('Borrow Department'), borrowerPhone: UI.t('Phone'), departmentOwner: UI.t('Department Owner'), dueDate: UI.t('Expected Return Date') };
+        extraHtml = config.extraFields.map(key => {
+          let val = extra[key] || '';
+          if (key === 'dueDate') val = UI.formatDate(val);
+          return `<div class="voucher-info-row col-md-4"><span class="info-label">${labels[key] || key}:</span><span>${UI.esc(val || '-')}</span></div>`;
+        }).join('');
       }
+      const noteHtml = header.note ? `<div class="voucher-reason"><div class="voucher-reason-label">${UI.esc(UI.t('Remark'))}:</div><div class="voucher-reason-text">${UI.esc(header.note)}</div></div>` : '';
+      const thead = config.columns.map(c => `<th style="width:${c.width}">${c.label}</th>`).join('');
+      const tbody = lines.map((line, i) => {
+        const cells = config.columns.map(c => {
+          if (c.key === '_index') return `<td class="col-stt" style="text-align:center">${i + 1}</td>`;
+          if (c.key === 'qty') return `<td class="col-stt" style="text-align:center">${UI.esc(formatQty(line.qty ?? line.quantity ?? line.quantityDelta ?? 1))}</td>`;
+          return `<td>${UI.esc(UI.t(line[c.key] || '-'))}</td>`;
+        }).join('');
+        return `<tr>${cells}</tr>`;
+      }).join('');
+      const sigHtml = config.signatures.map(s => `<div class="voucher-sig-block"><div class="voucher-sig-title">${UI.esc(s)}</div><div class="voucher-sig-name">${UI.esc(UI.t('Sign and full name'))}</div></div>`).join('');
+      const table = `<table class="voucher-table"><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`;
+      html = `<button class="btn-close-voucher" onclick="PrintVoucher.close()">x</button><div class="voucher-header"><div class="voucher-title">${UI.esc(config.title)}</div><div class="voucher-subtitle">${UI.esc(header.documentNo || '')}</div></div><div class="voucher-info row">${infoHtml}${extraHtml}</div>${noteHtml}${table}<div class="voucher-signatures">${sigHtml}</div>`;
+    }
 
     let container = document.getElementById('printVoucher');
     if (!container) {
@@ -485,6 +459,175 @@ function renderVoucherLayout(configTemplate, data, table, config, header, infoHt
             ${dualSign ? `
             <div class="sign-group mt-4">
                 <div class="sign-title">${configTemplate.signTitle2}</div>
+                ${renderSignRows(configTemplate.signRows2, data, true)}
+            </div>
+            ` : ''}
+        </div>
+    </div>`;
+}
+
+var BLANK_TEXT = '____________________';
+var OUTSIDE_WAREHOUSE_TEXT = '仓外 / Ngoài kho';
+
+function firstText(...values) {
+    for (const value of values) {
+        const text = String(value ?? '').trim();
+        if (text && text !== 'null' && text !== 'undefined') return text;
+    }
+    return '';
+}
+
+function safeText(...values) {
+    return firstText(...values) || BLANK_TEXT;
+}
+
+function parseVoucherDate(value) {
+    if (!value) return null;
+    const date = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function twoDigit(value) {
+    return String(value).padStart(2, '0');
+}
+
+function dateParts(value) {
+    const date = parseVoucherDate(value);
+    if (!date) return { date: BLANK_TEXT, time: BLANK_TEXT, day: BLANK_TEXT, month: BLANK_TEXT, year: BLANK_TEXT };
+    const day = twoDigit(date.getDate());
+    const month = twoDigit(date.getMonth() + 1);
+    const year = String(date.getFullYear());
+    return {
+        date: UI.formatDate(value) || `${day}/${month}/${year}`,
+        time: `${twoDigit(date.getHours())}:${twoDigit(date.getMinutes())}`,
+        day,
+        month,
+        year
+    };
+}
+
+function formatQty(value) {
+    const n = Number(value ?? 1);
+    if (!Number.isFinite(n)) return '1';
+    return Number.isInteger(n) ? String(n) : String(n).replace(/\.?0+$/, '');
+}
+
+function getDistinctOwners(lines) {
+    const owners = [...new Set(
+        (lines || [])
+            .map(x => firstText(x.ownerName, x.owner, x.itemOwner, x.itemInstanceOwnerName, x.ownerDepartment))
+            .filter(Boolean)
+    )];
+    if (owners.length === 0) return BLANK_TEXT;
+    return owners.length === 1 ? owners[0] : owners.join(', ');
+}
+
+function getParty(type, doc) {
+    if (type === 'inbound') return safeText(doc.senderName, doc.partyName, doc.party, doc.operatorName, doc.sourceExternalPartyName, doc.createdBy);
+    if (type === 'repair-send') return safeText(doc.senderName, doc.repairSenderName, doc.partyName, doc.party, doc.operatorName, doc.createdBy);
+    if (type === 'repair-receive') return safeText(doc.receiverName, doc.repairReceiverName, doc.partyName, doc.party, doc.operatorName, doc.createdBy);
+    if (type === 'borrow-lend') return safeText(doc.borrowerName, doc.partyName, doc.party, doc.operatorName, doc.createdBy);
+    if (type === 'borrow-return') return safeText(doc.returnerName, doc.borrowerName, doc.partyName, doc.party, doc.operatorName, doc.createdBy);
+    if (type === 'move' || type === 'inventory-check' || type === 'adjustment') return safeText(doc.operatorName, doc.partyName, doc.party, doc.createdBy);
+    return safeText(doc.partyName, doc.operatorName, doc.receiverName, doc.senderName, doc.borrowerName, doc.returnerName, doc.party, doc.createdBy);
+}
+
+function buildVoucherTemplateData(type, header, extra, lines) {
+    const doc = { ...header, ...extra };
+    const documentDate = firstText(doc.documentDate, doc.date, doc.createdAt, doc.createdOn);
+    const dueDateValue = firstText(doc.dueDate, doc.expectedReturnDate, doc.returnDueDate);
+    const parts = dateParts(documentDate);
+    const dueParts = dateParts(dueDateValue);
+    return {
+        ...parts,
+        party: getParty(type, doc),
+        cardNo: safeText(doc.cardNo, doc.employeeNo, doc.employeeCode, doc.operatorCode, doc.borrowerCode, doc.returnerCode, doc.senderCode, doc.receiverCode),
+        department: safeText(doc.department, doc.departmentName, doc.borrowDepartment, doc.operatorDepartment, doc.senderDepartment, doc.receiverDepartment),
+        purpose: safeText(doc.purpose, doc.borrowPurpose, doc.reason, doc.note),
+        dueDate: dueParts.date,
+        dueDay: dueParts.day,
+        dueMonth: dueParts.month,
+        dueYear: dueParts.year,
+        ownerName: getDistinctOwners(lines),
+        warehouseName: safeText(doc.warehouseName, doc.warehouse, doc.toWarehouseName, doc.toWarehouse),
+        documentNo: safeText(doc.borrowDocumentNo, doc.originalDocumentNo, doc.documentNo),
+        createdBy: safeText(doc.createdBy),
+        approvedBy: safeText(doc.approvedBy),
+        phone: safeText(doc.phone, doc.borrowerPhone, doc.partyPhone, doc.receiverPhone, doc.senderPhone)
+    };
+}
+
+function buildLineText(type, line) {
+    const from = firstText(line.fromBinCode, line.fromBinName, line.fromLocation, line.oldBinCode, line.oldLocation, line.currentLocation);
+    const to = firstText(line.toBinCode, line.toBinName, line.toLocation, line.newBinCode, line.newLocation, line.binCode, line.binLocationCode, line.location);
+    const current = firstText(line.lineText, line.moveLine, line.binCode, line.binLocationCode, line.location, line.currentLocation);
+    if (type === 'borrow-lend' || type === 'repair-send') return `${from || BLANK_TEXT} --> ${OUTSIDE_WAREHOUSE_TEXT}`;
+    if (type === 'borrow-return' || type === 'repair-receive') return `${OUTSIDE_WAREHOUSE_TEXT} --> ${to || current || BLANK_TEXT}`;
+    if (type === 'move') {
+        if (from || to) return `${from || BLANK_TEXT} --> ${to || BLANK_TEXT}`;
+        return current || BLANK_TEXT;
+    }
+    return current || to || from || BLANK_TEXT;
+}
+
+function renderStandardVoucherTable(type, lines) {
+    const tbody = (lines || []).map((line, i) => {
+        const item = safeText(line.itemCode, line.item, line.itemName, line.pn, line.partNo);
+        const serial = safeText(line.serialNumber, line.serial, line.sn, line.barcode);
+        const qty = formatQty(line.quantity ?? line.qty ?? line.quantityDelta);
+        const lineText = buildLineText(type, line);
+        return `<tr>
+            <td class="col-stt" style="text-align:center">${i + 1}</td>
+            <td>${UI.esc(item)}</td>
+            <td>${UI.esc(serial)}</td>
+            <td class="col-stt" style="text-align:center">${UI.esc(qty)}</td>
+            <td>${UI.esc(lineText)}</td>
+        </tr>`;
+    }).join('');
+    return `<table class="voucher-table"><thead><tr>
+        <th>NO</th>
+        <th>品名 / Tên hàng</th>
+        <th>SN码 / Mã SN</th>
+        <th style="min-width: 150px;">数量 / SL</th>
+        <th>Line</th>
+    </tr></thead><tbody>${tbody}</tbody></table>`;
+}
+
+function fillTemplate(text, data) {
+    return String(text || '').replace(/\{(\w+)\}/g, (_, key) => UI.esc(data[key] || BLANK_TEXT));
+}
+
+function renderSignRows(rows, data, column = false) {
+    return `<div class="${column ? 'sign-row-column' : 'sign-row'}">${(rows || []).map(x => `<div>${fillTemplate(x, data)}</div>`).join('')}</div>`;
+}
+
+function renderVoucherLayout(configTemplate, data, table, header) {
+    const companyName = UI.t('Default CompanyName');
+    const branchName = UI.t('Default BranchName');
+    const dualSign = !!configTemplate.signRows2;
+    const title = `${configTemplate.titleCn} / ${configTemplate.titleVi}`;
+    return `
+    <button class="btn-close-voucher" onclick="PrintVoucher.close()">x</button>
+    <div class="voucher-header">
+        <div style="font-weight:bold">${UI.esc(UI.t(companyName))}</div>
+        <div>${UI.esc(UI.t(branchName))}</div>
+        <div class="voucher-title">${UI.esc(title)}</div>
+        <div class="voucher-subtitle">No: ${UI.esc(header.documentNo || BLANK_TEXT)}</div>
+    </div>
+    <div class="borrow-paper">
+        <div class="borrow-content">
+            <div class="borrow-text-cn"><p>${fillTemplate(configTemplate.cn, data)}</p></div>
+            <div class="borrow-text-vi"><p>${fillTemplate(configTemplate.vi, data)}</p></div>
+        </div>
+        <div class="borrow-table">${table}</div>
+        <div class="borrow-sign-section">
+            <div class="sign-group">
+                <div class="sign-title">${UI.esc(configTemplate.signTitle || '')}</div>
+                ${renderSignRows(configTemplate.signRows, data)}
+            </div>
+            ${dualSign ? `
+            <div class="sign-group mt-4">
+                <div class="sign-title">${UI.esc(configTemplate.signTitle2 || '')}</div>
                 ${renderSignRows(configTemplate.signRows2, data, true)}
             </div>
             ` : ''}

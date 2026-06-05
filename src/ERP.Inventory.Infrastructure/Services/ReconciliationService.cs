@@ -386,7 +386,8 @@ public sealed class ReconciliationService
             .Include(x => x.BinLocation)
             .Include(x => x.ExternalParty)
             .Where(x => x.WarehouseId == session.WarehouseId
-                && x.ItemInstance != null && x.ItemInstance.IsActive
+                && !x.IsDeleted
+                && x.ItemInstance != null && x.ItemInstance.IsActive && !x.ItemInstance.IsDeleted
                 && x.ItemInstance.Item != null)
             .Select(x => new
             {

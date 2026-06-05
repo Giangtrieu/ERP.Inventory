@@ -136,7 +136,7 @@ public sealed class DocumentsController : Controller
         var query = Scope(_db.InboundDocuments.AsNoTracking().Include(x => x.Warehouse).Include(x => x.SourceExternalParty).Include(x => x.Lines).AsQueryable(), x => x.WarehouseId);
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
         return await query.OrderByDescending(x => x.Id).Take(100)
-            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.SourceExternalParty != null ? x.SourceExternalParty.Name : "", warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.EnumText(language, x.Status), lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
+            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.SourceExternalParty != null ? x.SourceExternalParty.Name : "", warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.EnumText(language, x.Status), lines = x.Lines.Count(l => l.ItemInstance == null || !l.ItemInstance.IsDeleted), createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
 
@@ -145,7 +145,7 @@ public sealed class DocumentsController : Controller
         var query = Scope(_db.MoveDocuments.AsNoTracking().Include(x => x.Warehouse).Include(x => x.Lines).AsQueryable(), x => x.WarehouseId);
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
         return await query.OrderByDescending(x => x.Id).Take(100)
-            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = "", warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.EnumText(language, x.Status), lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
+            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = "", warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.EnumText(language, x.Status), lines = x.Lines.Count(l => l.ItemInstance == null || !l.ItemInstance.IsDeleted), createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
 
@@ -154,7 +154,7 @@ public sealed class DocumentsController : Controller
         var query = Scope(_db.AdjustmentDocuments.AsNoTracking().Include(x => x.Warehouse).Include(x => x.Lines).AsQueryable(), x => x.WarehouseId);
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
         return await query.OrderByDescending(x => x.Id).Take(100)
-            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.Reason, warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.EnumText(language, x.Status), lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
+            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.Reason, warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.EnumText(language, x.Status), lines = x.Lines.Count(l => l.ItemInstance == null || !l.ItemInstance.IsDeleted), createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
 
@@ -204,7 +204,7 @@ public sealed class DocumentsController : Controller
         var query = Scope(_db.InventoryCheckDocuments.AsNoTracking().Include(x => x.Warehouse).Include(x => x.Lines).AsQueryable(), x => x.WarehouseId);
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
         return await query.OrderByDescending(x =>  x.Id).Take(100)
-            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.ResponsibleStaff, warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.Text(language, x.SessionStatus), sessionStatus = x.SessionStatus, lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
+            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.ResponsibleStaff, warehouse = x.Warehouse != null ? x.Warehouse.WarehouseCode : "", status = LocalizationCatalog.Text(language, x.SessionStatus), sessionStatus = x.SessionStatus, lines = x.Lines.Count(l => l.ItemInstance == null || !l.ItemInstance.IsDeleted), createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
 
@@ -221,7 +221,7 @@ public sealed class DocumentsController : Controller
 
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
         return await query.OrderByDescending(x => x.Id).Take(100)
-            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.RepairVendor != null ? x.RepairVendor.Name : "", warehouse = "", status = x.Lines.Any(l => !l.IsReturned) ? "Repairing" : "Finalized", lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
+            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.RepairVendor != null ? x.RepairVendor.Name : "", warehouse = "", status = x.Lines.Any(l => !l.IsReturned && (l.ItemInstance == null || !l.ItemInstance.IsDeleted)) ? "Repairing" : "Finalized", lines = x.Lines.Count(l => l.ItemInstance == null || !l.ItemInstance.IsDeleted), createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
 
@@ -238,7 +238,7 @@ public sealed class DocumentsController : Controller
 
         query = ApplyDocumentFilter(query, keyword, fromDate, toDate);
         return await query.OrderByDescending(x => x.Id).Take(100)
-            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.Borrower != null ? x.Borrower.Name : "", warehouse = "", status = x.Lines.Any(l => !l.IsReturned) ? "Borrow" : "Returned", lines = x.Lines.Count, createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
+            .Select(x => new { id = x.Id, documentNo = x.DocumentNo, documentDate = x.DocumentDate, party = x.Borrower != null ? x.Borrower.Name : "", warehouse = "", status = x.Lines.Any(l => !l.IsReturned && (l.ItemInstance == null || !l.ItemInstance.IsDeleted)) ? "Borrow" : "Returned", lines = x.Lines.Count(l => l.ItemInstance == null || !l.ItemInstance.IsDeleted), createdBy = x.CreatedBy, approvedBy = x.ApprovedBy, postedAt = x.PostedAt })
             .ToArrayAsync(cancellationToken);
     }
 
@@ -258,6 +258,7 @@ public sealed class DocumentsController : Controller
 
         var logs = await _db.InboundDocumentLogs.AsNoTracking()
             .Where(x => x.InboundDocumentId == id)
+            .Where(x => x.ItemInstance == null || !x.ItemInstance.IsDeleted)
             .OrderByDescending(x => x.Id)
             .Select(x => new {
                 x.ItemInstanceId,
@@ -300,7 +301,7 @@ public sealed class DocumentsController : Controller
         return new
         {
             header = Header(doc, language, doc.Warehouse?.WarehouseCode, doc.SourceExternalParty?.Name),
-            lines = doc.Lines.Select(x => new { item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, barcode = x.Barcode, bin = x.BinLocation?.BinCode, condition = x.Condition, note = x.Note }),
+            lines = doc.Lines.Where(x => x.ItemInstance == null || !x.ItemInstance.IsDeleted).Select(x => new { item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, barcode = x.Barcode, ownerName = x.ItemInstance != null ? x.ItemInstance.OwnerName : null, bin = x.BinLocation?.BinCode, condition = x.Condition, note = x.Note }),
             history
         };
     }
@@ -318,7 +319,7 @@ public sealed class DocumentsController : Controller
         return doc == null ? null : new
         {
             header = Header(doc, language, doc.Warehouse?.WarehouseCode, null),
-            lines = doc.Lines.Select(x => new { item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, from = x.FromBinLocation?.BinCode, to = x.TargetBinLocation?.BinCode, note = x.Note, status = x.ItemInstance?.Status })
+            lines = doc.Lines.Where(x => x.ItemInstance == null || !x.ItemInstance.IsDeleted).Select(x => new { item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, ownerName = x.ItemInstance != null ? x.ItemInstance.OwnerName : null, from = x.FromBinLocation?.BinCode, to = x.TargetBinLocation?.BinCode, note = x.Note, status = x.ItemInstance?.Status })
         };
     }
 
@@ -341,6 +342,7 @@ public sealed class DocumentsController : Controller
 
         var logs = await _db.AdjustmentDocumentLogs.AsNoTracking()
             .Where(x => x.AdjustmentDocumentId == id)
+            .Where(x => x.ItemInstance == null || !x.ItemInstance.IsDeleted)
             .OrderByDescending(x => x.Id)
             .Select(x => new {
                 x.ItemInstanceId,
@@ -377,10 +379,11 @@ public sealed class DocumentsController : Controller
         return new
         {
             header = Header(doc, language, doc.Warehouse?.WarehouseCode, doc.Reason),
-            lines = doc.Lines.Select(x => new
+            lines = doc.Lines.Where(x => x.ItemInstance == null || !x.ItemInstance.IsDeleted).Select(x => new
             {
                 item = x.ItemInstance?.Item?.ItemCode,
                 serial = x.ItemInstance?.SerialNumber,
+                ownerName = x.ItemInstance != null ? x.ItemInstance.OwnerName : null,
                 oldStatus = x.OldStatus,
                 newStatus = x.NewStatus,
                 reason = x.Reason,
@@ -412,10 +415,11 @@ public sealed class DocumentsController : Controller
         {
             header = Header(doc, language, doc.Warehouse?.WarehouseCode, doc.ResponsibleStaff,
                 new { doc.SessionStatus, doc.CountMethod }),
-            lines = doc.Lines.Select(x => new
+            lines = doc.Lines.Where(x => x.ItemInstance == null || !x.ItemInstance.IsDeleted).Select(x => new
             {
                 item = x.ItemInstance?.Item?.ItemCode,
                 serial = x.ItemInstance?.SerialNumber,
+                ownerName = x.ItemInstance != null ? x.ItemInstance.OwnerName : null,
                 result = x.Result,
                 note = x.Note,
                 bin = x.ActualBinLocationId.HasValue && binMap.TryGetValue(x.ActualBinLocationId.Value, out var path) ? path : unknownText
@@ -495,11 +499,13 @@ public sealed class DocumentsController : Controller
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 
         if (doc == null || (allowedBinIds != null && !doc.Lines.Any(x =>
-            (x.FromBinLocationId.HasValue && allowedBinIds.Contains(x.FromBinLocationId.Value)) ||
-            (x.TargetBinLocationId.HasValue && allowedBinIds.Contains(x.TargetBinLocationId.Value))))) return null;
+            (x.ItemInstance == null || !x.ItemInstance.IsDeleted) &&
+            ((x.FromBinLocationId.HasValue && allowedBinIds.Contains(x.FromBinLocationId.Value)) ||
+             (x.TargetBinLocationId.HasValue && allowedBinIds.Contains(x.TargetBinLocationId.Value)))))) return null;
 
         var logs = await _db.RepairDocumentLogs.AsNoTracking()
             .Where(x => x.RepairDocumentId == id)
+            .Where(x => x.ItemInstance == null || !x.ItemInstance.IsDeleted)
             .OrderByDescending(x => x.Id)
             .Select(x => new {
                 x.ItemInstanceId,
@@ -540,7 +546,7 @@ public sealed class DocumentsController : Controller
         return new
         {
             header = Header(doc, language, null, doc.RepairVendor?.Name),
-            lines = doc.Lines.Select(x => new { item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, fromBin = x.FromBinLocation?.BinCode, targetBin = x.TargetBinLocation?.BinCode ?? x.TargetExternalLocation, status = x.ItemInstance!.Status, newSerial = x.NewSerialNumber, note = x.RepairResultNote }),
+            lines = doc.Lines.Where(x => x.ItemInstance == null || !x.ItemInstance.IsDeleted).Select(x => new { item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, ownerName = x.ItemInstance != null ? x.ItemInstance.OwnerName : null, fromBin = x.FromBinLocation?.BinCode, targetBin = x.TargetBinLocation?.BinCode ?? x.TargetExternalLocation, status = x.ItemInstance?.Status, newSerial = x.NewSerialNumber, note = x.RepairResultNote }),
             history
         };
     }
@@ -556,11 +562,13 @@ public sealed class DocumentsController : Controller
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 
         if (doc == null || (allowedBinIds != null && !doc.Lines.Any(x =>
-            (x.FromBinLocationId.HasValue && allowedBinIds.Contains(x.FromBinLocationId.Value)) ||
-            (x.TargetBinLocationId.HasValue && allowedBinIds.Contains(x.TargetBinLocationId.Value))))) return null;
+            (x.ItemInstance == null || !x.ItemInstance.IsDeleted) &&
+            ((x.FromBinLocationId.HasValue && allowedBinIds.Contains(x.FromBinLocationId.Value)) ||
+             (x.TargetBinLocationId.HasValue && allowedBinIds.Contains(x.TargetBinLocationId.Value)))))) return null;
 
         var logs = await _db.BorrowDocumentLogs.AsNoTracking()
             .Where(x => x.BorrowDocumentId == id)
+            .Where(x => x.ItemInstance == null || !x.ItemInstance.IsDeleted)
             .OrderByDescending(x => x.Id)
             .Select(x => new {
                 x.ItemInstanceId,
@@ -603,7 +611,7 @@ public sealed class DocumentsController : Controller
         return new
         {
             header = Header(doc, language, null, doc.Borrower?.Name, new { doc.Purpose, doc.BorrowDepartment, doc.BorrowerPhone, doc.DepartmentOwner, doc.DueDate, partyCode = doc.Borrower?.PartyCode }),
-            lines = doc.Lines.Select(x => new { itemCategoryCode = x.ItemInstance?.Item?.Category?.CategoryCode, item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, fromBin = x.FromBinLocation?.BinCode, targetBin = x.TargetBinLocation?.BinCode ?? x.TargetExternalLocation, returned = x.IsReturned, condition = x.IsReturned ? "Returned" : "LentOut", returnedAt = x.ReturnedAt, note = x.Note }),
+            lines = doc.Lines.Where(x => x.ItemInstance == null || !x.ItemInstance.IsDeleted).Select(x => new { itemCategoryCode = x.ItemInstance?.Item?.Category?.CategoryCode, item = x.ItemInstance?.Item?.ItemCode, serial = x.ItemInstance?.SerialNumber, ownerName = x.ItemInstance != null ? x.ItemInstance.OwnerName : null, fromBin = x.FromBinLocation?.BinCode, targetBin = x.TargetBinLocation?.BinCode ?? x.TargetExternalLocation, returned = x.IsReturned, condition = x.IsReturned ? "Returned" : "LentOut", returnedAt = x.ReturnedAt, note = x.Note }),
             history
         };
     }
@@ -643,6 +651,19 @@ public sealed class DocumentsController : Controller
             .ThenBy(x => ReadString(x, "item") ?? ReadString(x, "itemCode") ?? string.Empty)
             .ThenBy(x => ReadString(x, "serial") ?? ReadString(x, "serialNumber") ?? ReadString(x, "snCode") ?? string.Empty)
             .ToArray();
+        var historyForAction = history.OfType<JsonObject>()
+            .Where(x => HistoryMatchesAction(x, normalizedAction))
+            .ToArray();
+        var historyRows = historyForDate.Length > 0
+            ? historyForDate
+            : historyForAction.Length > 0
+                ? historyForAction
+                : history.OfType<JsonObject>().ToArray();
+        EnrichPdfHeader(normalizedAction, header, rows, historyRows);
+        foreach (var row in rows)
+        {
+            EnrichPdfRow(normalizedAction, row, historyRows);
+        }
 
         return new
         {
@@ -652,9 +673,80 @@ public sealed class DocumentsController : Controller
             fileName = $"{normalizedAction}_{ReadString(header, "documentNo") ?? idText(header)}_{DateTime.UtcNow:yyyyMMddHHmmss}.pdf",
             header,
             rows,
-            historyRows = historyForDate.Length > 0 ? historyForDate : history.OfType<JsonObject>().ToArray(),
+            historyRows,
             borrowText = BuildBorrowPdfText(language)
         };
+    }
+
+    private static void EnrichPdfHeader(string type, JsonObject header, IReadOnlyCollection<JsonObject> rows, IReadOnlyCollection<JsonObject> historyRows)
+    {
+        var extra = header["extra"] as JsonObject ?? new JsonObject();
+        header["extra"] = extra;
+        var historyParty = HistoryParty(type, historyRows);
+        var historyCardNo = PartyCode(historyParty);
+        var historyPartyName = PartyName(historyParty);
+        var historyDepartment = FirstHistoryText(historyRows, "borrowDepartment", "receiverDepartment", "department");
+        var historyPhone = FirstHistoryText(historyRows, "borrowerPhone", "receiverPhone", "phone");
+        var historyPurpose = FirstHistoryText(historyRows, "note", "reason", "repairResultNote");
+        var party = type switch
+        {
+            "inbound" => FirstText(historyPartyName, ReadString(header, "senderName"), ReadString(header, "partyName"), ReadString(header, "party"), ReadString(header, "operatorName"), ReadString(header, "sourceExternalPartyName"), ReadString(header, "createdBy")),
+            "repair-send" => FirstText(historyPartyName, ReadString(header, "senderName"), ReadString(header, "repairSenderName"), ReadString(header, "operatorName"), ReadString(header, "createdBy")),
+            "repair-receive" => FirstText(historyPartyName, ReadString(header, "receiverName"), ReadString(header, "repairReceiverName"), ReadString(header, "operatorName"), ReadString(header, "createdBy")),
+            "borrow-lend" => FirstText(historyPartyName, ReadString(header, "borrowerName"), ReadString(header, "partyName"), ReadString(header, "party"), ReadString(header, "operatorName"), ReadString(header, "createdBy")),
+            "borrow-return" => FirstText(historyPartyName, ReadString(header, "returnerName"), ReadString(header, "borrowerName"), ReadString(header, "partyName"), ReadString(header, "party"), ReadString(header, "operatorName"), ReadString(header, "createdBy")),
+            "move" or "adjustment" => FirstText(historyPartyName, ReadString(header, "operatorName"), ReadString(header, "partyName"), ReadString(header, "createdBy")),
+            "inventory-check" => FirstText(historyPartyName, ReadString(header, "operatorName"), ReadString(header, "partyName"), ReadString(header, "party"), ReadString(header, "createdBy")),
+            _ => FirstText(ReadString(header, "partyName"), ReadString(header, "operatorName"), ReadString(header, "receiverName"), ReadString(header, "senderName"), ReadString(header, "borrowerName"), ReadString(header, "returnerName"), ReadString(header, "party"), ReadString(header, "createdBy"))
+        };
+
+        SetText(header, "party", party);
+        SetText(header, "partyName", party);
+        if (type == "inbound") SetIfMissing(header, "senderName", party);
+        if (type == "repair-send") SetIfMissing(header, "senderName", party);
+        if (type == "repair-receive") SetIfMissing(header, "receiverName", party);
+        if (type == "borrow-lend") SetIfMissing(header, "borrowerName", party);
+        if (type == "borrow-return") SetIfMissing(header, "returnerName", party);
+
+        SetTextOrMissing(header, "cardNo", FirstText(historyCardNo, ReadString(header, "cardNo"), ReadString(extra, "cardNo"), ReadString(header, "employeeNo"), ReadString(extra, "employeeNo"), ReadString(header, "employeeCode"), ReadString(extra, "employeeCode"), ReadString(header, "operatorCode"), ReadString(extra, "operatorCode"), ReadString(header, "borrowerCode"), ReadString(extra, "borrowerCode"), ReadString(header, "returnerCode"), ReadString(extra, "returnerCode"), ReadString(header, "senderCode"), ReadString(extra, "senderCode"), ReadString(header, "receiverCode"), ReadString(extra, "receiverCode"), ReadString(extra, "partyCode")), !string.IsNullOrWhiteSpace(historyCardNo));
+        SetTextOrMissing(header, "department", FirstText(historyDepartment, ReadString(header, "department"), ReadString(extra, "department"), ReadString(header, "departmentName"), ReadString(extra, "departmentName"), ReadString(header, "borrowDepartment"), ReadString(extra, "borrowDepartment"), ReadString(header, "operatorDepartment"), ReadString(extra, "operatorDepartment"), ReadString(header, "senderDepartment"), ReadString(extra, "senderDepartment"), ReadString(header, "receiverDepartment"), ReadString(extra, "receiverDepartment")), !string.IsNullOrWhiteSpace(historyDepartment));
+        SetTextOrMissing(header, "purpose", FirstText(historyPurpose, ReadString(header, "purpose"), ReadString(extra, "purpose"), ReadString(header, "borrowPurpose"), ReadString(extra, "borrowPurpose"), ReadString(header, "reason"), ReadString(extra, "reason"), ReadString(header, "note")), !string.IsNullOrWhiteSpace(historyPurpose));
+        SetIfMissing(header, "warehouseName", FirstText(ReadString(header, "warehouseName"), ReadString(header, "warehouse"), ReadString(header, "toWarehouseName"), ReadString(header, "toWarehouse")));
+        SetIfMissing(header, "ownerName", DistinctOwners(rows));
+        SetTextOrMissing(header, "phone", FirstText(historyPhone, ReadString(header, "phone"), ReadString(extra, "phone"), ReadString(header, "borrowerPhone"), ReadString(extra, "borrowerPhone"), ReadString(header, "partyPhone"), ReadString(header, "receiverPhone"), ReadString(extra, "receiverPhone"), ReadString(header, "senderPhone"), ReadString(extra, "senderPhone")), !string.IsNullOrWhiteSpace(historyPhone));
+
+        CopyExtraToHeader(header, extra, "dueDate");
+        CopyExtraToHeader(header, extra, "borrowDepartment");
+        CopyExtraToHeader(header, extra, "borrowerPhone");
+        CopyExtraToHeader(header, extra, "departmentOwner");
+        CopyExtraToHeader(header, extra, "partyCode");
+    }
+
+    private static void EnrichPdfRow(string type, JsonObject row, IReadOnlyCollection<JsonObject> historyRows)
+    {
+        var history = FindHistory(row, historyRows);
+        SetIfMissing(row, "itemCode", FirstText(ReadString(row, "itemCode"), ReadString(row, "item"), ReadString(row, "itemName"), ReadString(row, "pn"), ReadString(row, "partNo"), ReadString(history, "itemCode")));
+        SetIfMissing(row, "serialNumber", FirstText(ReadString(row, "serialNumber"), ReadString(row, "serial"), ReadString(row, "sn"), ReadString(row, "snCode"), ReadString(row, "barcode"), ReadString(history, "serialNumber"), ReadString(history, "snCode")));
+        if (row["quantity"] == null && row["qty"] == null && row["quantityDelta"] == null)
+        {
+            row["quantity"] = 1;
+        }
+        SetIfMissing(row, "ownerName", FirstText(ReadString(row, "ownerName"), ReadString(row, "owner"), ReadString(row, "itemOwner"), ReadString(row, "itemInstanceOwnerName"), ReadString(row, "ownerDepartment")));
+        var historyFrom = ReadString(history, "oldLocation");
+        var historyTo = ReadString(history, "newLocation");
+        SetTextOrMissing(row, "fromBinCode", FirstText(historyFrom, ReadString(row, "fromBinCode"), ReadString(row, "fromBin"), ReadString(row, "from"), ReadString(row, "fromBinName"), ReadString(row, "fromLocation"), ReadString(row, "oldBinCode"), ReadString(row, "oldLocation")), !string.IsNullOrWhiteSpace(historyFrom));
+        SetTextOrMissing(row, "toBinCode", FirstText(historyTo, ReadString(row, "toBinCode"), ReadString(row, "targetBin"), ReadString(row, "to"), ReadString(row, "toBinName"), ReadString(row, "toLocation"), ReadString(row, "newBinCode"), ReadString(row, "newLocation"), ReadString(row, "bin"), ReadString(row, "binCode"), ReadString(row, "binLocationCode"), ReadString(row, "location")), !string.IsNullOrWhiteSpace(historyTo));
+        SetTextOrMissing(row, "binCode", FirstText(historyTo, ReadString(row, "binCode"), ReadString(row, "bin"), ReadString(row, "binLocationCode"), ReadString(row, "location"), ReadString(row, "targetBin"), ReadString(row, "to")), !string.IsNullOrWhiteSpace(historyTo));
+        SetTextOrMissing(row, "currentLocation", FirstText(historyTo, ReadString(row, "currentLocation"), ReadString(row, "lineText"), ReadString(row, "moveLine"), ReadString(row, "binCode"), ReadString(row, "bin"), ReadString(row, "binLocationCode"), ReadString(row, "location")), !string.IsNullOrWhiteSpace(historyTo));
+
+        var lineText = type switch
+        {
+            "borrow-lend" or "repair-send" => $"{FirstText(ReadString(row, "fromBinCode"), ReadString(row, "currentLocation"))} --> 仓外 / Ngoài kho",
+            "borrow-return" or "repair-receive" => $"仓外 / Ngoài kho --> {FirstText(ReadString(row, "toBinCode"), ReadString(row, "currentLocation"))}",
+            "move" when !string.IsNullOrWhiteSpace(FirstText(ReadString(row, "fromBinCode"), ReadString(row, "toBinCode"))) => $"{ReadString(row, "fromBinCode")} --> {ReadString(row, "toBinCode")}",
+            _ => FirstText(ReadString(row, "lineText"), ReadString(row, "moveLine"), ReadString(row, "currentLocation"), ReadString(row, "toBinCode"), ReadString(row, "fromBinCode"))
+        };
+        SetTextOrMissing(row, "lineText", lineText, !string.IsNullOrWhiteSpace(historyFrom) || !string.IsNullOrWhiteSpace(historyTo));
     }
 
     private static string NormalizePdfAction(string type, string? action)
@@ -712,14 +804,92 @@ public sealed class DocumentsController : Controller
             returnZh = LocalizationCatalog.Text("zh", "Pdf.BorrowReturn.Body")
         };
 
+    private static string FirstText(params string?[] values)
+        => values.Select(x => x?.Trim()).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty;
+
+    private static string FirstHistoryText(IEnumerable<JsonObject> rows, params string[] keys)
+        => rows.Select(row => FirstText(keys.Select(key => ReadString(row, key)).ToArray()))
+            .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? string.Empty;
+
+    private static string HistoryParty(string type, IEnumerable<JsonObject> rows)
+        => type switch
+        {
+            "inbound" => FirstHistoryText(rows, "receiver", "performedBy"),
+            "borrow-lend" or "borrow-return" => FirstHistoryText(rows, "borrower", "performedBy"),
+            "repair-send" or "repair-receive" => FirstHistoryText(rows, "performedBy", "repairVendor"),
+            "move" or "adjustment" or "inventory-check" => FirstHistoryText(rows, "performedBy"),
+            _ => FirstHistoryText(rows, "borrower", "receiver", "sender", "performedBy")
+        };
+
+    private static string PartyCode(string? text)
+    {
+        var value = text?.Trim() ?? string.Empty;
+        var dash = value.IndexOf('-');
+        return dash > 0 ? value[..dash].Trim() : string.Empty;
+    }
+
+    private static string PartyName(string? text)
+    {
+        var value = text?.Trim() ?? string.Empty;
+        var dash = value.IndexOf('-');
+        return dash >= 0 && dash < value.Length - 1 ? value[(dash + 1)..].Trim() : value;
+    }
+
+    private static void SetIfMissing(JsonObject obj, string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return;
+        if (!string.IsNullOrWhiteSpace(ReadString(obj, key))) return;
+        obj[key] = value;
+    }
+
+    private static void SetText(JsonObject obj, string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return;
+        obj[key] = value;
+    }
+
+    private static void SetTextOrMissing(JsonObject obj, string key, string? value, bool overwrite)
+    {
+        if (overwrite)
+        {
+            SetText(obj, key, value);
+            return;
+        }
+
+        SetIfMissing(obj, key, value);
+    }
+
+    private static void CopyExtraToHeader(JsonObject header, JsonObject extra, string key)
+        => SetIfMissing(header, key, ReadString(extra, key));
+
+    private static string DistinctOwners(IEnumerable<JsonObject> rows)
+    {
+        var owners = rows
+            .Select(x => FirstText(ReadString(x, "ownerName"), ReadString(x, "owner"), ReadString(x, "itemOwner"), ReadString(x, "itemInstanceOwnerName"), ReadString(x, "ownerDepartment")))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return string.Join(", ", owners);
+    }
+
+    private static JsonObject? FindHistory(JsonObject row, IEnumerable<JsonObject> historyRows)
+    {
+        var serial = FirstText(ReadString(row, "serialNumber"), ReadString(row, "serial"), ReadString(row, "snCode"), ReadString(row, "barcode"));
+        var item = FirstText(ReadString(row, "itemCode"), ReadString(row, "item"));
+        return historyRows.FirstOrDefault(x =>
+            (!string.IsNullOrWhiteSpace(serial) && string.Equals(serial, FirstText(ReadString(x, "serialNumber"), ReadString(x, "snCode")), StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrWhiteSpace(item) && string.Equals(item, ReadString(x, "itemCode"), StringComparison.OrdinalIgnoreCase)));
+    }
+
     private static JsonObject CloneObject(JsonObject value)
         => JsonNode.Parse(value.ToJsonString())!.AsObject();
 
     private static string idText(JsonObject header)
         => ReadString(header, "id") ?? "Document";
 
-    private static string? ReadString(JsonObject obj, string key)
+    private static string? ReadString(JsonObject? obj, string key)
     {
+        if (obj == null) return null;
         if (!obj.TryGetPropertyValue(key, out var node) || node == null) return null;
         if (node is JsonValue value && value.TryGetValue<string>(out var text)) return text;
         return node.ToString();

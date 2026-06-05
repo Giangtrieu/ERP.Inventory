@@ -80,6 +80,7 @@ public sealed class ImportExportService : IImportService, IExportService
         public Dictionary<(int WarehouseId, string BinCode), BinLocation> ActiveBinsByWarehouseAndCode { get; } = new();
         public HashSet<(int WarehouseId, string BinCode)> ExistingBinKeys { get; } = new();
         public Dictionary<(string ItemCode, string SerialNumber), ItemInstance> InstancesByItemAndSerial { get; } = new();
+        public HashSet<(string ItemCode, string SerialNumber)> DeletedInstanceKeys { get; } = new();
         public Dictionary<string, ItemInstance> InstancesBySerialOrBarcode { get; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<int, CurrentItemLocation> CurrentLocationsByInstanceId { get; } = new();
         public HashSet<int> OccupiedBinIds { get; } = new();
@@ -204,7 +205,16 @@ public sealed class ImportExportService : IImportService, IExportService
         batch.Status = blocking == 0 ? ImportBatchStatus.Validated : ImportBatchStatus.Blocked;
         batch.UpdatedAt = DateTime.UtcNow;
         batch.UpdatedBy = user.UserName;
-        await _db.SaveChangesAsync(cancellationToken);
+        var autoDetectChanges = _db.ChangeTracker.AutoDetectChangesEnabled;
+        try
+        {
+            _db.ChangeTracker.AutoDetectChangesEnabled = false;
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        finally
+        {
+            _db.ChangeTracker.AutoDetectChangesEnabled = autoDetectChanges;
+        }
         if(blocking > 0) return ServiceResult<int>.Fail("Import batch has blocking errors.");
         return ServiceResult<int>.Ok(blocking, "Import batch is valid.");
     }
@@ -474,6 +484,7 @@ public sealed class ImportExportService : IImportService, IExportService
             .Include(x => x.Warehouse)
             .Include(x => x.BinLocation)
             .Include(x => x.ExternalParty)
+            .Where(x => !x.IsDeleted && x.ItemInstance != null && !x.ItemInstance.IsDeleted)
             .AsQueryable();
 
         if (filter.WarehouseId.HasValue)
@@ -540,7 +551,10 @@ public sealed class ImportExportService : IImportService, IExportService
 
     public async Task<byte[]> ExportHistoryAsync(ExportFilterDto filter, CurrentUserContext user, CancellationToken cancellationToken = default)
     {
-        var query = _db.ItemMovementHistories.AsNoTracking().Include(x => x.ItemInstance)!.ThenInclude(x => x!.Item).AsQueryable();
+        var query = _db.ItemMovementHistories.AsNoTracking()
+            .Include(x => x.ItemInstance)!.ThenInclude(x => x!.Item)
+            .Where(x => x.ItemInstance != null && !x.ItemInstance.IsDeleted)
+            .AsQueryable();
 
         ItemStatus? status = null;
         if (!string.IsNullOrWhiteSpace(filter.Status) && Enum.TryParse<ItemStatus>(filter.Status, true, out var parsedStatus))
@@ -566,7 +580,7 @@ public sealed class ImportExportService : IImportService, IExportService
 
         if (filter.WarehouseId.HasValue)
         {
-            query = query.Where(x => _db.CurrentItemLocations.Any(c => c.ItemInstanceId == x.ItemInstanceId && c.WarehouseId == filter.WarehouseId.Value));
+            query = query.Where(x => x.ItemInstance != null && !x.ItemInstance.IsDeleted && _db.CurrentItemLocations.Any(c => c.ItemInstanceId == x.ItemInstanceId && !c.IsDeleted && c.WarehouseId == filter.WarehouseId.Value));
         }
 
         if (filter.CategoryId.HasValue)
@@ -592,8 +606,9 @@ public sealed class ImportExportService : IImportService, IExportService
 
         if (!user.IsAdmin)
         {
-            query = query.Where(x => _db.CurrentItemLocations.Any(c =>
+            query = query.Where(x => x.ItemInstance != null && !x.ItemInstance.IsDeleted && _db.CurrentItemLocations.Any(c =>
                 c.ItemInstanceId == x.ItemInstanceId &&
+                !c.IsDeleted &&
                 (c.WarehouseId == null || user.WarehouseIds.Contains(c.WarehouseId.Value))));
         }
 
@@ -729,7 +744,9 @@ public sealed class ImportExportService : IImportService, IExportService
             .AsQueryable();
         if (filter.FromDate.HasValue) query = query.Where(x => x.DocumentDate >= filter.FromDate.Value);
         var docs = await query.OrderByDescending(x => x.DocumentDate).Take(5000).ToListAsync(cancellationToken);
-        var rows = docs.SelectMany(d => d.Lines.Select(l => new object?[]
+        var rows = docs.SelectMany(d => d.Lines
+            .Where(l => l.ItemInstance == null || !l.ItemInstance.IsDeleted)
+            .Select(l => new object?[]
         {
             d.Borrower?.PartyCode, l.FromBinLocation?.Warehouse?.WarehouseCode, d.DocumentNo, d.DocumentDate.ToString("yyyy-MM-dd"), d.DueDate.ToString("yyyy-MM-dd"),
             d.Purpose, d.BorrowDepartment, d.BorrowerPhone, d.DepartmentOwner,
@@ -746,7 +763,9 @@ public sealed class ImportExportService : IImportService, IExportService
             .AsQueryable();
         if (filter.FromDate.HasValue) query = query.Where(x => x.DocumentDate >= filter.FromDate.Value);
         var docs = await query.OrderByDescending(x => x.DocumentDate).Take(5000).ToListAsync(cancellationToken);
-        var rows = docs.SelectMany(d => d.Lines.Select(l => new object?[]
+        var rows = docs.SelectMany(d => d.Lines
+            .Where(l => l.ItemInstance == null || !l.ItemInstance.IsDeleted)
+            .Select(l => new object?[]
         {
             d.DocumentNo, d.RepairVendor?.PartyCode, d.RepairVendor?.Name, l.ItemInstance?.SerialNumber, l.ItemInstance?.Barcode,
             d.Reason, d.ExpectedReturnDate?.ToString("yyyy-MM-dd"), l.TargetExternalLocation
@@ -934,11 +953,21 @@ public sealed class ImportExportService : IImportService, IExportService
                 var instances = await _db.ItemInstances.AsNoTracking()
                     .Include(x => x.Item)
                     .Where(x =>
-                        (x.SerialNumber != null && chunk.Contains(x.SerialNumber)) ||
-                        (x.Barcode != null && chunk.Contains(x.Barcode)))
+                        ((x.SerialNumber != null && chunk.Contains(x.SerialNumber)) ||
+                         (x.Barcode != null && chunk.Contains(x.Barcode))))
                     .ToListAsync(cancellationToken);
                 foreach (var instance in instances)
                 {
+                    if (instance.IsDeleted)
+                    {
+                        if (instance.Item != null && !string.IsNullOrWhiteSpace(instance.SerialNumber))
+                        {
+                            context.DeletedInstanceKeys.Add((NormalizeCode(instance.Item.ItemCode), NormalizeCode(instance.SerialNumber)));
+                        }
+
+                        continue;
+                    }
+
                     if (!string.IsNullOrWhiteSpace(instance.SerialNumber))
                     {
                         context.InstancesBySerialOrBarcode.TryAdd(NormalizeCode(instance.SerialNumber), instance);
@@ -969,7 +998,7 @@ public sealed class ImportExportService : IImportService, IExportService
         foreach (var chunk in Batch(instanceIds))
         {
             var locations = await _db.CurrentItemLocations.AsNoTracking()
-                .Where(x => chunk.Contains(x.ItemInstanceId))
+                .Where(x => chunk.Contains(x.ItemInstanceId) && !x.IsDeleted)
                 .ToListAsync(cancellationToken);
             foreach (var location in locations)
             {
@@ -977,15 +1006,19 @@ public sealed class ImportExportService : IImportService, IExportService
             }
         }
 
-        var binIds = context.ActiveBinsByWarehouseAndCode.Values.Select(x => x.Id).Distinct().ToArray();
+        var binIds = importType == "InventoryCheck"
+            ? Array.Empty<int>()
+            : context.ActiveBinsByWarehouseAndCode.Values.Select(x => x.Id).Distinct().ToArray();
         foreach (var chunk in Batch(binIds))
         {
             var occupiedBinIds = await _db.CurrentItemLocations.AsNoTracking()
                 .Where(x =>
                     x.BinLocationId.HasValue &&
+                    !x.IsDeleted &&
                     chunk.Contains(x.BinLocationId.Value) &&
                     x.ItemInstance != null &&
                     x.ItemInstance.IsActive &&
+                    !x.ItemInstance.IsDeleted &&
                     x.ItemInstance.Status != ItemStatus.Lost &&
                     x.ItemInstance.Status != ItemStatus.Disposed)
                 .Select(x => x.BinLocationId!.Value)
@@ -1201,6 +1234,11 @@ public sealed class ImportExportService : IImportService, IExportService
         {
             errors.Add("SerialNumber is required.");
         }
+        else if (!string.IsNullOrWhiteSpace(itemCode) &&
+                 context.DeletedInstanceKeys.Contains((NormalizeCode(itemCode), NormalizeCode(serial))))
+        {
+            errors.Add("Item instance has been deleted and cannot be used in inventory check.");
+        }
 
         var binCode = NullIfEmpty(Value(row, "BinCode")) ?? NullIfEmpty(Value(row, "ActualBinCode"));
         if (string.IsNullOrWhiteSpace(binCode))
@@ -1366,7 +1404,16 @@ public sealed class ImportExportService : IImportService, IExportService
         batch.Status = blocking == 0 ? ImportBatchStatus.Validated : ImportBatchStatus.Blocked;
         batch.UpdatedAt = DateTime.UtcNow;
         batch.UpdatedBy = user.UserName;
-        await _db.SaveChangesAsync(cancellationToken);
+        var autoDetectChanges = _db.ChangeTracker.AutoDetectChangesEnabled;
+        try
+        {
+            _db.ChangeTracker.AutoDetectChangesEnabled = false;
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        finally
+        {
+            _db.ChangeTracker.AutoDetectChangesEnabled = autoDetectChanges;
+        }
         return ServiceResult<int>.Ok(blocking, blocking == 0 ? "Import batch is valid." : "Import batch has blocking errors.");
     }
 
@@ -1820,7 +1867,7 @@ public sealed class ImportExportService : IImportService, IExportService
             .Where(x => newUnitCodes.Contains(x.UnitCode) && x.IsActive)
             .ToDictionaryAsync(x => x.UnitCode, StringComparer.OrdinalIgnoreCase, cancellationToken);
         var instances = await _db.ItemInstances
-            .Where(x => itemCodes.Contains(x.Item!.ItemCode) && x.IsActive)
+            .Where(x => itemCodes.Contains(x.Item!.ItemCode) && x.IsActive && !x.IsDeleted)
             .ToListAsync(cancellationToken);
         var instancesByItemId = instances.GroupBy(x => x.ItemId).ToDictionary(x => x.Key, x => x.ToList());
 
@@ -2049,7 +2096,7 @@ public sealed class ImportExportService : IImportService, IExportService
 
             // check serial tồn tại DB
             var existingSerials = await _db.ItemInstances
-                .Where(x => serials.Contains(x.SerialNumber!))
+                .Where(x => serials.Contains(x.SerialNumber!) && !x.IsDeleted)
                 .Select(x => new { x.SerialNumber, x.ItemId })
                 .ToListAsync(cancellationToken);
 
@@ -2554,7 +2601,7 @@ public sealed class ImportExportService : IImportService, IExportService
             .ToDictionaryAsync(x => x.ItemCode, cancellationToken);
 
         var instances = await _db.ItemInstances
-            .Where(x => serials.Contains(x.SerialNumber))
+            .Where(x => serials.Contains(x.SerialNumber) && !x.IsDeleted)
             .ToDictionaryAsync(x => x.SerialNumber!, cancellationToken);
 
         var instanceIds = instances.Values
@@ -2563,7 +2610,7 @@ public sealed class ImportExportService : IImportService, IExportService
 
         var locations = await _db.CurrentItemLocations
             .Include(x => x.ItemInstance)
-            .Where(x => instanceIds.Contains(x.ItemInstanceId))
+            .Where(x => instanceIds.Contains(x.ItemInstanceId) && !x.IsDeleted)
             .ToDictionaryAsync(x => x.ItemInstanceId, cancellationToken);
 
         var warehouseIds = warehouses.Values
@@ -2596,7 +2643,7 @@ public sealed class ImportExportService : IImportService, IExportService
 
         _db.CurrentItemLocations.Add(new CurrentItemLocation
         {
-            ItemInstanceId = instance.Id,
+            ItemInstance = instance,
             LocationType = LocationType.BinLocation,
             WarehouseId = warehouse.Id,
             BinLocationId = actualBin.Id,
@@ -2621,7 +2668,7 @@ public sealed class ImportExportService : IImportService, IExportService
         _db.InventoryCheckLines.Add(new InventoryCheckLine
         {
             InventoryCheckDocumentId = document.Id,
-            ItemInstanceId = instance.Id,
+            ItemInstance = instance,
             ActualBinLocationId = actualBin.Id,
             Result = InventoryCheckLineResult.Extra,
             Note = note,
@@ -2842,7 +2889,7 @@ public sealed class ImportExportService : IImportService, IExportService
             {
                 var lifecycleBatchId = Guid.NewGuid();
                 var instance = await FindInstanceAsync(row, cancellationToken) ?? throw new InvalidOperationException("Item instance not found.");
-                var current = await _db.CurrentItemLocations.FirstAsync(x => x.ItemInstanceId == instance.Id, cancellationToken);
+                var current = await _db.CurrentItemLocations.FirstAsync(x => x.ItemInstanceId == instance.Id && !x.IsDeleted, cancellationToken);
                 var oldStatus = instance.Status;
                 var fromDisplay = current.FromDisplay();
                 var targetExt = Value(row, "TargetExternalLocation").Trim();
@@ -2997,7 +3044,7 @@ public sealed class ImportExportService : IImportService, IExportService
             {
                 var lifecycleBatchId = Guid.NewGuid();
                 var instance = await FindInstanceAsync(row, cancellationToken) ?? throw new InvalidOperationException("Item instance not found.");
-                var current = await _db.CurrentItemLocations.FirstAsync(x => x.ItemInstanceId == instance.Id, cancellationToken);
+                var current = await _db.CurrentItemLocations.FirstAsync(x => x.ItemInstanceId == instance.Id && !x.IsDeleted, cancellationToken);
                 var oldStatus = instance.Status;
                 var fromWarehouseId = current.WarehouseId;
                 var fromBinLocationId = current.BinLocationId;
@@ -3140,6 +3187,7 @@ public sealed class ImportExportService : IImportService, IExportService
         var serial = NormalizeCode(Value(row, "SerialNumber"));
         var code = NormalizeCode(Value(row, "ItemCode"));
         return await _db.ItemInstances.Include(x => x.Item).FirstOrDefaultAsync(x =>
+            !x.IsDeleted &&
             (!string.IsNullOrWhiteSpace(serial) && x.SerialNumber != null && x.SerialNumber.ToUpper() == serial) &&
             (x.Item != null && x.Item.ItemCode == code), cancellationToken);
     }
@@ -3235,6 +3283,7 @@ public sealed class ImportExportService : IImportService, IExportService
             .AsNoTracking()
             .Where(x =>
                 x.TrackingType == ItemTrackingType.QuantityOnly &&
+                !x.IsDeleted &&
                 x.SerialNumber != null &&
                 itemIds.Contains(x.ItemId) &&
                 snCodes.Contains(x.SerialNumber))
@@ -3898,6 +3947,8 @@ public sealed class ImportExportService : IImportService, IExportService
             ["Enum.MovementActionType.ImportOpening"] = "Nhập số dư đầu kỳ",
             ["Enum.MovementActionType.Dispose"] = "Thanh lý",
             ["Enum.MovementActionType.Transfer"] = "Điều chuyển",
+            ["Enum.MovementActionType.Restored"] = "Đã khôi phục",
+            ["Enum.MovementActionType.SoftDeleted"] = "Đã xóa mềm",
 
             ["Enum.InventoryStatus.InStock"] = "Trong kho",
             ["Enum.InventoryStatus.Reserved"] = "Đã giữ chỗ",
@@ -4057,6 +4108,8 @@ public sealed class ImportExportService : IImportService, IExportService
             ["Enum.MovementActionType.ImportOpening"] = "Opening import",
             ["Enum.MovementActionType.Dispose"] = "Dispose",
             ["Enum.MovementActionType.Transfer"] = "Transfer",
+            ["Enum.MovementActionType.Restored"] = "Restored",
+            ["Enum.MovementActionType.SoftDeleted"] = "Soft Deleted",
 
             ["AuditAction.Inbound"] = "Inbound",
             ["AuditAction.MoveLocation"] = "Move Location",
@@ -4269,6 +4322,8 @@ public sealed class ImportExportService : IImportService, IExportService
             ["Enum.MovementActionType.InventoryCheck"] = "盘点",
             ["Enum.MovementActionType.ImportOpening"] = "期初导入",
             ["Enum.MovementActionType.Dispose"] = "报废",
+            ["Enum.MovementActionType.Restored"] = "已恢复",
+            ["Enum.MovementActionType.SoftDeleted"] = "已软删除",
 
             ["Enum.InventoryStatus.InStock"] = "在库",
             ["Enum.InventoryStatus.Reserved"] = "已预留",

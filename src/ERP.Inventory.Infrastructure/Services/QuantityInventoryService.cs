@@ -58,6 +58,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             var ownerFilter = ownerName.Trim();
             query = query.Where(x => _db.ItemInstances.Any(i => i.ItemId == x.ItemId &&
                 i.SerialNumber == x.SnCode &&i.TrackingType == ItemTrackingType.QuantityOnly &&
+                !i.IsDeleted &&
                 i.OwnerName != null &&  i.OwnerName.Contains(ownerFilter)));
         }
         if (!string.IsNullOrWhiteSpace(keyword))
@@ -510,7 +511,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
             }
 
             // ── Resolve/Create ItemInstance (QuantityOnly) ────────────
-            var instance = await _db.ItemInstances.FirstOrDefaultAsync(x => x.ItemId == item.Id && x.SerialNumber == snCode && x.TrackingType == ItemTrackingType.QuantityOnly, cancellationToken);
+            var instance = await _db.ItemInstances.FirstOrDefaultAsync(x => x.ItemId == item.Id && x.SerialNumber == snCode && x.TrackingType == ItemTrackingType.QuantityOnly && !x.IsDeleted, cancellationToken);
 
             if (instance != null && type == QuantityInventoryDocumentType.Receive)
             {
@@ -1525,7 +1526,7 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
 
         // ItemInstance
         var instance = await _db.ItemInstances.FirstOrDefaultAsync(x =>
-            x.ItemId == item.Id && x.SerialNumber == snCode && x.TrackingType == ItemTrackingType.QuantityOnly, ct);
+            x.ItemId == item.Id && x.SerialNumber == snCode && x.TrackingType == ItemTrackingType.QuantityOnly && !x.IsDeleted, ct);
 
         if (instance == null)
         {
@@ -1626,9 +1627,21 @@ public sealed class QuantityInventoryService : InventoryOperationBase, IQuantity
         var transactionsToDelete = await _db.QuantityInventoryTransactions
             .Where(x => x.DocumentNo == document.DocumentNo && x.SnCode == oldLine.SnCode).ToListAsync(ct);
 
-        var itemIntance = await _db.ItemInstances.FirstOrDefaultAsync(x => x.ItemId == oldLine.ItemId && x.SerialNumber == oldLine.SnCode, ct);
+        var itemIntance = await _db.ItemInstances.FirstOrDefaultAsync(x => x.ItemId == oldLine.ItemId && x.SerialNumber == oldLine.SnCode && !x.IsDeleted, ct);
 
-        if(itemIntance != null) _db.ItemInstances.Remove(itemIntance);
+        if(itemIntance != null)
+        {
+            itemIntance.IsDeleted = true;
+            itemIntance.IsActive = false;
+            itemIntance.DeletedAt = now;
+            itemIntance.DeletedByUserCode = user.UserId;
+            itemIntance.DeletedByUserName = user.UserName;
+            itemIntance.DeleteReason = "Deleted because quantity document line was removed.";
+            itemIntance.DeleteSourceDocumentType = nameof(QuantityInventoryDocument);
+            itemIntance.DeleteSourceDocumentId = document.Id;
+            itemIntance.UpdatedAt = now;
+            itemIntance.UpdatedBy = user.UserName;
+        }
         _db.QuantityInventoryDocumentLines.RemoveRange(linesToDelete);
         _db.QuantityInventoryTransactions.RemoveRange(transactionsToDelete);
 

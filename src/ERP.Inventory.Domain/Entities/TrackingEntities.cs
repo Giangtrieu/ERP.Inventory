@@ -20,6 +20,9 @@ public class CurrentItemLocation : AuditableEntity
     public string? ReferenceDocumentNo { get; set; }
     public DateTime UpdatedLocationAt { get; set; } = DateTime.UtcNow;
     public string UpdatedLocationBy { get; set; } = string.Empty;
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public string? DeleteReason { get; set; }
 }
 
 public class ItemMovementHistory

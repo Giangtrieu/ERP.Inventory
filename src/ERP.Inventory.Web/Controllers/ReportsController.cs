@@ -42,7 +42,7 @@ public sealed class ReportsController : Controller
             join ii in _db.ItemInstances on h.ItemInstanceId equals ii.Id
             join it in _db.Items on ii.ItemId equals it.Id
             join c in _db.CurrentItemLocations on ii.Id equals c.ItemInstanceId
-            where true
+            where !ii.IsDeleted && !c.IsDeleted
             select new { h, ii, it, c };
 
         if (fromDate.HasValue)

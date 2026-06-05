@@ -60,3 +60,10 @@ public interface IDocumentLifecycleService
     Task<ServiceResult<DocumentDependencyDto>> PreviewDependenciesAsync(string type, int id, string action, CurrentUserContext user, CancellationToken cancellationToken = default);
     Task<ServiceResult<DocumentEditModelDto>> GetEditModelAsync(string type, int id, CurrentUserContext user, CancellationToken cancellationToken = default);
 }
+
+public interface IItemSoftDeleteService
+{
+    Task<ServiceResult<DocumentMutationResultDto>> SoftDeleteWrongItemAsync(int itemInstanceId, string? reason, CurrentUserContext user, string? sourceDocumentType = null, int? sourceDocumentId = null, CancellationToken cancellationToken = default);
+    Task<ServiceResult<DocumentMutationResultDto>> RestoreDeletedItemAsync(int itemInstanceId, string? reason, CurrentUserContext user, string? sourceDocumentType = null, int? sourceDocumentId = null, CancellationToken cancellationToken = default);
+    Task<ServiceResult<IReadOnlyCollection<DeletedItemDto>>> GetDeletedItemsAsync(string? keyword, int? warehouseId, CurrentUserContext user, CancellationToken cancellationToken = default);
+}
