@@ -459,7 +459,7 @@ Router.register('system-errors', async function(){
       <div class="d-flex justify-content-between align-items-center mb-3"><div class="form-section-title mb-0">${UI.t('Error Management')}</div><div class="btn-group btn-group-sm"><button class="btn btn-outline-danger" id="btnDeleteAllErrors"><i class="bi bi-trash"></i></button><button class="btn btn-outline-secondary" id="btnReloadErrors"><i class="bi bi-arrow-clockwise"></i></button></div></div>
       <div class="row g-3 mb-3">
         <div class="col-md-5">${UI.input('Keyword','text','','errorKeyword')}</div>
-        <div class="col-md-2">${UI.select('Category','errorCategory',[{id:'',text:UI.t('All')}].concat(errorCategories.map(x => ({id:x,text:UI.t(x)}))))}</div>
+        <div class="col-md-2">${UI.select('Error Category','errorCategory',[{id:'',text:UI.t('All')}].concat(errorCategories.map(x => ({id:x,text:UI.t(x)}))))}</div>
         <div class="col-md-2">${UI.select('Status','errorResolved',[{id:'',text:UI.t('All')},{id:'false',text:UI.t('Unresolved')},{id:'true',text:UI.t('Resolved')}])}</div>
         <div class="col-md-3 d-flex align-items-end">
         <label class="form-label w-50"><span class="fw-semibold small"><span class="fw-semibold small"></span><button class="btn btn-primary w-75" id="btnReloadErrorsList">${UI.t('Load')}</button></label>
@@ -542,7 +542,7 @@ async function loadSystemErrors(page = 1, pageSize = AppState.pageSize || 25){
               <th class="px-3">${UI.t('Error Code')}</th>
               <th>${UI.t('Time')}</th>
               <th>${UI.t('Module')}</th>
-              <th>${UI.t('Category')}</th>
+              <th>${UI.t('Error Category')}</th>
               <th>${UI.t('Request Path')}</th>
               <th>${UI.t('User')}</th>
               <th>${UI.t('Error message')}</th>
@@ -598,7 +598,7 @@ async function openSystemErrorDetail(id){
       ${systemErrorField('Error Code', row.errorCode)}
       ${systemErrorField('Time', UI.formatDate(row.createdAt))}
       ${systemErrorField('Status', UI.t(row.isResolved ? 'Resolved' : 'Unresolved'))}
-      ${systemErrorField('Category', UI.t(row.category || '-'))}
+      ${systemErrorField('Error Category', UI.t(row.category || '-'))}
       ${systemErrorField('HTTP Status', row.statusCode || '-')}
       ${systemErrorField('Duration (ms)', row.durationMs || '-')}
       ${systemErrorField('Resolved by', row.resolvedBy || '-')}
